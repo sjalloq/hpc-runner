@@ -38,9 +38,11 @@ dev = [
     "pytest-cov",
     "mypy",
     "ruff",
+    "build",
+    "twine",
 ]
 all = [
-    "hpc-tools[dev]",
+    "hpc-runner[dev]",
 ]
 
 [project.scripts]
