@@ -15,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for hatch-vcs
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -29,7 +31,7 @@ jobs:
         run: pytest -v
 
       - name: Type check
-        run: mypy src/hpc_tools --ignore-missing-imports
+        run: mypy src/hpc_runner --ignore-missing-imports
 
       - name: Lint
-        run: ruff check src/hpc_tools
+        run: ruff check src/hpc_runner
