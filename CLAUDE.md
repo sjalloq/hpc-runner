@@ -58,8 +58,34 @@ Uses `rich-click` for styled output. Commands: `run`, `status`, `cancel`, `confi
 
 Jinja2 templates for job scripts. Each scheduler has its own template in `schedulers/{name}/templates/job.sh.j2`.
 
+### TUI (`src/hpc_runner/tui/`)
+
+**HpcMonitorApp** - Textual-based terminal UI for monitoring HPC jobs. Entry point: `hpc monitor`.
+
+- **app.py** - Main application with custom Nord-inspired theme
+- **styles/monitor.tcss** - CSS styling following Rovr aesthetic (see `docs/TEXTUAL_STYLING_COOKBOOK.md`)
+- **snapshot.py** - Visual review utility for development
+
 ## Key Design Decisions
 
 - **Merged output by default**: stderr goes to stdout unless `--stderr` specified
 - **Configurable SGE settings**: PE name, memory resource name, time resource name all come from config, not hardcoded
 - **Descriptor pattern**: Scheduler arguments use Python descriptors for type-safe flag/directive generation
+
+## TUI Development Rules
+
+**IMPORTANT: After ANY edit to TUI code (app.py, monitor.tcss, or related files), you MUST:**
+
+1. Run the snapshot review tool and verify all checks pass:
+   ```bash
+   python -m hpc_runner.tui.snapshot
+   ```
+
+2. Review the output for:
+   - All backgrounds should be transparent (ANSI_DEFAULT or a=0)
+   - Active tab should be `#88c0d0` (muted teal)
+   - No solid background colors breaking transparency
+
+3. If any check fails, fix the issue before considering the edit complete.
+
+This prevents visual regressions like accidentally introducing solid backgrounds when transparency is expected.

@@ -9,7 +9,7 @@ A Textual-based terminal UI for monitoring HPC jobs across schedulers.
 | Entry point | `hpc monitor` |
 | Framework | Textual |
 | Styling | Based on `TEXTUAL_STYLING_COOKBOOK.md` |
-| Tabs | Active, History |
+| Tabs | Active, Completed |
 | User scope | `$USER` default, toggle for all users |
 | Actions | Cancel (Active tab only), View logs |
 | Local storage | None — relies entirely on scheduler APIs |
@@ -20,7 +20,7 @@ A Textual-based terminal UI for monitoring HPC jobs across schedulers.
 ┌──────────────────────────────────────────────────────────┐
 │                      TUI App                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐   │
-│  │ Active Tab  │  │ History Tab │  │ Log Viewer Modal│   │
+│  │ Active Tab  │  │ Completed Tab │  │ Log Viewer Modal│   │
 │  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘   │
 │         │                │                  │            │
 │         ▼                ▼                  ▼            │
@@ -77,7 +77,7 @@ hpc_runner/
 ┌─────────────────────────────────────────────────────────────┐
 │  hpc monitor                          [👤 Me]    user@cluster│
 ├────────────┬────────────────────────────────────────────────┤
-│   Active   │  History                                       │
+│   Active   │  Completed                                     │
 ├────────────┴────────────────────────────────────────────────┤
 │ [Status: ▼ All] [Queue: ▼ All] [🔍 Search...]    ↻ 10s auto │
 ├─────────────────────────────────────────────────────────────┤
@@ -98,12 +98,12 @@ hpc_runner/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### History Tab
+### Completed Tab
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  hpc monitor                          [👤 Me]    user@cluster│
 ├────────────┬────────────────────────────────────────────────┤
-│   Active   │  History                                       │
+│   Active   │  Completed                                     │
 ├────────────┴────────────────────────────────────────────────┤
 │ [From: 📅] [To: 📅] [Exit: ▼ All] [Queue: ▼] [🔍 Search...] │
 ├─────────────────────────────────────────────────────────────┤
@@ -124,10 +124,10 @@ hpc_runner/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### History Tab — Accounting Unavailable
+### Completed Tab — Accounting Unavailable
 ```
 ├────────────┬────────────────────────────────────────────────┤
-│   Active   │  History                                       │
+│   Active   │  Completed                                     │
 ├────────────┴────────────────────────────────────────────────┤
 │                                                             │
 │     ┌─────────────────────────────────────────────────┐     │
@@ -340,13 +340,13 @@ class BaseScheduler(ABC):
 ---
 
 ### Stage 3: App Shell with Tabs
-- [ ] **IN PROGRESS**
+- [x] **COMPLETE**
 
-**Goal:** Create the basic app layout with Active/History tabs.
+**Goal:** Create the basic app layout with Active/Completed tabs.
 
 **Tasks:**
 1. Create `tui/app.py` with:
-   - TabbedContent with "Active" and "History" tabs
+   - TabbedContent with "Active" and "Completed" tabs
    - Header showing "hpc monitor" and user@hostname
    - Footer with basic keybindings
 2. Apply cookbook styling in `monitor.tcss`:
@@ -364,6 +364,7 @@ class BaseScheduler(ABC):
 ---
 
 ### Stage 4: Core Types & Scheduler API Stubs
+- [x] **COMPLETE**
 
 **Goal:** Add JobInfo dataclass and scheduler method signatures.
 
@@ -385,6 +386,7 @@ class BaseScheduler(ABC):
 ---
 
 ### Stage 5: SGE Active Jobs Implementation
+- [x] **COMPLETE**
 
 **Goal:** Implement `list_active_jobs()` for SGE scheduler.
 
@@ -405,6 +407,7 @@ class BaseScheduler(ABC):
 ---
 
 ### Stage 6: Job Table Component
+- [x] **COMPLETE**
 
 **Goal:** Create reusable job table widget.
 
@@ -427,6 +430,7 @@ class BaseScheduler(ABC):
 ---
 
 ### Stage 7: Status Badge Component
+- [x] **SKIPPED** - Plain text status in JobTable fits minimal aesthetic better
 
 **Goal:** Create colored status indicator widget.
 
@@ -445,6 +449,7 @@ class BaseScheduler(ABC):
 ---
 
 ### Stage 8: Job Provider
+- [x] **COMPLETE**
 
 **Goal:** Create async data provider that wraps scheduler calls.
 
@@ -475,7 +480,7 @@ class BaseScheduler(ABC):
 
 ---
 
-### Stage 9: Active Tab Integration
+### Stage 9: Active Tab Integration ✅ COMPLETE
 
 **Goal:** Wire up Active tab to show real job data.
 
@@ -623,16 +628,16 @@ class BaseScheduler(ABC):
 
 ---
 
-### Stage 16: History Tab Integration
+### Stage 16: Completed Tab Integration
 
-**Goal:** Wire up History tab with completed jobs or unavailable message.
+**Goal:** Wire up Completed tab with completed jobs or unavailable message.
 
 **Tasks:**
-1. On History tab mount:
+1. On Completed tab mount:
    - Check `scheduler.has_accounting()`
    - If False: show UnavailableMessage
    - If True: show filter bar + job table
-2. Create history-specific filter bar:
+2. Create completed-tab filter bar:
    - Date range (From/To date pickers)
    - Exit code dropdown (All, Success, Failed)
    - Queue dropdown
@@ -641,7 +646,7 @@ class BaseScheduler(ABC):
 4. Detail panel works same as Active tab (minus Cancel button)
 
 **Verification:**
-- History tab shows correct state based on accounting availability
+- Completed tab shows correct state based on accounting availability
 - Date filtering works
 - Exit code filtering works
 - Detail panel and log viewing work for historical jobs
@@ -784,8 +789,8 @@ page_size = 50  # jobs per page
 - [ ] With no jobs
 - [ ] Cancel job flow
 - [ ] View logs flow
-- [ ] History tab with accounting
-- [ ] History tab without accounting
+- [ ] Completed tab with accounting
+- [ ] Completed tab without accounting
 - [ ] Various terminal sizes
 - [ ] ANSI mode
 - [ ] Light terminal theme

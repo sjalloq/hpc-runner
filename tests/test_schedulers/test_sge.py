@@ -5,11 +5,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from hpc_runner.core.job import Job
+from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.sge import SGEScheduler
 from hpc_runner.schedulers.sge.parser import (
     parse_qacct_output,
     parse_qstat_plain,
+    parse_qstat_xml,
     parse_qsub_output,
     state_to_status,
 )
@@ -165,3 +167,140 @@ class TestSGEScheduler:
             scheduler = SGEScheduler()
             assert scheduler.pe_name == "mpi"
             assert scheduler.mem_resource == "h_vmem"
+
+    def test_list_active_jobs(self, mock_sge_commands):
+        """Test listing active jobs."""
+        scheduler = SGEScheduler()
+        jobs = scheduler.list_active_jobs()
+
+        # Should return 3 jobs from mock XML
+        assert len(jobs) == 3
+
+        # Check first job (running)
+        running_jobs = [j for j in jobs if j.status == JobStatus.RUNNING]
+        assert len(running_jobs) == 1
+        assert running_jobs[0].job_id == "12345"
+        assert running_jobs[0].name == "running_job"
+        assert running_jobs[0].user == "testuser"
+        assert running_jobs[0].queue == "batch.q"
+        assert running_jobs[0].cpu == 4
+
+        # Check pending jobs
+        pending_jobs = [j for j in jobs if j.status == JobStatus.PENDING]
+        assert len(pending_jobs) == 2
+
+    def test_list_active_jobs_filter_by_status(self, mock_sge_commands):
+        """Test filtering jobs by status."""
+        scheduler = SGEScheduler()
+
+        # Only running jobs
+        running = scheduler.list_active_jobs(status={JobStatus.RUNNING})
+        assert len(running) == 1
+        assert running[0].job_id == "12345"
+
+        # Only pending jobs
+        pending = scheduler.list_active_jobs(status={JobStatus.PENDING})
+        assert len(pending) == 2
+
+    def test_list_active_jobs_filter_by_queue(self, mock_sge_commands):
+        """Test filtering jobs by queue."""
+        scheduler = SGEScheduler()
+
+        # Filter by batch.q
+        batch_jobs = scheduler.list_active_jobs(queue="batch.q")
+        assert len(batch_jobs) == 1
+        assert batch_jobs[0].job_id == "12345"
+
+        # Filter by gpu.q
+        gpu_jobs = scheduler.list_active_jobs(queue="gpu.q")
+        assert len(gpu_jobs) == 1
+        assert gpu_jobs[0].job_id == "12347"
+
+
+class TestSGEParserXML:
+    """Tests for qstat XML parsing."""
+
+    def test_parse_qstat_xml_running_job(self):
+        """Test parsing running job from XML."""
+        xml = """<?xml version='1.0'?>
+<job_info>
+  <queue_info>
+    <job_list state="running">
+      <JB_job_number>99999</JB_job_number>
+      <JB_name>my_job</JB_name>
+      <JB_owner>alice</JB_owner>
+      <state>r</state>
+      <queue_name>compute.q@node5</queue_name>
+      <slots>8</slots>
+    </job_list>
+  </queue_info>
+</job_info>
+"""
+        jobs = parse_qstat_xml(xml)
+
+        assert "99999" in jobs
+        job = jobs["99999"]
+        assert job["name"] == "my_job"
+        assert job["user"] == "alice"
+        assert job["state"] == "r"
+        assert job["queue"] == "compute.q"
+        assert job["slots"] == 8
+
+    def test_parse_qstat_xml_pending_job(self):
+        """Test parsing pending job from XML."""
+        xml = """<?xml version='1.0'?>
+<job_info>
+  <job_info>
+    <job_list state="pending">
+      <JB_job_number>88888</JB_job_number>
+      <JB_name>waiting_job</JB_name>
+      <JB_owner>bob</JB_owner>
+      <state>qw</state>
+      <slots>1</slots>
+    </job_list>
+  </job_info>
+</job_info>
+"""
+        jobs = parse_qstat_xml(xml)
+
+        assert "88888" in jobs
+        job = jobs["88888"]
+        assert job["name"] == "waiting_job"
+        assert job["state"] == "qw"
+
+    def test_parse_qstat_xml_empty(self):
+        """Test parsing empty qstat XML output."""
+        xml = """<?xml version='1.0'?>
+<job_info>
+  <queue_info>
+  </queue_info>
+  <job_info>
+  </job_info>
+</job_info>
+"""
+        jobs = parse_qstat_xml(xml)
+        assert len(jobs) == 0
+
+    def test_parse_qstat_xml_with_timestamps(self):
+        """Test parsing jobs with submission/start times."""
+        xml = """<?xml version='1.0'?>
+<job_info>
+  <queue_info>
+    <job_list state="running">
+      <JB_job_number>77777</JB_job_number>
+      <JB_name>timed_job</JB_name>
+      <JB_owner>charlie</JB_owner>
+      <state>r</state>
+      <slots>2</slots>
+      <JB_submission_time>1704110400</JB_submission_time>
+      <JAT_start_time>1704110460</JAT_start_time>
+    </job_list>
+  </queue_info>
+</job_info>
+"""
+        jobs = parse_qstat_xml(xml)
+
+        assert "77777" in jobs
+        job = jobs["77777"]
+        assert job["submit_time"] == 1704110400
+        assert job["start_time"] == 1704110460

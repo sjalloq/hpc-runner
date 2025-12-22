@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hpc_runner.core.exceptions import AccountingNotAvailable, JobNotFoundError
+from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
 from hpc_runner.schedulers.base import BaseScheduler
 from hpc_runner.templates import render_template
@@ -235,3 +237,110 @@ class LocalScheduler(BaseScheduler):
     def build_submit_command(self, job: "Job") -> list[str]:
         """Build command - for local, just bash."""
         return ["bash", "-c", job.command if isinstance(job.command, str) else " ".join(job.command)]
+
+    # -------------------------------------------------------------------------
+    # TUI Monitor API (stubs for local scheduler)
+    # -------------------------------------------------------------------------
+
+    def list_active_jobs(
+        self,
+        user: str | None = None,
+        status: set[JobStatus] | None = None,
+        queue: str | None = None,
+    ) -> list[JobInfo]:
+        """List active local jobs.
+
+        The local scheduler tracks running processes in memory.
+        """
+        jobs: list[JobInfo] = []
+        current_user = os.environ.get("USER", "unknown")
+
+        for job_id, proc in LocalScheduler._processes.items():
+            poll = proc.poll()
+            if poll is None:  # Still running
+                job_status = JobStatus.RUNNING
+            else:
+                continue  # Skip completed jobs
+
+            # Apply filters
+            if user is not None and user != current_user:
+                continue
+            if status is not None and job_status not in status:
+                continue
+            # queue filter doesn't apply to local scheduler
+
+            jobs.append(
+                JobInfo(
+                    job_id=job_id,
+                    name=job_id,  # Local scheduler doesn't track job names
+                    user=current_user,
+                    status=job_status,
+                    queue="local",
+                )
+            )
+
+        return jobs
+
+    def list_completed_jobs(
+        self,
+        user: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        exit_code: int | None = None,
+        queue: str | None = None,
+        limit: int = 100,
+    ) -> list[JobInfo]:
+        """List completed local jobs.
+
+        The local scheduler does not persist job history, so this
+        raises AccountingNotAvailable.
+        """
+        raise AccountingNotAvailable(
+            "Local scheduler does not persist job history. "
+            "Completed job information is only available during the current session."
+        )
+
+    def has_accounting(self) -> bool:
+        """Check if job accounting is available.
+
+        Local scheduler does not have persistent accounting.
+        """
+        return False
+
+    def get_job_details(self, job_id: str) -> JobInfo:
+        """Get details for a local job."""
+        current_user = os.environ.get("USER", "unknown")
+
+        # Check running processes
+        if job_id in LocalScheduler._processes:
+            proc = LocalScheduler._processes[job_id]
+            poll = proc.poll()
+            status = JobStatus.RUNNING if poll is None else (
+                JobStatus.COMPLETED if poll == 0 else JobStatus.FAILED
+            )
+            return JobInfo(
+                job_id=job_id,
+                name=job_id,
+                user=current_user,
+                status=status,
+                queue="local",
+                exit_code=poll if poll is not None else None,
+                stdout_path=LocalScheduler._output_paths.get(job_id, {}).get("stdout"),
+                stderr_path=LocalScheduler._output_paths.get(job_id, {}).get("stderr"),
+            )
+
+        # Check completed jobs with cached exit codes
+        if job_id in LocalScheduler._exit_codes:
+            exit_code = LocalScheduler._exit_codes[job_id]
+            return JobInfo(
+                job_id=job_id,
+                name=job_id,
+                user=current_user,
+                status=JobStatus.COMPLETED if exit_code == 0 else JobStatus.FAILED,
+                queue="local",
+                exit_code=exit_code,
+                stdout_path=LocalScheduler._output_paths.get(job_id, {}).get("stdout"),
+                stderr_path=LocalScheduler._output_paths.get(job_id, {}).get("stderr"),
+            )
+
+        raise JobNotFoundError(f"Job {job_id} not found")

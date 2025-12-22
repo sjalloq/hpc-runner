@@ -7,15 +7,18 @@ A guide to achieving a polished, modern terminal UI aesthetic based on the Rovr 
 ## Table of Contents
 
 1. [Design Philosophy](#design-philosophy)
-2. [CSS Variables System](#css-variables-system)
-3. [Border Styling Patterns](#border-styling-patterns)
-4. [Focus States & Visual Feedback](#focus-states--visual-feedback)
-5. [Layout Patterns](#layout-patterns)
-6. [Component Recipes](#component-recipes)
-7. [Modal Dialogs](#modal-dialogs)
-8. [Toast Notifications](#toast-notifications)
-9. [Theming System](#theming-system)
-10. [Responsive Design](#responsive-design)
+2. [Important: Themes Define Colors](#important-themes-define-colors)
+3. [Custom vs Standard Widgets](#custom-vs-standard-widgets)
+4. [Built-in Widget Limitations](#built-in-widget-limitations)
+5. [CSS Variables System](#css-variables-system)
+6. [Border Styling Patterns](#border-styling-patterns)
+7. [Focus States & Visual Feedback](#focus-states--visual-feedback)
+8. [Layout Patterns](#layout-patterns)
+9. [Component Recipes](#component-recipes)
+10. [Modal Dialogs](#modal-dialogs)
+11. [Toast Notifications](#toast-notifications)
+12. [Theming System](#theming-system)
+13. [Responsive Design](#responsive-design)
 
 ---
 
@@ -28,6 +31,245 @@ The aesthetic follows these core principles:
 - **Focus-aware styling** - Clear visual distinction between focused and unfocused states
 - **Minimal chrome** - Reduce visual noise, let content breathe
 - **Color as meaning** - Use semantic colors (primary, error, success, warning) consistently
+
+---
+
+## Important: Themes Define Colors
+
+**CSS patterns alone won't achieve the Rovr aesthetic.** The muted, professional look comes from custom theme colors, not just CSS rules.
+
+### The Problem
+
+Textual's default `$primary` color is bright blue (`#0178d4`). When you write:
+
+```tcss
+Tab.-active {
+    background: $primary;
+}
+```
+
+You'll get a **bright blue** tab, not the muted teal seen in Rovr.
+
+### The Solution
+
+Register a custom theme with muted colors **before** your CSS rules take effect:
+
+```python
+from textual.app import App
+from textual.theme import Theme
+
+# Nord-inspired color palette for muted, professional look
+MY_THEME = Theme(
+    name="my-app",
+    primary="#88C0D0",      # Muted teal (not bright blue!)
+    secondary="#81A1C1",    # Lighter blue-gray
+    accent="#B48EAD",       # Muted purple
+    foreground="#D8DEE9",   # Light gray text
+    background="#2E3440",   # Dark blue-gray
+    success="#A3BE8C",      # Muted green
+    warning="#EBCB8B",      # Muted yellow
+    error="#BF616A",        # Muted red
+    surface="#3B4252",      # Slightly lighter than background
+    panel="#434C5E",        # Panel backgrounds
+    dark=True,
+)
+
+class MyApp(App):
+    def on_mount(self) -> None:
+        self.register_theme(MY_THEME)
+        self.theme = "my-app"
+```
+
+### Color Comparison
+
+| Variable | Textual Default | Rovr/Nord Style | Effect |
+|----------|-----------------|-----------------|--------|
+| `$primary` | `#0178d4` (bright blue) | `#88C0D0` (muted teal) | Active tabs, accents |
+| `$background` | `#121212` (pure dark) | (not set) | Overall background |
+| `$foreground` | `#e0e0e0` (white-ish) | (not set) | Text color |
+
+### Enabling Transparent Backgrounds
+
+CSS `background: transparent` alone isn't enough. Textual still renders a solid color from the theme. To get true transparency (terminal background shows through), enable ANSI color mode:
+
+```python
+class MyApp(App):
+    def on_mount(self) -> None:
+        self.register_theme(MY_THEME)
+        self.theme = "my-app"
+
+        # CRITICAL: Enable ANSI mode for transparent backgrounds
+        self.ansi_color = True
+```
+
+**Why this works:** ANSI mode tells Textual to use the terminal's native colors instead of rendering its own. Background becomes `Color(0, 0, 0, ansi=-1)` which means "use terminal default."
+
+**Don't set `background` in your theme** if you want transparency. The theme should only define accent colors:
+
+```python
+# WRONG - solid background
+Theme(
+    name="my-theme",
+    primary="#88C0D0",
+    background="#2E3440",  # This breaks transparency!
+)
+
+# RIGHT - transparent background
+Theme(
+    name="my-theme",
+    primary="#88C0D0",
+    # background not set - terminal shows through
+)
+```
+
+---
+
+## Custom vs Standard Widgets
+
+**Important:** This cookbook references Rovr's styling, which uses **custom widget classes**. When adapting these patterns for standard Textual widgets, you must adjust the CSS selectors.
+
+### Rovr's Custom Widgets
+
+Rovr defines custom widgets like `TablineTab`, `BetterUnderline`, etc.:
+
+```python
+# Rovr's custom tab widget
+class TablineTab(Tab):
+    """Custom tab with additional features."""
+    pass
+```
+
+```tcss
+/* Rovr's CSS targets custom class */
+TablineTab {
+    color: auto;
+    opacity: 1 !important;
+}
+
+TablineTab.-active {
+    background: $primary;
+    color: $background;
+}
+```
+
+### Standard Textual Widgets
+
+If you're using Textual's built-in `TabbedContent`, target the standard `Tab` class:
+
+```tcss
+/* Standard Textual CSS */
+Tab {
+    color: auto;
+    opacity: 1 !important;
+}
+
+Tab.-active {
+    background: $primary;
+    color: $background;
+}
+```
+
+### Widget Mapping Reference
+
+| Rovr Custom Widget | Standard Textual Widget | Notes |
+|--------------------|------------------------|-------|
+| `TablineTab` | `Tab` | Individual tab buttons |
+| `Tabline` | `Tabs` | Tab bar container |
+| `BetterUnderline` | `Underline` | Tab indicator bar |
+| Custom modals | `ModalScreen` | Rovr has styled variants |
+
+### When to Create Custom Widgets
+
+Create custom widget classes when you need:
+- Additional reactive attributes
+- Custom rendering logic
+- Event handling beyond styling
+- Reusable components across your app
+
+For purely visual changes, standard widgets with CSS are sufficient.
+
+---
+
+## Built-in Widget Limitations
+
+Some Textual built-in widgets use internal Rich markup for rendering that **does not respect CSS styling or ANSI transparency mode**. You must replace these with custom implementations.
+
+### Footer Widget
+
+**Problem:** Textual's built-in `Footer` widget renders key bindings using Rich's internal styling. Setting `background: transparent` in CSS or enabling `ansi_color = True` has no effect - the footer renders with solid backgrounds (typically `#d9d9d9`) that make it illegible in ANSI mode.
+
+**Solution:** Replace `Footer` with a custom `HorizontalGroup`:
+
+```python
+from textual.containers import HorizontalGroup
+from textual.widgets import Static
+
+class MyApp(App):
+    def compose(self) -> ComposeResult:
+        yield Header()
+        # ... main content ...
+
+        # Custom footer instead of Footer()
+        with HorizontalGroup(id="footer"):
+            yield Static(" q", classes="footer-key")
+            yield Static("Quit", classes="footer-label")
+            yield Static(" r", classes="footer-key")
+            yield Static("Refresh", classes="footer-label")
+```
+
+```tcss
+#footer {
+    dock: bottom;
+    height: 1;
+    background: transparent;
+}
+
+#footer > * {
+    background: transparent;
+}
+
+.footer-key {
+    color: $primary;
+    text-style: bold;
+    width: auto;
+}
+
+.footer-label {
+    color: $foreground;
+    width: auto;
+    padding: 0 1;
+}
+```
+
+### Header Widget
+
+Textual's `Header` widget **does** respect CSS transparency and ANSI mode, so you can use it directly:
+
+```tcss
+Header {
+    background: transparent;
+    color: $foreground;
+}
+
+HeaderTitle {
+    background: transparent;
+    color: $foreground;
+}
+```
+
+However, Rovr uses a custom `HeaderArea` for more control over layout (tabs, clock positioning). Create a custom header when you need:
+- Custom layout (tabs, breadcrumbs, status indicators)
+- Dynamic content that the standard Header doesn't support
+- Consistent styling approach with your custom footer
+
+### Summary
+
+| Widget | Respects CSS/ANSI? | Recommendation |
+|--------|-------------------|----------------|
+| `Header` | Yes | Use standard, or custom for complex layouts |
+| `Footer` | **No** | Must use custom `HorizontalGroup` |
+| `Tab` | Yes | Use standard |
+| `TabbedContent` | Yes | Use standard |
 
 ---
 

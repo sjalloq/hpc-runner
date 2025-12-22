@@ -5,10 +5,13 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hpc_runner.core.config import get_config
+from hpc_runner.core.exceptions import AccountingNotAvailable, JobNotFoundError
+from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
 from hpc_runner.schedulers.base import BaseScheduler
 from hpc_runner.schedulers.sge.args import (
@@ -25,6 +28,7 @@ from hpc_runner.schedulers.sge.args import (
 from hpc_runner.schedulers.sge.parser import (
     parse_qacct_output,
     parse_qstat_plain,
+    parse_qstat_xml,
     parse_qsub_output,
     state_to_status,
 )
@@ -332,3 +336,120 @@ class SGEScheduler(BaseScheduler):
             cmd.extend(job.command)
 
         return cmd
+
+    # -------------------------------------------------------------------------
+    # TUI Monitor API (stubs - to be implemented in Stage 5 and Stage 14)
+    # -------------------------------------------------------------------------
+
+    def list_active_jobs(
+        self,
+        user: str | None = None,
+        status: set[JobStatus] | None = None,
+        queue: str | None = None,
+    ) -> list[JobInfo]:
+        """List active SGE jobs using qstat -xml.
+
+        Args:
+            user: Filter by username. None = all users.
+            status: Filter by status set. None = all active statuses.
+            queue: Filter by queue name. None = all queues.
+
+        Returns:
+            List of JobInfo for matching active jobs.
+        """
+        # Build qstat command
+        cmd = ["qstat", "-xml"]
+        if user:
+            cmd.extend(["-u", user])
+        else:
+            # Show all users' jobs
+            cmd.extend(["-u", "*"])
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError:
+            # qstat failed - likely no jobs or scheduler not available
+            return []
+        except FileNotFoundError:
+            # qstat not found
+            return []
+
+        # Parse XML output
+        parsed_jobs = parse_qstat_xml(result.stdout)
+
+        # Convert to JobInfo and apply filters
+        jobs: list[JobInfo] = []
+        for job_id, job_data in parsed_jobs.items():
+            # Convert state to JobStatus
+            state_str = job_data.get("state", "")
+            job_status = state_to_status(state_str)
+
+            # Apply status filter
+            if status is not None and job_status not in status:
+                continue
+
+            # Apply queue filter
+            job_queue = job_data.get("queue")
+            if queue is not None and job_queue != queue:
+                continue
+
+            # Build JobInfo
+            job_info = JobInfo(
+                job_id=job_id,
+                name=job_data.get("name", job_id),
+                user=job_data.get("user", "unknown"),
+                status=job_status,
+                queue=job_queue,
+                cpu=job_data.get("slots"),
+            )
+
+            # Add timing info if available
+            if "submit_time" in job_data:
+                job_info.submit_time = datetime.fromtimestamp(job_data["submit_time"])
+            if "start_time" in job_data:
+                job_info.start_time = datetime.fromtimestamp(job_data["start_time"])
+                # Calculate runtime for running jobs
+                if job_info.status == JobStatus.RUNNING:
+                    from datetime import timedelta
+                    job_info.runtime = datetime.now() - job_info.start_time
+
+            # Array task ID
+            if "array_task_id" in job_data:
+                try:
+                    job_info.array_task_id = int(job_data["array_task_id"])
+                except ValueError:
+                    pass  # Could be a range like "1-10"
+
+            jobs.append(job_info)
+
+        return jobs
+
+    def list_completed_jobs(
+        self,
+        user: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        exit_code: int | None = None,
+        queue: str | None = None,
+        limit: int = 100,
+    ) -> list[JobInfo]:
+        """List completed SGE jobs from qacct.
+
+        TODO: Implement in Stage 14 using qacct.
+        """
+        raise NotImplementedError("SGE list_completed_jobs() not yet implemented")
+
+    def has_accounting(self) -> bool:
+        """Check if SGE accounting is available.
+
+        TODO: Implement in Stage 14 by testing qacct availability.
+        """
+        # Stub: assume accounting is available (will be properly checked later)
+        return True
+
+    def get_job_details(self, job_id: str) -> JobInfo:
+        """Get detailed information for an SGE job.
+
+        TODO: Implement using qstat -j for active jobs, qacct for completed.
+        """
+        raise NotImplementedError("SGE get_job_details() not yet implemented")

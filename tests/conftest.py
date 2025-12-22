@@ -28,7 +28,43 @@ def mock_sge_commands():
             if cmd[0] == "qsub":
                 result.stdout = 'Your job 12345 ("test_job") has been submitted\n'
             elif cmd[0] == "qstat":
-                if "-j" in cmd:
+                if "-xml" in cmd:
+                    # XML output for list_active_jobs
+                    result.stdout = """<?xml version='1.0'?>
+<job_info>
+  <queue_info>
+    <job_list state="running">
+      <JB_job_number>12345</JB_job_number>
+      <JB_name>running_job</JB_name>
+      <JB_owner>testuser</JB_owner>
+      <state>r</state>
+      <queue_name>batch.q@node1</queue_name>
+      <slots>4</slots>
+      <JB_submission_time>1704110400</JB_submission_time>
+      <JAT_start_time>1704110460</JAT_start_time>
+    </job_list>
+  </queue_info>
+  <job_info>
+    <job_list state="pending">
+      <JB_job_number>12346</JB_job_number>
+      <JB_name>pending_job</JB_name>
+      <JB_owner>testuser</JB_owner>
+      <state>qw</state>
+      <slots>2</slots>
+      <JB_submission_time>1704110500</JB_submission_time>
+    </job_list>
+    <job_list state="pending">
+      <JB_job_number>12347</JB_job_number>
+      <JB_name>other_user_job</JB_name>
+      <JB_owner>otheruser</JB_owner>
+      <state>qw</state>
+      <queue_name>gpu.q@node2</queue_name>
+      <slots>8</slots>
+    </job_list>
+  </job_info>
+</job_info>
+"""
+                elif "-j" in cmd:
                     result.stdout = "job_number: 12345\n"
                 else:
                     result.stdout = """job-ID  prior   name       user         state submit/start at     queue                          slots ja-task-ID

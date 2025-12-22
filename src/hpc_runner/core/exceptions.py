@@ -27,3 +27,12 @@ class ConfigNotFoundError(ConfigError):
 
 class ValidationError(HPCToolsError):
     """Validation error for job parameters."""
+
+
+class AccountingNotAvailable(SchedulerError):
+    """Job accounting/history is not enabled on this cluster.
+
+    Raised when attempting to query historical job data (e.g., via qacct
+    for SGE or sacct for Slurm) but the scheduler's accounting system
+    is not configured or accessible.
+    """

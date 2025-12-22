@@ -23,6 +23,41 @@ $scrollbar-background: $primary-muted;
     scrollbar-color-active: $scrollbar-active;
 }
 
+/* Header and Footer - transparent to blend with terminal */
+Header {
+    background: transparent;
+    color: $foreground;
+}
+
+HeaderTitle {
+    background: transparent;
+    color: $foreground;
+}
+
+/* Custom footer (not using Textual's Footer widget for ANSI transparency) */
+#footer {
+    dock: bottom;
+    height: 1;
+    background: transparent;
+}
+
+#footer > * {
+    background: transparent;
+}
+
+.footer-key {
+    color: $primary;
+    text-style: bold;
+    width: auto;
+    padding: 0 0;
+}
+
+.footer-label {
+    color: $foreground;
+    width: auto;
+    padding: 0 1;
+}
+
 /* Base panel styling */
 .panel {
     background: transparent;
@@ -40,4 +75,163 @@ $scrollbar-background: $primary-muted;
 /* Hide utility */
 .hidden {
     display: none;
+}
+
+/* ============================================
+   Tabbed Content Styling
+   ============================================ */
+
+TabbedContent {
+    height: 1fr;
+    background: transparent;
+}
+
+/* Content switcher between tabs and panes */
+ContentSwitcher {
+    background: transparent;
+}
+
+/* Tab bar container */
+Tabs {
+    dock: top;
+    background: transparent;
+}
+
+/* Tab underline bar */
+Underline > .underline--bar {
+    color: $primary;
+    background: $background-lighten-1;
+}
+
+Underline:ansi > .underline--bar {
+    background: $background-lighten-1;
+}
+
+/* Individual tab styling
+ * Note: This styles Textual's standard Tab widget.
+ * Rovr uses custom TablineTab widgets - if using custom widgets,
+ * adjust selectors accordingly.
+ */
+Tab {
+    padding: 0 2;
+    color: $foreground-darken-1;
+    background: transparent;
+    /* Transparency reset pattern - prevents default dimming */
+    opacity: 1 !important;
+    background-tint: transparent !important;
+    text-opacity: 1 !important;
+    tint: transparent !important;
+}
+
+Tab:hover {
+    background: $boost;
+    color: $foreground;
+}
+
+Tab:hover:ansi {
+    background: transparent;
+}
+
+Tab:focus {
+    /* Override default focus highlight */
+    background: transparent;
+    text-style: none;
+}
+
+/* Active tab: filled with $primary color
+ * The muted appearance comes from the THEME colors, not transparency.
+ * With Nord-style theme, $primary is teal (#88C0D0) not bright blue.
+ */
+Tab.-active {
+    background: $primary;
+    color: $background;
+    text-style: bold;
+}
+
+Tab.-active:hover,
+Tab.-active:focus {
+    background: $primary;
+    color: $background;
+}
+
+/* Tab pane content areas */
+TabPane {
+    padding: 1 2;
+    background: transparent;
+    /* Transparency reset */
+    opacity: 1 !important;
+    background-tint: transparent !important;
+}
+
+/* Placeholder styling for empty tab content */
+#active-placeholder,
+#completed-placeholder {
+    width: 100%;
+    height: 100%;
+    content-align: center middle;
+    color: $foreground-darken-2;
+}
+
+/* ============================================
+   Job Table Styling
+   ============================================ */
+
+JobTable {
+    height: 1fr;
+    background: transparent;
+    /* Transparency reset */
+    opacity: 1 !important;
+    background-tint: transparent !important;
+}
+
+/* DataTable header row */
+JobTable > .datatable--header {
+    background: transparent;
+    color: $primary;
+    text-style: bold;
+}
+
+/* DataTable cells */
+JobTable > .datatable--header-cell {
+    background: transparent;
+    color: $primary;
+}
+
+/* Cursor/selected row */
+JobTable > .datatable--cursor {
+    background: $primary;
+    color: $background;
+}
+
+/* Hover state */
+JobTable > .datatable--hover {
+    background: $surface;
+}
+
+/* Zebra striping - odd rows */
+JobTable > .datatable--odd-row {
+    background: transparent;
+}
+
+/* Zebra striping - even rows */
+JobTable > .datatable--even-row {
+    background: $background-lighten-1;
+}
+
+/* When table has focus */
+JobTable:focus {
+    border: $border-style $border;
+}
+
+/* When table doesn't have focus */
+JobTable:blur {
+    border: $border-style $border-blurred;
+}
+
+/* Empty table message */
+.job-table-empty {
+    width: 100%;
+    height: 100%;
+    content-align: center middle;
+    color: $foreground-darken-2;
 }
