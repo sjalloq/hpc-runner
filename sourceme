@@ -3,15 +3,10 @@
 VENV=.venv
 CLEAN=false
 
-# Check if --clean flag is provided
 for arg in "$@"; do
-  if [[ "$arg" == "--clean" ]]; then
-    CLEAN=true
-    break
-  fi
+  [[ "$arg" == "--clean" ]] && CLEAN=true && break
 done
 
-# If --clean flag is set and VENV exists, remove it
 if [[ "$CLEAN" == true && -d "$VENV" ]]; then
   echo "Cleaning existing virtual environment..."
   rm -rf "$VENV"
@@ -19,10 +14,9 @@ fi
 
 if [[ ! -d "$VENV" ]]; then
   echo "Creating new virtual environment..."
-  python3.11 -m venv "$VENV"
+  uv venv --python 3.11 "$VENV"
   source "$VENV/bin/activate"
-  pip install -U pip wheel
-  pip install -e ".[all]"
+  uv pip install -e ".[all]"
 else
   echo "Using existing virtual environment..."
   source "$VENV/bin/activate"
