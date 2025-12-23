@@ -401,6 +401,7 @@ class SGEScheduler(BaseScheduler):
                 status=job_status,
                 queue=job_queue,
                 cpu=job_data.get("slots"),
+                node=job_data.get("node"),
             )
 
             # Add timing info if available

@@ -230,6 +230,20 @@ class HpcMonitorApp(App[None]):
         table = self.query_one("#active-jobs", JobTable)
         table.update_jobs(filtered)
 
+        # Clear detail panel if filtered list is empty or selected job no longer in list
+        try:
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            if not filtered:
+                # No jobs after filtering - clear detail panel
+                detail_panel.update_job(None)
+            elif detail_panel._job is not None:
+                # Check if currently displayed job is still in filtered list
+                current_job_id = detail_panel._job.job_id
+                if not any(j.job_id == current_job_id for j in filtered):
+                    detail_panel.update_job(None)
+        except Exception:
+            pass
+
         # Update subtitle with counts
         total = len(self._all_jobs)
         shown = len(filtered)

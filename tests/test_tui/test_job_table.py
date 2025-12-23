@@ -58,12 +58,13 @@ class TestJobTable:
             table = app.query_one(JobTable)
 
             # Check column count
-            assert len(table.columns) == 6
+            assert len(table.columns) == 7
 
             # Check column keys
             column_keys = [col.key for col in table.columns.values()]
             assert "job_id" in column_keys
             assert "name" in column_keys
+            assert "user" in column_keys
             assert "queue" in column_keys
             assert "status" in column_keys
             assert "runtime" in column_keys
@@ -189,6 +190,6 @@ class TestJobTable:
             job = make_job("12345", queue=None)
             table.update_jobs([job])
 
-            # Get row data - queue column (index 2) should be "—"
+            # Get row data - queue column (index 3, after user) should be "—"
             row = table.get_row_at(0)
-            assert row[2] == "—"
+            assert row[3] == "—"

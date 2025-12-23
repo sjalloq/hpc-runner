@@ -29,6 +29,7 @@ class JobTable(DataTable):
     COLUMNS = [
         ("job_id", "ID", 8),
         ("name", "Name", 20),
+        ("user", "User", 10),
         ("queue", "Queue", 12),
         ("status", "Status", 10),
         ("runtime", "Runtime", 10),
@@ -72,6 +73,16 @@ class JobTable(DataTable):
         Args:
             jobs: List of JobInfo objects to display.
         """
+        # Save current selection to restore after update
+        selected_job_id: str | None = None
+        if self.cursor_row is not None and self.cursor_row >= 0:
+            try:
+                row_key = self.get_row_at(self.cursor_row)
+                if row_key:
+                    selected_job_id = str(row_key[0])
+            except Exception:
+                pass
+
         # Clear existing data
         self.clear()
         self._jobs.clear()
@@ -82,12 +93,27 @@ class JobTable(DataTable):
             self.add_row(
                 job.job_id,
                 job.name,
+                job.user,
                 job.queue or "—",
                 self._format_status(job.status),
                 job.runtime_display,
                 job.resources_display,
                 key=job.job_id,
             )
+
+        # Restore selection if the job still exists
+        if selected_job_id and selected_job_id in self._jobs:
+            try:
+                self.move_cursor(row=self._get_row_index(selected_job_id))
+            except Exception:
+                pass
+
+    def _get_row_index(self, job_id: str) -> int | None:
+        """Get the row index for a job ID."""
+        for idx, row_key in enumerate(self.rows.keys()):
+            if str(row_key.value) == job_id:
+                return idx
+        return None
 
     def _format_status(self, status: JobStatus) -> str:
         """Format status for display with color hints.

@@ -92,8 +92,10 @@ class DetailPanel(Vertical):
                 yield Static("Node:", classes="detail-label")
                 yield Static("", id="detail-node", classes="detail-value")
 
-            # Row 4: Submit time
+            # Row 4: User and Submit time
             with Horizontal(classes="detail-row"):
+                yield Static("User:", classes="detail-label")
+                yield Static("", id="detail-user", classes="detail-value")
                 yield Static("Submitted:", classes="detail-label")
                 yield Static("", id="detail-submitted", classes="detail-value")
 
@@ -138,6 +140,7 @@ class DetailPanel(Vertical):
         self.query_one("#detail-runtime", Static).update(job.runtime_display)
         self.query_one("#detail-resources", Static).update(job.resources_display)
         self.query_one("#detail-node", Static).update(job.node or "—")
+        self.query_one("#detail-user", Static).update(job.user)
 
         # Format submit time
         if job.submit_time:

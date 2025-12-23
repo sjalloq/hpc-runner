@@ -76,9 +76,14 @@ def _parse_job_element(elem: ET.Element) -> dict[str, Any] | None:
     # Queue - running jobs have queue_name, pending may have hard_req_queue
     queue_elem = elem.find("queue_name")
     if queue_elem is not None and queue_elem.text:
-        # Format is usually "queue@host", extract just the queue name
+        # Format is usually "queue@host", extract queue and host separately
         queue_full = queue_elem.text
-        job_info["queue"] = queue_full.split("@")[0] if "@" in queue_full else queue_full
+        if "@" in queue_full:
+            queue_name, host = queue_full.split("@", 1)
+            job_info["queue"] = queue_name
+            job_info["node"] = host
+        else:
+            job_info["queue"] = queue_full
     else:
         # Check for requested queue (pending jobs)
         hard_queue = elem.find("hard_req_queue")
