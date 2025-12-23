@@ -22,6 +22,7 @@ from textual.widgets import Header, Static, TabbedContent, TabPane
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.schedulers import get_scheduler
 from hpc_runner.tui.components import (
+    DetailPanel,
     FilterPanel,
     FilterStatusLine,
     HelpPopup,
@@ -103,6 +104,7 @@ class HpcMonitorApp(App[None]):
                 with Vertical(id="active-content"):
                     yield FilterStatusLine()
                     yield JobTable(id="active-jobs")
+                    yield DetailPanel(id="detail-panel")
             with TabPane("Completed", id="completed-tab"):
                 yield Static(
                     "Completed jobs will appear here", id="completed-placeholder"
@@ -272,3 +274,25 @@ class HpcMonitorApp(App[None]):
         """Handle inline search changes."""
         self._search_filter = event.value
         self._apply_filters_and_display()
+
+    def on_job_table_job_selected(self, event: JobTable.JobSelected) -> None:
+        """Handle job selection in the table."""
+        try:
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            detail_panel.update_job(event.job_info)
+        except Exception:
+            pass
+
+    def on_detail_panel_view_logs(self, event: DetailPanel.ViewLogs) -> None:
+        """Handle request to view job logs."""
+        # TODO: Implement log viewer modal in Stage 13
+        job = event.job
+        stream = event.stream
+        path = job.stdout_path if stream == "stdout" else job.stderr_path
+        self.notify(f"Log viewer coming soon: {path}", timeout=3)
+
+    def on_detail_panel_cancel_job(self, event: DetailPanel.CancelJob) -> None:
+        """Handle request to cancel a job."""
+        # TODO: Implement cancel confirmation in Stage 12
+        job = event.job
+        self.notify(f"Cancel job {job.job_id}? (Coming soon)", timeout=3)

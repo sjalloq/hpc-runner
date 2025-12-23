@@ -74,18 +74,60 @@ Jinja2 templates for job scripts. Each scheduler has its own template in `schedu
 
 ## TUI Development Rules
 
-**IMPORTANT: After ANY edit to TUI code (app.py, monitor.tcss, or related files), you MUST:**
+### Styling Requirements (CRITICAL)
 
-1. Run the snapshot review tool and verify all checks pass:
-   ```bash
-   python -m hpc_runner.tui.snapshot
-   ```
+All TUI components MUST follow these styling patterns. **Do NOT use DEFAULT_CSS in components** - put all styles in `monitor.tcss` for consistency.
 
-2. Review the output for:
-   - All backgrounds should be transparent (ANSI_DEFAULT or a=0)
-   - Active tab should be `#88c0d0` (muted teal)
-   - No solid background colors breaking transparency
+**Core Principles:**
+- **Transparent backgrounds everywhere** - use `background: transparent` on all widgets
+- **Rounded borders** - use `border: round $border-blurred` (unfocused) or `border: round $border` (focused)
+- **No solid colored backgrounds** except for highlighted/selected items
+- **Border titles in $primary** - use `border-title-color: $primary`
 
-3. If any check fails, fix the issue before considering the edit complete.
+**Standard Widget Patterns:**
+```css
+/* Panels and containers */
+MyWidget {
+    background: transparent;
+    border: round $border-blurred;
+    border-title-color: $primary;
+    border-title-background: transparent;
+}
 
-This prevents visual regressions like accidentally introducing solid backgrounds when transparency is expected.
+MyWidget:focus, MyWidget:focus-within {
+    border: round $border;
+}
+
+/* Buttons - transparent with border */
+Button {
+    background: transparent;
+    border: round $border-blurred;
+    color: $foreground;
+}
+
+Button:hover {
+    background: $boost;
+    border: round $border;
+}
+
+/* Popups/overlays - transparent background */
+Popup {
+    layer: overlay;
+    background: transparent;
+    border: round $primary;
+}
+```
+
+**CSS Variables (defined in monitor.tcss):**
+- `$border-blurred` - muted border for unfocused elements
+- `$border` - bright border for focused elements
+- `$primary` - teal accent color (#88C0D0)
+- `$error` - red for destructive actions
+
+**Verification:**
+
+After ANY edit to TUI code, verify visually that:
+1. All backgrounds are transparent (terminal shows through)
+2. Borders are rounded (╭╮╰╯ characters)
+3. No solid color blocks except for selected/highlighted items
+4. Focus states brighten borders appropriately

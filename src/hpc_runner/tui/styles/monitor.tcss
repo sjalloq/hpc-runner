@@ -305,3 +305,93 @@ FilterPanel:focus {
 #search-container:focus-within {
     border: round $border;
 }
+
+/* ============================================
+   Detail Panel
+   ============================================ */
+
+DetailPanel {
+    height: auto;
+    min-height: 8;
+    max-height: 12;
+    background: transparent;
+    border: round $border-blurred;
+    border-title-color: $primary;
+    border-title-background: transparent;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+DetailPanel:focus-within {
+    border: round $border;
+}
+
+#detail-content {
+    height: auto;
+    background: transparent;
+}
+
+.detail-row {
+    height: 1;
+    background: transparent;
+}
+
+.detail-label {
+    width: 12;
+    color: $primary;
+    background: transparent;
+}
+
+.detail-value {
+    width: 1fr;
+    background: transparent;
+}
+
+#detail-buttons {
+    height: 3;
+    background: transparent;
+    margin-top: 1;
+}
+
+#detail-buttons > Button {
+    margin-right: 1;
+    min-width: 12;
+    background: transparent;
+    border: round $border-blurred;
+    color: $foreground;
+}
+
+#detail-buttons > Button:hover {
+    background: $boost;
+    border: round $border;
+}
+
+#detail-buttons > Button:focus {
+    border: round $border;
+}
+
+#detail-buttons > Button.-disabled {
+    color: $foreground-darken-2;
+    border: round $border-disabled;
+}
+
+#detail-buttons > #btn-cancel {
+    color: $error;
+    border: round $error-darken-2;
+}
+
+#detail-buttons > #btn-cancel:hover {
+    border: round $error;
+}
+
+#detail-buttons > #btn-cancel:focus {
+    border: round $error;
+}
+
+#no-selection {
+    height: 100%;
+    width: 100%;
+    content-align: center middle;
+    color: $foreground-darken-2;
+    background: transparent;
+}
