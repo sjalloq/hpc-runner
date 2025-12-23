@@ -97,10 +97,15 @@ Tabs {
     background: transparent;
 }
 
-/* Tab underline bar */
+/* Tab underline bar - muted when unfocused */
 Underline > .underline--bar {
-    color: $primary;
+    color: $primary-darken-2;
     background: $background-lighten-1;
+}
+
+/* Tab underline bar - bright when focused */
+Tabs:focus-within Underline > .underline--bar {
+    color: $primary;
 }
 
 Underline:ansi > .underline--bar {
@@ -138,14 +143,17 @@ Tab:focus {
     text-style: none;
 }
 
-/* Active tab: filled with $primary color
- * The muted appearance comes from the THEME colors, not transparency.
- * With Nord-style theme, $primary is teal (#88C0D0) not bright blue.
- */
+/* Active tab: muted when tab bar unfocused, bright when focused */
 Tab.-active {
-    background: $primary;
+    background: $primary-darken-2;
     color: $background;
     text-style: bold;
+}
+
+/* Active tab brightens when tab bar has focus */
+Tabs:focus-within Tab.-active {
+    background: $primary;
+    color: $background;
 }
 
 Tab.-active:hover,
@@ -156,7 +164,7 @@ Tab.-active:focus {
 
 /* Tab pane content areas */
 TabPane {
-    padding: 1 2;
+    padding: 1 1;
     background: transparent;
     /* Transparency reset */
     opacity: 1 !important;
@@ -182,6 +190,12 @@ JobTable {
     /* Transparency reset */
     opacity: 1 !important;
     background-tint: transparent !important;
+    /* Match border title style with filter panels */
+    border: $border-style $border-blurred;
+    border-title-color: $primary;
+    border-title-background: transparent;
+    /* Add padding inside the border (horizontal only, vertical not possible in half-rows) */
+    padding: 0 2;
 }
 
 /* DataTable header row */
@@ -223,10 +237,7 @@ JobTable:focus {
     border: $border-style $border;
 }
 
-/* When table doesn't have focus */
-JobTable:blur {
-    border: $border-style $border-blurred;
-}
+/* When table doesn't have focus - already handled by default */
 
 /* Empty table message */
 .job-table-empty {
@@ -237,7 +248,7 @@ JobTable:blur {
 }
 
 /* ============================================
-   Filter Bar Styling
+   Filter Status Line & Popups
    ============================================ */
 
 #active-content {
@@ -245,44 +256,52 @@ JobTable:blur {
     background: transparent;
 }
 
-FilterBar {
-    height: auto;
-    min-height: 3;
+/* Filter status bar with bordered panels */
+FilterStatusLine {
+    height: 3;
+    width: 100%;
+    background: transparent;
+    padding: 0 0;
+    overflow: hidden;
+}
+
+/* Filter panels (Status, Queue) */
+FilterPanel {
+    height: 3;
+    width: auto;
+    min-width: 14;
+    padding: 0 1;
+    margin: 0 1 0 0;
+    content-align: center middle;
+    background: transparent;
+    border: round $border-blurred;
+    border-title-color: $primary;
+    border-title-background: transparent;
+}
+
+FilterPanel:focus {
+    border: round $border;
+}
+
+#search-container {
+    width: 1fr;
+    height: 3;
+    margin: 0;
     padding: 0 1;
     background: transparent;
-    /* Transparency reset */
-    opacity: 1 !important;
-    background-tint: transparent !important;
+    border: round $border-blurred;
+    border-title-color: $primary;
+    border-title-background: transparent;
 }
 
-FilterBar > Static.filter-label {
-    width: auto;
-    padding: 1 1 0 0;
-    color: $foreground-darken-1;
-}
-
-FilterBar > Select {
-    width: 16;
-    margin: 0 1 0 0;
+#search-container > Input {
     background: transparent;
-}
-
-FilterBar > Select > SelectCurrent {
-    background: $surface;
-}
-
-FilterBar > Select:focus > SelectCurrent {
-    background: $primary;
-    color: $background;
-}
-
-FilterBar > Input {
-    width: 24;
-    background: $surface;
     border: none;
+    width: 100%;
+    height: 1;
 }
 
-FilterBar > Input:focus {
-    background: $surface;
-    border: tall $primary;
+/* Search box highlights when focused */
+#search-container:focus-within {
+    border: round $border;
 }

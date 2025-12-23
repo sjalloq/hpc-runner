@@ -21,7 +21,12 @@ from textual.widgets import Header, Static, TabbedContent, TabPane
 
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.schedulers import get_scheduler
-from hpc_runner.tui.components import FilterBar, JobTable
+from hpc_runner.tui.components import (
+    FilterPanel,
+    FilterStatusLine,
+    HelpPopup,
+    JobTable,
+)
 from hpc_runner.tui.providers import JobProvider
 
 
@@ -60,7 +65,9 @@ class HpcMonitorApp(App[None]):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("u", "toggle_user", "Toggle User"),
+        Binding("/", "filter_search", "Search", show=False),
         Binding("s", "screenshot", "Screenshot", show=False),
+        Binding("question_mark", "help", "Help", show=False),
     ]
 
     # Reactive attributes - changes automatically trigger watch methods
@@ -94,7 +101,7 @@ class HpcMonitorApp(App[None]):
         with TabbedContent(id="tabs"):
             with TabPane("Active", id="active-tab"):
                 with Vertical(id="active-content"):
-                    yield FilterBar(id="active-filter-bar")
+                    yield FilterStatusLine()
                     yield JobTable(id="active-jobs")
             with TabPane("Completed", id="completed-tab"):
                 yield Static(
@@ -107,7 +114,11 @@ class HpcMonitorApp(App[None]):
             yield Static(" r", classes="footer-key")
             yield Static("Refresh", classes="footer-label")
             yield Static(" u", classes="footer-key")
-            yield Static("Toggle User", classes="footer-label")
+            yield Static("User", classes="footer-label")
+            yield Static(" /", classes="footer-key")
+            yield Static("Search", classes="footer-label")
+            yield Static(" ?", classes="footer-key")
+            yield Static("Help", classes="footer-label")
 
     def on_mount(self) -> None:
         """Called when app is mounted - set up timers and initial data fetch."""
@@ -129,6 +140,10 @@ class HpcMonitorApp(App[None]):
             pause=False,  # Start immediately
         )
 
+        # Mount help popup
+        self._help_popup = HelpPopup(id="help-popup")
+        self.mount(self._help_popup)
+
         # Fetch initial data
         self._refresh_active_jobs()
 
@@ -145,6 +160,10 @@ class HpcMonitorApp(App[None]):
         """Save a screenshot to the current directory."""
         path = self.save_screenshot(path="./")
         self.notify(f"Screenshot saved: {path}", timeout=3)
+
+    def action_help(self) -> None:
+        """Show help popup."""
+        self._help_popup.show_popup()
 
     def action_refresh(self) -> None:
         """Manually trigger a data refresh."""
@@ -167,11 +186,11 @@ class HpcMonitorApp(App[None]):
             # Store all jobs for client-side filtering
             self._all_jobs = jobs
 
-            # Update queue dropdown with available queues
+            # Update queue filter with available queues
             queues = sorted(set(j.queue for j in jobs if j.queue))
             try:
-                filter_bar = self.query_one("#active-filter-bar", FilterBar)
-                filter_bar.update_queues(queues)
+                status_line = self.query_one(FilterStatusLine)
+                status_line.update_queues(queues)
             except Exception:
                 pass
 
@@ -233,9 +252,23 @@ class HpcMonitorApp(App[None]):
         # Trigger refresh with new filter
         self._refresh_active_jobs()
 
-    def on_filter_bar_filter_changed(self, event: FilterBar.FilterChanged) -> None:
-        """Handle filter bar changes."""
-        self._status_filter = event.status
-        self._queue_filter = event.queue
-        self._search_filter = event.search
+    def action_filter_search(self) -> None:
+        """Focus the search input."""
+        self.query_one(FilterStatusLine).focus_search()
+
+    def on_filter_panel_filter_changed(
+        self, event: FilterPanel.FilterChanged
+    ) -> None:
+        """Handle filter panel changes (arrow key navigation)."""
+        if event.filter_type == "status":
+            self._status_filter = event.value
+        elif event.filter_type == "queue":
+            self._queue_filter = event.value
+        self._apply_filters_and_display()
+
+    def on_filter_status_line_search_changed(
+        self, event: FilterStatusLine.SearchChanged
+    ) -> None:
+        """Handle inline search changes."""
+        self._search_filter = event.value
         self._apply_filters_and_display()

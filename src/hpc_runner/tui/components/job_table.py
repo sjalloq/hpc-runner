@@ -62,6 +62,7 @@ class JobTable(DataTable):
 
     def on_mount(self) -> None:
         """Set up columns when table is mounted."""
+        self.border_title = "Jobs"
         for key, label, width in self.COLUMNS:
             self.add_column(label, key=key, width=width)
 

@@ -1,6 +1,15 @@
 """TUI components for HPC Monitor."""
 
-from .filter_bar import FilterBar
+from .filter_popup import (
+    FilterPanel,
+    FilterStatusLine,
+    HelpPopup,
+)
 from .job_table import JobTable
 
-__all__ = ["FilterBar", "JobTable"]
+__all__ = [
+    "FilterPanel",
+    "FilterStatusLine",
+    "HelpPopup",
+    "JobTable",
+]
