@@ -30,7 +30,7 @@ class JobTable(DataTable):
     # Fixed columns have set widths; "name" gets remaining space
     FIXED_COLUMNS = [
         ("job_id", "ID", 10),
-        ("user", "User", 12),
+        ("user", "User", 14),
         ("queue", "Queue", 12),
         ("status", "Status", 10),
         ("runtime", "Runtime", 12),
@@ -38,7 +38,8 @@ class JobTable(DataTable):
     ]
     # Name column expands to fill remaining space
     NAME_COL_MIN = 15  # Minimum width for name column
-    NAME_COL_MAX = 60  # Maximum width for name column
+    # Overhead: border(2) + CSS padding(4) + scrollbar(1) + column spacing(~14 for 7 cols)
+    TABLE_OVERHEAD = 21
 
     def __init__(
         self,
@@ -70,17 +71,15 @@ class JobTable(DataTable):
         """Calculate the width for the name column based on available space."""
         # Sum of fixed column widths
         fixed_total = sum(w for _, _, w in self.FIXED_COLUMNS)
-        # Account for borders, padding, scrollbar, column separators
-        # Border (2) + padding (4 from CSS) + scrollbar (1) + separators (~7)
-        overhead = 14
-        remaining = available_width - fixed_total - overhead
-        return max(self.NAME_COL_MIN, min(self.NAME_COL_MAX, remaining))
+        remaining = available_width - fixed_total - self.TABLE_OVERHEAD
+        return max(self.NAME_COL_MIN, remaining)
 
     def on_mount(self) -> None:
         """Set up columns when table is mounted."""
         self.border_title = "Jobs"
-        # Calculate name column width based on current size
-        self._name_col_width = self._calculate_name_width(self.size.width)
+        # Widget size is 0 on mount, use app console size instead
+        console_width = self.app.console.size.width
+        self._name_col_width = self._calculate_name_width(console_width)
         self._setup_columns()
 
     def on_resize(self, event: Resize) -> None:
