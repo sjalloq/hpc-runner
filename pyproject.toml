@@ -53,7 +53,7 @@ all = [
 ]
 
 [project.scripts]
-hpc = "hpc_runner.cli.main:cli"
+hpc = "hpc_runner.cli.main:main"
 submit = "hpc_runner.cli.submit:main"
 
 [project.urls]

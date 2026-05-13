@@ -16,6 +16,7 @@ from hpc_runner.core.config import (
     find_config_files,
     load_config,
 )
+from hpc_runner.core.exceptions import ConfigError
 
 
 class TestHPCConfig:
@@ -181,6 +182,21 @@ class TestLoadConfig:
         assert config.defaults["cpu"] == 2
         assert config.defaults["mem"] == "8G"
         assert config.schedulers["sge"]["parallel_environment"] == "mpi"
+
+    def test_load_config_raises_on_invalid_toml(self, temp_dir):
+        """Invalid TOML must raise ConfigError, not be silently dropped."""
+        bad_config = temp_dir / "hpc-runner.toml"
+        # Bareword value (e.g. `mem = 16G`) is invalid TOML
+        bad_config.write_text("[tools.cmake]\ncpu = 16\nmem = 16G\n")
+
+        with pytest.raises(ConfigError, match="invalid TOML"):
+            load_config(bad_config)
+
+    def test_load_config_raises_on_unreadable_path(self, temp_dir):
+        """OSError (e.g. path is a directory) must raise ConfigError."""
+        # Pass a directory where a file is expected — open() raises IsADirectoryError
+        with pytest.raises(ConfigError, match="could not read file"):
+            load_config(temp_dir)
 
     def test_load_config_returns_empty_when_no_config(self, temp_dir):
         """Test that loading returns empty config when no config files found."""

@@ -7,12 +7,15 @@ options have single-letter shortcuts for quick interactive use.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 import rich_click as click
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
+
+from hpc_runner.core.exceptions import ConfigError
 
 if TYPE_CHECKING:
     from hpc_runner.core.job import Job
@@ -210,4 +213,8 @@ def _handle_array_job(
 
 def main() -> None:
     """Console script entry point for ``submit``."""
-    submit()
+    try:
+        submit()
+    except ConfigError as e:
+        Console(stderr=True).print(f"[red]Config error:[/red] {e}")
+        sys.exit(1)

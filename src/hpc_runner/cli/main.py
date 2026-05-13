@@ -1,11 +1,14 @@
 """Main CLI entry point using rich-click."""
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
 import rich_click as click
 from rich.console import Console
+
+from hpc_runner.core.exceptions import ConfigError
 
 # Configure rich-click
 click.rich_click.SHOW_ARGUMENTS = True
@@ -82,7 +85,11 @@ cli.add_command(monitor)
 
 def main() -> None:
     """Entry point for console script."""
-    cli()
+    try:
+        cli()
+    except ConfigError as e:
+        Console(stderr=True).print(f"[red]Config error:[/red] {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

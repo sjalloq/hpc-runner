@@ -14,9 +14,14 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib  # type: ignore[import-not-found]
 
+from hpc_runner.core.exceptions import ConfigError
 
 # Environment variable for site/system config
 HPC_CONFIG_ENV_VAR = "HPC_RUNNER_CONFIG"
+
+
+def _config_error(path: Path, message: str) -> ConfigError:
+    return ConfigError(f"{path}: {message}")
 
 
 @dataclass
@@ -193,8 +198,10 @@ def _resolve_extends(config_path: Path, seen: set[Path] | None = None) -> list[P
     try:
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
-    except Exception:
-        return [config_path]
+    except tomllib.TOMLDecodeError as e:
+        raise _config_error(config_path, f"invalid TOML — {e}") from e
+    except OSError as e:
+        raise _config_error(config_path, f"could not read file — {e}") from e
 
     extends = data.get("extends")
     if not extends:
@@ -210,7 +217,8 @@ def _resolve_extends(config_path: Path, seen: set[Path] | None = None) -> list[P
     extends_path = extends_path.resolve()
 
     if not extends_path.exists():
-        # Warning but don't fail - the extends target might not exist yet
+        # Missing extends target is tolerated (target may not exist yet);
+        # invalid TOML is not — the cases are deliberately asymmetric.
         return [config_path]
 
     # Recursively resolve the parent's extends
@@ -301,8 +309,13 @@ def _find_git_root(start: Path) -> Path | None:
 
 def _load_single_config(path: Path) -> dict[str, Any]:
     """Load a single config file and return its data dict."""
-    with open(path, "rb") as f:
-        data: dict[str, Any] = tomllib.load(f)
+    try:
+        with open(path, "rb") as f:
+            data: dict[str, Any] = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise _config_error(path, f"invalid TOML — {e}") from e
+    except OSError as e:
+        raise _config_error(path, f"could not read file — {e}") from e
 
     # Remove 'extends' key - it's metadata, not config
     data.pop("extends", None)
@@ -336,14 +349,10 @@ def load_config(path: Path | str | None = None) -> HPCConfig:
     }
 
     for config_path in config_files:
-        try:
-            data = _load_single_config(config_path)
-            for key in merged:
-                if key in data:
-                    merged[key] = _merge(merged[key], data[key])
-        except Exception:
-            # Skip files that fail to load
-            continue
+        data = _load_single_config(config_path)
+        for key in merged:
+            if key in data:
+                merged[key] = _merge(merged[key], data[key])
 
     config = HPCConfig(
         defaults=merged["defaults"],
