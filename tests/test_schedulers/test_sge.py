@@ -1,11 +1,10 @@
 """Tests for SGE scheduler."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from hpc_runner.core.job import Job
-from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.sge import SGEScheduler
 from hpc_runner.schedulers.sge.parser import (
@@ -167,7 +166,7 @@ class TestSGEScheduler:
 
         script = scheduler.generate_script(job)
 
-        assert '# Prepend to environment variables' in script
+        assert "# Prepend to environment variables" in script
         assert 'export PATH="/new/bin${PATH:+:$PATH}"' in script
 
     def test_generate_script_env_append(self):
@@ -181,7 +180,7 @@ class TestSGEScheduler:
 
         script = scheduler.generate_script(job)
 
-        assert '# Append to environment variables' in script
+        assert "# Append to environment variables" in script
         assert 'export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}/extra/lib"' in script
 
     def test_generate_script_all_env_types(self):
@@ -370,3 +369,102 @@ class TestSGEParserXML:
         job = jobs["77777"]
         assert job["submit_time"] == 1704110400
         assert job["start_time"] == 1704110460
+
+
+class TestSGEAfterok:
+    """afterok emulation via exit-code sentinel files.
+
+    SGE's ``-hold_jid`` is afterany (it releases dependents even when the
+    parent fails), so each job publishes its exit code to a sentinel and
+    afterok dependents verify their parents succeeded before running.
+    """
+
+    def _job_result(self, scheduler, job_id):
+        from hpc_runner.core.result import JobResult
+
+        return JobResult(job_id=job_id, scheduler=scheduler, job=Job("parent", name="p"))
+
+    def test_afterok_emits_publish_and_guard(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler()
+        job = Job(command="run_sim", name="sim")
+        job.after(self._job_result(scheduler, "111"), self._job_result(scheduler, "222"))
+
+        script = scheduler.generate_script(job)
+
+        # Publisher (every job) and guard (afterok only) both present.
+        assert "trap _hpc_publish_rc EXIT" in script
+        assert "afterok guard" in script
+        # Guard iterates over the actual dependency job IDs.
+        assert "for _dep in 111 222 " in script
+        assert str(tmp_path) in script
+
+    def test_afterany_publishes_but_no_guard(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler()
+        job = Job(command="run_sim", name="sim")
+        job.after(self._job_result(scheduler, "111"), type="afterany")
+
+        script = scheduler.generate_script(job)
+
+        assert "trap _hpc_publish_rc EXIT" in script  # still publishes its own rc
+        assert "afterok guard" not in script  # but does not gate on parents
+
+    def test_no_dependencies_has_no_guard(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler()
+        script = scheduler.generate_script(Job(command="echo hi", name="solo"))
+
+        assert "trap _hpc_publish_rc EXIT" in script
+        assert "afterok guard" not in script
+
+    def test_enforce_afterok_disabled(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler()
+        scheduler.enforce_afterok = False
+        scheduler.exit_dir = ""
+        job = Job(command="run_sim", name="sim")
+        job.after(self._job_result(scheduler, "111"))
+
+        script = scheduler.generate_script(job)
+
+        assert "_hpc_publish_rc" not in script
+        assert "afterok guard" not in script
+        assert "#$ -hold_jid 111" in script  # plain hold_jid still applied
+
+    @pytest.mark.parametrize(
+        "parent_rc,expect_ran,expect_exit",
+        [(0, True, 0), (2, False, 1)],
+    )
+    def test_guard_runtime_behaviour(
+        self, monkeypatch, tmp_path, parent_rc, expect_ran, expect_exit
+    ):
+        """End-to-end: render the script and run it under bash.
+
+        A passing parent lets the sim run; a failing parent aborts it before
+        the command executes. Either way the job publishes its own sentinel.
+        """
+        import os
+        import subprocess
+
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler()
+        job = Job(command="echo SIM-RAN", name="sim")
+        job.after(self._job_result(scheduler, "111"))
+        script = scheduler.generate_script(job)
+
+        script_file = tmp_path / "sim.sh"
+        script_file.write_text(script)
+        (tmp_path / "111.rc").write_text(f"{parent_rc}\n")
+
+        result = subprocess.run(
+            ["bash", str(script_file)],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "JOB_ID": "999"},
+        )
+
+        assert result.returncode == expect_exit
+        assert ("SIM-RAN" in result.stdout) is expect_ran
+        # The job always publishes its own exit code for its dependents.
+        assert (tmp_path / "999.rc").read_text().strip() == str(expect_exit)

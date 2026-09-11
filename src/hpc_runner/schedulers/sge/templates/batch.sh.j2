@@ -9,6 +9,22 @@
 # Exit on error
 set -e
 
+{% if scheduler.enforce_afterok and scheduler.exit_dir %}
+# --- hpc-runner afterok: publish this job's exit code (NFS-safe) ---
+# SGE -hold_jid is afterany, so dependents read these sentinels to emulate
+# afterok. The EXIT trap fires on success, `set -e` failure, and the guard
+# below, so the exit code is always published. Write-then-rename is atomic
+# on NFS so a reader never sees a partial value.
+_hpc_exit_dir="{{ scheduler.exit_dir }}"
+mkdir -p "$_hpc_exit_dir"
+_hpc_publish_rc() {
+    local _ec=$?
+    { printf '%s\n' "$_ec" > "$_hpc_exit_dir/.${JOB_ID}.rc.$$" \
+        && mv -f "$_hpc_exit_dir/.${JOB_ID}.rc.$$" "$_hpc_exit_dir/${JOB_ID}.rc" ; } 2>/dev/null || true
+}
+trap _hpc_publish_rc EXIT
+{% endif %}
+
 # Module system initialization
 {% if scheduler.module_init_script %}
 . {{ scheduler.module_init_script }}
@@ -80,6 +96,27 @@ if [ -n "$MAKEFLAGS" ]; then
 fi
 {% endif %}
 
+{% if scheduler.enforce_afterok and scheduler.exit_dir and job.dependency_type == 'afterok' and job.dependencies %}
+# --- hpc-runner afterok guard: abort unless all dependencies succeeded ---
+# -hold_jid guarantees parents have exited (and flushed their sentinels), but
+# allow a short bounded wait for the NFS directory-entry cache to refresh.
+_hpc_guard_dir="{{ scheduler.exit_dir }}"
+for _dep in {% for d in job.dependencies %}{{ d.job_id }} {% endfor %}; do
+    _rc=""
+    for _try in $(seq 1 15); do
+        if [ -f "$_hpc_guard_dir/${_dep}.rc" ]; then
+            _rc="$(cat "$_hpc_guard_dir/${_dep}.rc" 2>/dev/null)"
+            [ -n "$_rc" ] && break
+        fi
+        sleep 1
+    done
+    if [ "$_rc" != "0" ]; then
+        echo "hpc-runner: afterok dependency ${_dep} did not succeed (rc='${_rc:-missing}'); aborting" >&2
+        exit 1
+    fi
+done
+
+{% endif %}
 # Execute command
 {{ job.command }}
 _exit_code=$?

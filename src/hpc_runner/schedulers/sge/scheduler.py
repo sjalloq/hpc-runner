@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -68,6 +69,45 @@ def get_script_dir() -> Path:
     return script_dir
 
 
+def get_exit_dir(sweep_ttl_days: float = 7.0) -> Path:
+    """Get directory for afterok exit-code sentinel files.
+
+    Each job publishes ``<exit_dir>/<JOB_ID>.rc`` containing its exit code,
+    so that afterok dependents can verify their parents succeeded — SGE's
+    ``-hold_jid`` is afterany (it releases dependents on parent failure too),
+    so we emulate afterok in the job script.
+
+    Uses ``HPC_EXIT_DIR`` if set, otherwise ``~/.cache/hpc-runner/exit/``
+    (sibling of the script dir, on the shared/NFS home as required so the
+    dependent can read what the parent wrote).
+
+    Stale sentinels older than *sweep_ttl_days* are opportunistically removed.
+
+    Returns:
+        Path to exit-sentinel directory (created if needed).
+    """
+    if env_dir := os.environ.get("HPC_EXIT_DIR"):
+        exit_dir = Path(env_dir)
+    else:
+        exit_dir = Path.home() / ".cache" / "hpc-runner" / "exit"
+
+    exit_dir.mkdir(parents=True, exist_ok=True)
+
+    # Opportunistic cleanup so the directory does not grow without bound.
+    cutoff = time.time() - sweep_ttl_days * 86400
+    try:
+        for rc in exit_dir.glob("*.rc"):
+            try:
+                if rc.stat().st_mtime < cutoff:
+                    rc.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+    return exit_dir
+
+
 class SGEScheduler(BaseScheduler):
     """Sun Grid Engine scheduler implementation."""
 
@@ -91,6 +131,13 @@ class SGEScheduler(BaseScheduler):
         # Environment handling config
         self.expand_makeflags = sge_config.get("expand_makeflags", True)
         self.unset_vars = sge_config.get("unset_vars", [])
+
+        # afterok emulation: SGE -hold_jid is afterany, so each job publishes
+        # its exit code to a sentinel file and afterok dependents verify their
+        # parents succeeded before running. Disable via [schedulers.sge]
+        # enforce_afterok = false to fall back to plain -hold_jid behaviour.
+        self.enforce_afterok = sge_config.get("enforce_afterok", True)
+        self.exit_dir = str(get_exit_dir()) if self.enforce_afterok else ""
 
         # Build the argument renderer registry
         # Maps Job attribute names -> SGE argument renderer instances
