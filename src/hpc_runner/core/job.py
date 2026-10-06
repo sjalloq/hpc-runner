@@ -3,15 +3,63 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from hpc_runner.core.descriptors import JobAttribute
+from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.resources import ResourceSet
 
 if TYPE_CHECKING:
     from hpc_runner.core.result import JobResult
     from hpc_runner.schedulers.base import BaseScheduler
+
+
+# Matches a ``$VAR`` or ``${VAR}`` reference left behind after expansion.
+_UNRESOLVED_VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+
+
+def _expand_module_list(entries: list[str] | None, key: str) -> list[str]:
+    """Expand ``$VAR`` references in a ``modules``/``modules_path`` list.
+
+    Module names are expanded on the submit host, before the job script's
+    ``module purge`` wipes the environment. Unlike ``env_vars``, an entry that
+    cannot be resolved is an error: a bare ``module load`` (empty name) or a
+    literal ``module load $XCELIUM_MODULE`` in the script is a silent no-op
+    that leaves the job running with whatever tools it inherited, which is
+    exactly the "works for me" failure this package exists to prevent.
+
+    Args:
+        entries: Raw list from the merged config (may be ``None``).
+        key: Config key name, for the error message.
+
+    Returns:
+        The expanded list.
+
+    Raises:
+        ConfigError: If an entry references an undefined environment variable
+            or expands to an empty string.
+    """
+    from hpc_runner.core.config import _expand_env_vars
+
+    result: list[str] = []
+    for raw in entries or []:
+        expanded = _expand_env_vars(raw)
+        unresolved = _UNRESOLVED_VAR.findall(expanded)
+        if unresolved:
+            names = ", ".join(f"${v}" for v in dict.fromkeys(unresolved))
+            raise ConfigError(
+                f"{key} entry {raw!r} references undefined environment variable(s) "
+                f"{names}; set them in the shell that submits the job"
+            )
+        if not expanded.strip():
+            raise ConfigError(
+                f"{key} entry {raw!r} expands to an empty string; the referenced "
+                f"environment variable is set but empty in the submitting shell"
+            )
+        result.append(expanded)
+    return result
 
 
 class Job:
@@ -251,8 +299,12 @@ class Job:
         self.env_vars: dict[str, str] = _expand_dict_values(job_config.get("env_vars"))
         self.env_prepend: dict[str, str] = _expand_dict_values(job_config.get("env_prepend"))
         self.env_append: dict[str, str] = _expand_dict_values(job_config.get("env_append"))
-        self.modules: list[str] = job_config.get("modules") or []
-        self.modules_path: list[str] = job_config.get("modules_path") or []
+        # Module names are expanded here too, and unlike env_vars an
+        # unresolved or empty entry is fatal (see _expand_module_list).
+        self.modules: list[str] = _expand_module_list(job_config.get("modules"), "modules")
+        self.modules_path: list[str] = _expand_module_list(
+            job_config.get("modules_path"), "modules_path"
+        )
 
         # Handle resources list-of-dicts -> ResourceSet conversion from config.
         if resources is None and "resources" in job_config:

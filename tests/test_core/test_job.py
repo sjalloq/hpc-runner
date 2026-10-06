@@ -3,6 +3,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.job import Job
 from hpc_runner.core.resources import ResourceSet
@@ -439,3 +441,119 @@ class TestExtraModules:
         with patch("hpc_runner.core.config.get_config", return_value=cfg):
             job = Job(command="echo hello", modules=["override/2.0"])
         assert job.modules == ["override/2.0"]
+
+
+class TestModuleExpansion:
+    """$VAR references in modules / modules_path are expanded and validated.
+
+    Module names are resolved on the submit host so the job script never
+    contains a literal ``module load $FOO`` or a bare ``module load`` — both
+    are silent no-ops that leave the job with the wrong tool environment.
+    """
+
+    def _make_config(self, **kwargs) -> HPCConfig:
+        return HPCConfig(
+            defaults=kwargs.get("defaults", {}),
+            tools=kwargs.get("tools", {}),
+            types=kwargs.get("types", {}),
+        )
+
+    def test_modules_expanded(self):
+        """$VAR in a module name is replaced with its value."""
+        cfg = self._make_config(
+            types={"xrun": {"modules": ["$TEST_XCELIUM_MODULE", "vipcat/11.30"]}},
+        )
+        with (
+            patch.dict(os.environ, {"TEST_XCELIUM_MODULE": "xcelium/26.03.006"}),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+        ):
+            job = Job(command="xrun -f top.f", job_type="xrun")
+        assert job.modules == ["xcelium/26.03.006", "vipcat/11.30"]
+
+    def test_modules_braced_syntax(self):
+        """${VAR} syntax, including mixed literal text, is expanded."""
+        cfg = self._make_config(
+            defaults={"modules": ["xcelium/${TEST_XCELIUM_VER}"]},
+        )
+        with (
+            patch.dict(os.environ, {"TEST_XCELIUM_VER": "26.03.006"}),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+        ):
+            job = Job(command="echo hello")
+        assert job.modules == ["xcelium/26.03.006"]
+
+    def test_modules_path_expanded(self):
+        """modules_path entries are expanded the same way."""
+        cfg = self._make_config(
+            defaults={"modules_path": ["$TEST_MODULEFILES"]},
+        )
+        with (
+            patch.dict(os.environ, {"TEST_MODULEFILES": "/site/modulefiles"}),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+        ):
+            job = Job(command="echo hello")
+        assert job.modules_path == ["/site/modulefiles"]
+
+    def test_plain_module_names_unchanged(self):
+        """Entries without $ pass through untouched."""
+        cfg = self._make_config(defaults={"modules": ["python/3.13.3", "uv/0.7.18"]})
+        with patch("hpc_runner.core.config.get_config", return_value=cfg):
+            job = Job(command="echo hello")
+        assert job.modules == ["python/3.13.3", "uv/0.7.18"]
+
+    def test_undefined_variable_raises(self):
+        """An unset variable is a ConfigError that names the variable."""
+        from hpc_runner.core.exceptions import ConfigError
+
+        cfg = self._make_config(types={"xrun": {"modules": ["$TEST_UNSET_VIPCAT_MODULE"]}})
+        env = {k: v for k, v in os.environ.items() if k != "TEST_UNSET_VIPCAT_MODULE"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+            pytest.raises(ConfigError, match=r"\$TEST_UNSET_VIPCAT_MODULE"),
+        ):
+            Job(command="xrun", job_type="xrun")
+
+    def test_empty_variable_raises(self):
+        """A variable that is set but empty is also a ConfigError."""
+        from hpc_runner.core.exceptions import ConfigError
+
+        cfg = self._make_config(types={"xrun": {"modules": ["$TEST_EMPTY_MODULE"]}})
+        with (
+            patch.dict(os.environ, {"TEST_EMPTY_MODULE": ""}),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+            pytest.raises(ConfigError, match="empty"),
+        ):
+            Job(command="xrun", job_type="xrun")
+
+    def test_error_reports_original_entry_and_key(self):
+        """The message shows the raw config entry and which list it came from."""
+        from hpc_runner.core.exceptions import ConfigError
+
+        cfg = self._make_config(defaults={"modules_path": ["$TEST_UNSET_MODULE_PATH"]})
+        env = {k: v for k, v in os.environ.items() if k != "TEST_UNSET_MODULE_PATH"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+            pytest.raises(ConfigError) as excinfo,
+        ):
+            Job(command="echo hello")
+        msg = str(excinfo.value)
+        assert "modules_path" in msg
+        assert "'$TEST_UNSET_MODULE_PATH'" in msg
+
+    def test_extra_modules_also_expanded(self):
+        """Modules appended via extra_modules go through the same expansion."""
+        cfg = self._make_config(defaults={"modules": ["python/3.13.3"]})
+        with (
+            patch.dict(os.environ, {"TEST_EXTRA_MODULE": "gcc/13"}),
+            patch("hpc_runner.core.config.get_config", return_value=cfg),
+        ):
+            job = Job(command="echo hello", extra_modules=["$TEST_EXTRA_MODULE"])
+        assert job.modules == ["python/3.13.3", "gcc/13"]
+
+    def test_explicit_modules_kwarg_expanded(self):
+        """modules= passed directly to Job() is expanded too."""
+        with patch.dict(os.environ, {"TEST_KW_MODULE": "cuda/12.0"}):
+            job = Job(command="echo hello", modules=["$TEST_KW_MODULE"])
+        assert job.modules == ["cuda/12.0"]

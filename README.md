@@ -236,6 +236,8 @@ mem = "16G"
 time = "4:00:00"
 queue = "short.q"
 modules = ["-", "python/3.11"]   # leading "-" replaces the list instead of merging
+modules = ["$XCELIUM_MODULE"]    # $VAR / ${VAR} expanded on the submit host; unset or
+                                 # empty is an error, never a silent bare "module load"
 resources = [
   { name = "tmpfs", value = "8G" }
 ]
