@@ -14,14 +14,21 @@ In a virtual environment:
    pip install hpc-runner
 
 
-Quick start: submit a job
--------------------------
+Quick start: run a job
+----------------------
 
-Submit a batch job:
+Run a command on the cluster. By default it runs interactively (SGE:
+``qrsh``) and its output streams to your terminal:
 
 .. code-block:: bash
 
    hpc run python -c 'print("hello")'
+
+Submit as a batch job and return immediately:
+
+.. code-block:: bash
+
+   hpc run --batch python train.py
 
 Show what would be submitted without actually submitting:
 
@@ -29,23 +36,17 @@ Show what would be submitted without actually submitting:
 
    hpc run --dry-run python train.py
 
-Run interactively (SGE: ``qrsh``):
-
-.. code-block:: bash
-
-   hpc run --interactive bash
-
 Pass raw scheduler arguments using ``--`` as a separator:
 
 .. code-block:: bash
 
    hpc run -q gpu.q -l gpu=1 -- python train.py
 
-Or use ``submit`` for a config-driven shorthand:
+Use a named job type from the config:
 
 .. code-block:: bash
 
-   submit -t gpu -n 4 python train.py
+   hpc run -t gpu --cpu 4 python train.py
 
 
 Pick a scheduler

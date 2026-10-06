@@ -54,7 +54,6 @@ all = [
 
 [project.scripts]
 hpc = "hpc_runner.cli.main:main"
-submit = "hpc_runner.cli.submit:main"
 
 [project.urls]
 Homepage = "https://github.com/sjalloq/hpc-runner"

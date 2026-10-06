@@ -18,7 +18,7 @@ class TestRunCommand:
         """Test run --help."""
         result = runner.invoke(cli, ["run", "--help"])
         assert result.exit_code == 0
-        assert "Submit a job" in result.output
+        assert "Run a command on the cluster" in result.output
 
     def test_run_dry_run(self, runner, temp_dir):
         """Test run with --dry-run."""
@@ -39,7 +39,7 @@ class TestRunCommand:
                 "local",
                 "run",
                 "--dry-run",
-                "--job-name",
+                "--name",
                 "test_job",
                 "--cpu",
                 "4",
@@ -58,7 +58,7 @@ class TestRunCommand:
         with runner.isolated_filesystem(temp_dir=temp_dir):
             result = runner.invoke(
                 cli,
-                ["run", "--local", "echo", "hello"],
+                ["run", "--local", "--batch", "echo", "hello"],
             )
             assert result.exit_code == 0
             assert "Submitted job" in result.output or "local_" in result.output
@@ -68,10 +68,55 @@ class TestRunCommand:
         with runner.isolated_filesystem(temp_dir=temp_dir):
             result = runner.invoke(
                 cli,
-                ["run", "--local", "--interactive", "echo", "hello"],
+                ["run", "--local", "echo", "hello"],
             )
             assert result.exit_code == 0
             assert "completed successfully" in result.output
+
+    def test_default_mode_is_interactive(self, runner, temp_dir):
+        """Without --batch the dry run reports interactive mode."""
+        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hello"])
+        assert result.exit_code == 0
+        assert "interactive" in result.output
+
+    def test_batch_flag_selects_batch_mode(self, runner, temp_dir):
+        """--batch / -b switch the dry run to batch mode."""
+        for flag in ("--batch", "-b"):
+            result = runner.invoke(
+                cli, ["--scheduler", "local", "run", "--dry-run", flag, "echo", "hello"]
+            )
+            assert result.exit_code == 0, result.output
+            assert "batch" in result.output
+
+    def test_array_implies_batch(self, runner, temp_dir):
+        """Array jobs are always batch, even without --batch."""
+        result = runner.invoke(
+            cli,
+            ["--scheduler", "local", "run", "--dry-run", "--array", "1-4", "echo", "task"],
+        )
+        assert result.exit_code == 0
+        assert "Mode: batch" in result.output or "batch" in result.output
+
+    def test_removed_options_rejected(self, runner):
+        """--job-type, --job-name and --interactive no longer exist (with or without --)."""
+        for opt in ("--job-type", "--job-name", "--interactive"):
+            result = runner.invoke(
+                cli, ["--scheduler", "local", "run", "--dry-run", opt, "x", "--", "echo"]
+            )
+            assert result.exit_code != 0, opt
+            assert "No such option" in result.output, opt
+            result = runner.invoke(
+                cli, ["--scheduler", "local", "run", "--dry-run", opt, "x", "echo"]
+            )
+            assert result.exit_code != 0, opt
+
+    def test_scheduler_flag_without_separator_errors(self, runner, temp_dir):
+        """A single-dash flag with no `--` is a usage error, not a bogus command."""
+        result = runner.invoke(
+            cli, ["--scheduler", "local", "run", "--dry-run", "-q", "batch.q", "echo", "hi"]
+        )
+        assert result.exit_code != 0
+        assert "must come before" in result.output
 
     def test_run_command_with_flags(self, runner, temp_dir):
         """Test run with command that has its own flags."""
@@ -130,7 +175,6 @@ class TestRunCommand:
             [
                 "run",
                 "--local",
-                "--interactive",
                 "--directory",
                 str(temp_dir),
                 "--stdout",
@@ -150,7 +194,6 @@ class TestRunCommand:
             [
                 "run",
                 "--local",
-                "--interactive",
                 "--directory",
                 str(temp_dir),
                 "--stdout",
@@ -176,7 +219,6 @@ class TestRunCommand:
             [
                 "run",
                 "--local",
-                "--interactive",
                 "--directory",
                 str(subdir),
                 "--stdout",
@@ -202,7 +244,6 @@ class TestRunCommand:
                 [
                     "run",
                     "--local",
-                    "--interactive",
                     "--directory",
                     "reltest",
                     "--stdout",
@@ -460,7 +501,7 @@ cpu = 8
             os.chdir(old_cwd)
 
     def test_job_type_uses_types_section(self, runner, temp_dir, config_with_tools):
-        """Test that --job-type explicitly uses [types] section."""
+        """Test that --type explicitly uses [types] section."""
         import os
 
         old_cwd = os.getcwd()
@@ -473,7 +514,7 @@ cpu = 8
                     "local",
                     "run",
                     "--dry-run",
-                    "--job-type",
+                    "--type",
                     "gpu",
                     "python",
                     "train.py",
@@ -482,6 +523,20 @@ cpu = 8
             assert result.exit_code == 0
             # Should NOT have python modules (using type, not tool)
             # Types don't auto-merge with tool detection
+        finally:
+            os.chdir(old_cwd)
+
+    def test_short_type_option(self, runner, temp_dir, config_with_tools):
+        """-t is the short form of --type."""
+        import os
+
+        old_cwd = os.getcwd()
+        os.chdir(temp_dir)
+        try:
+            result = runner.invoke(
+                cli, ["--scheduler", "local", "run", "--dry-run", "-t", "gpu", "echo", "hello"]
+            )
+            assert result.exit_code == 0, result.output
         finally:
             os.chdir(old_cwd)
 
@@ -504,7 +559,7 @@ cpu = 8
 
 
 class TestExtraModuleCLI:
-    """Tests for --extra-module / --extra-module-path on hpc run."""
+    """Tests for --extra-module on hpc run."""
 
     @pytest.fixture
     def runner(self):
@@ -539,37 +594,6 @@ modules = ["python/3.11"]
             assert result.exit_code == 0
             assert "python/3.11" in result.output
             assert "cuda/12.0" in result.output
-        finally:
-            os.chdir(old_cwd)
-
-    def test_extra_module_path_dry_run(self, runner, temp_dir):
-        """--extra-module-path adds module paths to config defaults."""
-        config_file = temp_dir / "hpc-runner.toml"
-        config_file.write_text("""
-[defaults]
-modules_path = ["/opt/modules"]
-""")
-        import os
-
-        old_cwd = os.getcwd()
-        os.chdir(temp_dir)
-        try:
-            result = runner.invoke(
-                cli,
-                [
-                    "--scheduler",
-                    "local",
-                    "run",
-                    "--dry-run",
-                    "--extra-module-path",
-                    "/my/modules",
-                    "echo",
-                    "hello",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "/opt/modules" in result.output
-            assert "/my/modules" in result.output
         finally:
             os.chdir(old_cwd)
 

@@ -35,8 +35,14 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
     }
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-# All hpc-runner options are long-form only
-@click.option("--job-name", "job_name", help="Job name")
+# Short-option namespace rule: any short flag click does not recognise is
+# forwarded verbatim to the scheduler (see _parse_args and the `--`
+# separator). A short flag defined here therefore *shadows* the scheduler's
+# flag of the same letter. Only claim one when hpc-runner already owns that
+# meaning: -t shadows qsub/sbatch -t (array / time), both covered by
+# --array and --time; -b shadows qsub -b (binary), irrelevant because jobs
+# always run via a generated script.
+@click.option("--name", "job_name", help="Job name")
 @click.option("--cpu", type=int, help="Number of CPUs")
 @click.option("--mem", help="Memory requirement (e.g., 16G)")
 @click.option("--time", "time_limit", help="Time limit (e.g., 4:00:00)")
@@ -44,29 +50,20 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
 @click.option("--nodes", type=int, help="Number of nodes (MPI jobs)")
 @click.option("--ntasks", type=int, help="Number of tasks (MPI jobs)")
 @click.option("--directory", type=click.Path(exists=True), help="Working directory")
-@click.option("--job-type", "job_type", help="Job type from config")
-@click.option("--module", "modules", multiple=True, help="Modules to load (replaces config)")
-@click.option("--module-path", "module_path", multiple=True, help="Module paths (replaces config)")
+@click.option("-t", "--type", "job_type", help="Job type from config")
 @click.option(
     "--extra-module", "extra_modules", multiple=True, help="Extra modules to append to config"
-)
-@click.option(
-    "--extra-module-path",
-    "extra_module_path",
-    multiple=True,
-    help="Extra module paths to append to config",
 )
 @click.option("--stderr", help="Separate stderr file (default: merged)")
 @click.option("--stdout", "stdout", help="Stdout file path pattern")
 @click.option("--array", help="Array job specification (e.g., 1-100)")
 @click.option("--depend", help="Job dependency specification")
 @click.option(
-    "--inherit-env/--no-inherit-env",
-    "inherit_env",
-    default=None,
-    help="Inherit environment variables",
+    "-b",
+    "--batch",
+    is_flag=True,
+    help="Submit as a batch job and return immediately (default: run interactively)",
 )
-@click.option("--interactive", is_flag=True, help="Run interactively (srun/qrsh)")
 @click.option("--local", is_flag=True, help="Run locally (no scheduler)")
 @click.option("--dry-run", "dry_run", is_flag=True, help="Show what would be submitted")
 @click.option("--wait", is_flag=True, help="Wait for job completion")
@@ -84,28 +81,29 @@ def run(
     ntasks: int | None,
     directory: str | None,
     job_type: str | None,
-    modules: tuple[str, ...],
-    module_path: tuple[str, ...],
     extra_modules: tuple[str, ...],
-    extra_module_path: tuple[str, ...],
     stderr: str | None,
     stdout: str | None,
     array: str | None,
     depend: str | None,
-    inherit_env: bool | None,
-    interactive: bool,
+    batch: bool,
     local: bool,
     dry_run: bool,
     wait: bool,
     keep_script: bool,
 ) -> None:
-    """Submit a job to the scheduler.
+    """Run a command on the cluster.
+
+    By default the job runs interactively (qrsh/srun): the command's output
+    streams to this terminal and hpc waits for it to finish. Use --batch
+    to submit and return immediately.
 
     COMMAND is the command to execute, including any flags it needs:
 
     \b
-        hpc run python script.py --arg value
-        hpc run --interactive xterm
+        hpc run xterm
+        hpc run -t xcelium make sim
+        hpc run --batch --cpu 4 make -j4 sim
 
     Use ``--`` to pass raw scheduler arguments before the command:
 
@@ -114,9 +112,6 @@ def run(
         hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim
 
     Without ``--``, everything after hpc-runner options is the command.
-
-    TIP: For quick config-driven submissions with short options, use the
-    ``submit`` command instead (e.g. ``submit -n 4 -m 16G make sim``).
     """
     import shlex
 
@@ -127,8 +122,23 @@ def run(
     # everything after is the command.  No '--' means all command.
     scheduler_args, command_parts = _parse_args(args)
 
+    # Click forwards every option it does not know (ignore_unknown_options), so
+    # a mistyped hpc-runner option would otherwise reach the scheduler, or be
+    # submitted as the start of the command. Long options are always ours;
+    # single-dash flags belong to the scheduler and must precede `--`.
+    unknown_long = [a for a in scheduler_args if a.startswith("--")]
+    if unknown_long:
+        raise click.UsageError(
+            f"No such option: {unknown_long[0]} (long options are hpc-runner's own; "
+            "scheduler flags are single-dash)"
+        )
     if not command_parts:
         raise click.UsageError("Command is required")
+    if command_parts[0].startswith("-"):
+        raise click.UsageError(
+            f"No such option: {command_parts[0]}. Scheduler flags must come before '--', "
+            "e.g. hpc run -q batch.q -- make sim"
+        )
 
     # Use shlex.join to preserve quoting for args with spaces/special chars
     cmd_str = shlex.join(command_parts)
@@ -149,16 +159,16 @@ def run(
         nodes=nodes,
         tasks=ntasks,
         workdir=directory,
-        modules=list(modules) if modules else None,
-        modules_path=list(module_path) if module_path else None,
         extra_modules=list(extra_modules) if extra_modules else None,
-        extra_modules_path=list(extra_module_path) if extra_module_path else None,
         stderr=stderr,
         stdout=stdout,
-        inherit_env=inherit_env,
         dependency=depend,
         raw_args=scheduler_args or None,
     )
+
+    # Array jobs can only be batch; everything else is interactive unless
+    # --batch was given.
+    interactive = not batch and not array
 
     # Handle array jobs
     if array:

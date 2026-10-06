@@ -144,10 +144,10 @@ different environments depending on how it is invoked.
 
 .. code-block:: bash
 
-   submit fusesoc run --tool slang core:v:n     # mem=16G, modules includes slang/0.9
-   submit fusesoc run --tool=slang core:v:n     # same (= normalised)
-   submit fusesoc run --tool verilator core     # cpu=4, modules includes verilator/5.0
-   submit fusesoc run core:v:n                  # no match — base fusesoc config only
+   hpc run fusesoc run --tool slang core:v:n     # mem=16G, modules includes slang/0.9
+   hpc run fusesoc run --tool=slang core:v:n     # same (= normalised)
+   hpc run fusesoc run --tool verilator core     # cpu=4, modules includes verilator/5.0
+   hpc run fusesoc run core:v:n                  # no match — base fusesoc config only
 
 
 Example: fully populated config (standalone file)

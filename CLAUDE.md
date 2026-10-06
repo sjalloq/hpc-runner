@@ -17,15 +17,14 @@ Usage model:
 # Launch an extern on the cluster via SGE:
 qsub -q <queue> -N <job_name> -cwd -V -l <resources> xterm
 
-# Launch an xterm on the cluster via hpc-runner:
+# Launch an xterm on the cluster via hpc-runner (interactive is the default):
 hpc run xterm
 
 # Or launch a script that uses a particular tool using a job type:
-hpc run --type xcelium run_sim.sh
+hpc run -t xcelium run_sim.sh
 
-# Same thing via submit (short options, config-driven):
-submit -t xcelium run_sim.sh
-submit -n 4 -m 16G -I xterm
+# Submit as a batch job and return immediately:
+hpc run --batch -t xcelium run_sim.sh
 ```
 
 Configuration file:
@@ -66,13 +65,8 @@ ruff format src/hpc_runner
 
 # CLI usage
 hpc --help
-hpc run --dry-run "echo hello"
-hpc --scheduler sge run --cpu 4 --mem 8G "python script.py"
-
-# submit — config-driven shorthand with short options
-submit --help
-submit --dry-run echo hello
-submit -t gpu -n 4 -m 16G python train.py
+hpc run --dry-run echo hello
+hpc --scheduler sge run --batch --cpu 4 --mem 8G python script.py
 ```
 
 ## Architecture
@@ -97,12 +91,13 @@ submit -t gpu -n 4 -m 16G python train.py
 
 ### CLI (`src/hpc_runner/cli/`)
 
-Uses `rich-click` for styled output. Two entry points:
+Uses `rich-click` for styled output. One entry point, **`hpc`** (group), with subcommands `run`, `status`, `cancel`, `kill`, `config`, `monitor`. (A separate `submit` command with its own short-option set existed until October 2026; it was removed because maintaining two front ends to the same `Job()` call doubled every option, test and doc line, and the two disagreed on what a short flag meant.)
 
-- **`hpc`** (group) — full-control interface with subcommands: `run`, `status`, `cancel`, `config`, `monitor`
-- **`submit`** (standalone) — config-driven daily driver with short options (`-t`, `-n`, `-m`, `-T`, `-I`, `-q`, `-N`, `-w`, `-a`, `-e`, `-d`, `-v`). Closed interface that rejects unknown flags. Builds jobs and submits directly without delegating to `hpc run`.
+**`hpc run` defaults to interactive** (qrsh/srun): most hand-typed uses want a GUI to pop up or want to wait for the result. `--batch`/`-b` submits and returns. Array jobs are always batch. Scripts have full control of their options, so they pay the two extra characters.
 
-**`hpc run` vs `submit`**: `hpc run` is the full-control command — it supports scheduler passthrough via `--` separator, long options only, and advanced flags like `--module`, `--nodes`, `--inherit-env`, `--keep-script`, etc. `submit` exposes only the common options with short flags and errors on anything it doesn't recognise. Both construct a `Job()` directly (which auto-consults the TOML config hierarchy) and share the same `_show_dry_run` / `_handle_array_job` helpers (inlined in each module to avoid a circular import through `main.py`).
+**Short-option namespace rule**: any short flag click does not recognise is forwarded verbatim to the scheduler, so a short flag `hpc run` defines *shadows* the scheduler's flag of the same letter. Only claim a short flag when hpc-runner already owns that meaning through a long option. Currently claimed: `-t/--type` (shadows qsub/sbatch `-t` = array/time, covered by `--array`/`--time`) and `-b/--batch` (shadows qsub `-b` = binary, irrelevant since jobs always run via a generated script). Unknown *long* options are rejected, as is a single-dash flag that appears without a `--` separator, so a typo can never be silently forwarded or submitted as the command.
+
+**Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, extra-module) stay.
 
 **Scheduler passthrough on `hpc run`**: Use `--` to pass raw scheduler arguments. Everything before `--` is scheduler passthrough (set on `job.raw_args`), everything after is the command. Without `--`, all args are the command (no heuristic).
 ```bash
@@ -111,7 +106,7 @@ hpc run -q batch.q -l gpu=2 -- python train.py  # passthrough
 hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim # mixed
 ```
 
-**Design rationale for `--`**: `hpc run` deliberately reserves short-form flags (e.g. `-q`, `-l`, `-N`) for scheduler passthrough and uses long-form options only (e.g. `--cpu`, `--queue`). This means any short flag is unambiguously a scheduler argument. However, hpc-runner cannot determine where scheduler args end and the command begins without knowing every scheduler's option grammar — specifically, whether a flag like `-N` is a standalone flag or takes a value argument. The `--` separator is the standard Unix solution to this ambiguity (used by `git`, `ssh`, `docker exec`, etc.). Without it, `hpc run -q batch.q python train.py` is ambiguous: is `python` an argument to `-q` or the start of the command? The `--` makes it explicit.
+**Design rationale for `--`**: `hpc run` reserves short-form flags (e.g. `-q`, `-l`, `-N`) for scheduler passthrough and uses long-form options for itself, with the two deliberate exceptions noted above. This means an unclaimed short flag is unambiguously a scheduler argument. However, hpc-runner cannot determine where scheduler args end and the command begins without knowing every scheduler's option grammar — specifically, whether a flag like `-N` is a standalone flag or takes a value argument. The `--` separator is the standard Unix solution to this ambiguity (used by `git`, `ssh`, `docker exec`, etc.). Without it, `hpc run -q batch.q python train.py` is ambiguous: is `python` an argument to `-q` or the start of the command? The `--` makes it explicit.
 
 ### Workflow (`src/hpc_runner/workflow/`)
 

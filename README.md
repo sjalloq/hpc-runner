@@ -33,26 +33,24 @@ uv pip install hpc-runner
 ### CLI
 
 ```bash
-# Basic job submission
-hpc run python train.py
+# Run interactively on the cluster (the default): output streams here, hpc waits
+hpc run xterm
+hpc run -t xcelium make sim
 
-# With resources
-hpc run --cpu 4 --mem 16G --time 4:00:00 "python train.py"
+# Submit as a batch job and return immediately
+hpc run --batch --cpu 4 --mem 16G --time 4:00:00 make sim
 
-# GPU job
-hpc run --queue gpu --cpu 4 --mem 32G "python train.py --epochs 100"
+# Batch job, then block until it finishes
+hpc run --batch --wait python long_job.py
 
-# Preview without submitting
-hpc run --dry-run --cpu 8 "make -j8"
+# Preview the generated script without submitting
+hpc run --dry-run --cpu 8 make -j8
 
-# Interactive session
-hpc run --interactive bash
-
-# Array job
+# Array job (always batch)
 hpc run --array 1-100 "python process.py --task-id \$SGE_TASK_ID"
 
-# Wait for completion
-hpc run --wait python long_job.py
+# Raw scheduler flags go before --, the command after
+hpc run -q gpu.q -l gpu=1 -- python train.py
 ```
 
 ### Python API
@@ -162,7 +160,7 @@ time = "8:00:00"
 Use named job types:
 
 ```bash
-hpc run --job-type gpu "python train.py"
+hpc run -t gpu python train.py
 ```
 
 ### SGE Configuration
@@ -279,10 +277,12 @@ Key bindings:
 ## CLI Reference
 
 ```
-hpc run [OPTIONS] [-- COMMAND]
+hpc run [OPTIONS] [SCHEDULER_FLAGS --] COMMAND...
+
+Runs interactively by default; --batch submits and returns.
 
 Options:
-  --job-name TEXT       Job name
+  --name TEXT           Job name
   --cpu INTEGER         Number of CPUs
   --mem TEXT            Memory (e.g., 16G, 4096M)
   --time TEXT           Time limit (e.g., 4:00:00)
@@ -290,18 +290,16 @@ Options:
   --nodes INTEGER       Number of nodes (MPI jobs)
   --ntasks INTEGER      Number of tasks (MPI jobs)
   --directory PATH      Working directory
-  --job-type TEXT       Job type from config
-  --module TEXT         Module to load (repeatable)
-  --module-path PATH    Module path to use (repeatable)
+  -t, --type TEXT       Job type from config
+  --extra-module TEXT   Extra module to load on top of config (repeatable)
   --stdout TEXT         Stdout file path pattern
   --stderr TEXT         Separate stderr file (default: merged)
   --array TEXT          Array spec (e.g., 1-100, 1-100%5)
   --depend TEXT         Job dependencies
-  --inherit-env/--no-inherit-env
-  --interactive         Run interactively (qrsh/srun)
+  -b, --batch           Submit as a batch job (default: interactive via qrsh/srun)
   --local               Run locally (no scheduler)
   --dry-run             Show script without submitting
-  --wait                Wait for completion
+  --wait                Block until a batch job completes
   --keep-script         Keep job script for debugging
   -h, --help            Show help
 

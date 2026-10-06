@@ -1,12 +1,9 @@
 CLI
 ===
 
-The primary entry point is the ``hpc`` command.
-
-There are two entry points:
-
-- ``hpc run`` — full-control interface with scheduler passthrough via ``--``
-- ``submit`` — closed, config-driven daily driver with short options
+The entry point is the ``hpc`` command. ``hpc run`` runs a command on the
+cluster, interactively by default; the other subcommands manage jobs and
+configuration.
 
 
 Global options
@@ -23,11 +20,14 @@ These options come before the subcommand:
 ``hpc run``
 -----------
 
-Submit a job to the scheduler.
+Run a command on the cluster. By default the job runs interactively (SGE:
+``qrsh``): output streams to your terminal and ``hpc`` waits for it to
+finish. ``--batch`` submits and returns immediately. Array jobs are always
+batch.
 
 Options:
 
-- ``--job-name TEXT``
+- ``--name TEXT``
 - ``--cpu N``
 - ``--mem TEXT`` (e.g. ``16G``)
 - ``--time TEXT`` (e.g. ``4:00:00``)
@@ -35,15 +35,13 @@ Options:
 - ``--nodes N`` (number of nodes, MPI jobs)
 - ``--ntasks N`` (number of tasks, MPI jobs)
 - ``--directory PATH`` (working dir)
-- ``--job-type TEXT`` (named profile from config)
-- ``--module TEXT`` (repeatable)
-- ``--module-path PATH`` (module paths to use, repeatable)
+- ``-t, --type TEXT`` (named profile from config)
+- ``--extra-module TEXT`` (extra module on top of config, repeatable)
 - ``--stdout TEXT`` (stdout file path pattern)
 - ``--stderr TEXT`` (separate stderr file; default: merged)
 - ``--array TEXT`` (e.g. ``1-100``)
 - ``--depend TEXT``
-- ``--inherit-env / --no-inherit-env``
-- ``--interactive`` (SGE: qrsh)
+- ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
 - ``--local`` (run as local subprocess)
 - ``--dry-run`` (render, don’t submit)
 - ``--wait`` (wait for completion)
@@ -60,7 +58,7 @@ command:
 .. code-block:: bash
 
    # No passthrough — everything is the command
-   hpc run python train.py --epochs 10
+   hpc run --batch python train.py --epochs 10
 
    # Passthrough — scheduler flags before --, command after
    hpc run -q gpu.q -l gpu=1 -- python train.py
@@ -72,9 +70,12 @@ won't be misinterpreted).
 
 .. note:: **Why ``--``?**
 
-   ``hpc run`` deliberately uses long-form options only (``--cpu``, ``--queue``,
+   ``hpc run`` uses long-form options for itself (``--cpu``, ``--queue``,
    etc.) so that short flags (``-q``, ``-l``, ``-N``) are unambiguously
-   scheduler arguments. However, hpc-runner cannot determine where scheduler
+   scheduler arguments. The two exceptions, ``-t`` and ``-b``, shadow
+   scheduler flags whose meaning hpc-runner already covers with ``--array``,
+   ``--time`` and the generated job script. Unknown long options, and a
+   single-dash flag given without ``--``, are rejected rather than forwarded. However, hpc-runner cannot determine where scheduler
    args end and the command begins without knowing every scheduler's option
    grammar — a flag like ``-N`` might be standalone or might consume the next
    argument. The ``--`` separator is the standard Unix solution to this
@@ -84,47 +85,18 @@ Examples:
 
 .. code-block:: bash
 
-   hpc run --cpu 4 --mem 16G --time 2:00:00 python train.py
-   hpc run --job-type gpu python train.py
+   hpc run xterm
+   hpc run -t xcelium make sim
+   hpc run --batch --cpu 4 --mem 16G --time 2:00:00 python train.py
+   hpc run --batch -t gpu python train.py
    hpc run -q gpu.q -l gpu=1 -- python train.py
    hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim
 
 
-``submit`` (config-driven daily driver)
-----------------------------------------
-
-``submit`` is a closed interface designed for daily use. It exposes the most
-common options with short flags and **rejects unknown arguments** — there is
-no scheduler passthrough. Instead, scheduler-specific settings should be
-defined in the config file under ``[tools.*]`` or ``[types.*]``.
 
 If a tool has ``[tools.<name>.options]`` entries in the config, the command
 arguments are matched automatically to apply option-specific overrides (see
 :ref:`tool-option-specialisation`).
-
-Short options:
-
-- ``-t TEXT`` — job type from config
-- ``-n N`` — number of CPUs
-- ``-m TEXT`` — memory (e.g. ``16G``)
-- ``-T TEXT`` — time limit
-- ``-q TEXT`` — queue/partition
-- ``-N TEXT`` — job name
-- ``-I`` — interactive
-- ``-w`` — wait for completion
-- ``-a TEXT`` — array spec
-- ``-e TEXT`` — environment variables
-- ``-d TEXT`` — dependency
-- ``-v`` — verbose
-
-Examples:
-
-.. code-block:: bash
-
-   submit echo hello
-   submit -t gpu -n 4 -m 16G python train.py
-   submit -n 8 -I xterm
-   submit --dry-run make sim
 
 
 ``hpc status``
