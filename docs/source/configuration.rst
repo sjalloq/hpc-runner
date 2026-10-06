@@ -174,7 +174,8 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    stderr = ""                 # empty means "unset"
 
    modules = ["gcc/12.2", "python/3.11"]
-   modules_path = []
+   modules_path = []           # module use <path>: searched before the site paths
+   modules_path_append = []    # module use --append <path>: searched after them
 
    raw_args = []
    sge_args = []

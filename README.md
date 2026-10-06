@@ -216,6 +216,8 @@ use_cwd = true
 inherit_env = true
 stdout = "hpc.%N.%J.out"
 modules = ["gcc/12.2", "python/3.11"]
+modules_path = ["/site/modulefiles"]           # module use <path>, searched first
+modules_path_append = ["$HOME/modulefiles"]   # module use --append <path>, searched last
 resources = [
   { name = "scratch", value = "20G" }
 ]

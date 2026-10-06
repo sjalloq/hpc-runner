@@ -30,6 +30,13 @@ module use {{ path }}
 {% endfor %}
 {% endif %}
 
+{% if job.modules_path_append %}
+# Additional module paths, searched after the existing MODULEPATH
+{% for path in job.modules_path_append %}
+module use --append {{ path }}
+{% endfor %}
+{% endif %}
+
 {% if job.modules %}
 # Load modules
 {% for mod in job.modules %}

@@ -161,6 +161,24 @@ class TestLocalScheduler:
         assert "module load python/3.11" in script
         assert "module load gcc/12.2" in script
 
+    def test_generate_script_modules_path_append(self, temp_dir):
+        """modules_path_append renders as module use --append, after modules_path."""
+        scheduler = LocalScheduler()
+        job = Job(
+            command="echo hello",
+            modules=["python/3.11"],
+            modules_path=["/opt/modulefiles"],
+            modules_path_append=["/home/me/modulefiles"],
+            workdir=temp_dir,
+        )
+
+        script = scheduler.generate_script(job)
+
+        assert "module use /opt/modulefiles" in script
+        assert "module use --append /home/me/modulefiles" in script
+        assert script.index("module use /opt/modulefiles") < script.index("module use --append")
+        assert script.index("module use --append") < script.index("module load python/3.11")
+
     @requires_modules
     def test_module_loading(self, temp_dir):
         """Test that a module is actually loaded and sets env vars."""

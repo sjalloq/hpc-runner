@@ -177,8 +177,10 @@ class Job:
         env_append: dict[str, str] | None = None,
         modules: list[str] | None = None,
         modules_path: list[str] | None = None,
+        modules_path_append: list[str] | None = None,
         extra_modules: list[str] | None = None,
         extra_modules_path: list[str] | None = None,
+        extra_modules_path_append: list[str] | None = None,
         resources: ResourceSet | None = None,
         raw_args: list[str] | None = None,
         sge_args: list[str] | None = None,
@@ -233,6 +235,7 @@ class Job:
             "env_append": env_append,
             "modules": modules,
             "modules_path": modules_path,
+            "modules_path_append": modules_path_append,
         }.items():
             if val is not None:
                 config_overrides[key] = val
@@ -243,6 +246,7 @@ class Job:
         for key, extras in (
             ("modules", extra_modules),
             ("modules_path", extra_modules_path),
+            ("modules_path_append", extra_modules_path_append),
         ):
             if extras:
                 base = job_config.get(key) or []
@@ -304,6 +308,11 @@ class Job:
         self.modules: list[str] = _expand_module_list(job_config.get("modules"), "modules")
         self.modules_path: list[str] = _expand_module_list(
             job_config.get("modules_path"), "modules_path"
+        )
+        # Searched *after* the site paths (``module use --append``), so a local
+        # modulefile can never shadow an official one of the same name.
+        self.modules_path_append: list[str] = _expand_module_list(
+            job_config.get("modules_path_append"), "modules_path_append"
         )
 
         # Handle resources list-of-dicts -> ResourceSet conversion from config.

@@ -96,6 +96,25 @@ class TestSGEScheduler:
         assert "#$ -pe" in script
         assert "echo hello" in script
 
+    def test_generate_script_module_paths(self):
+        """Both batch and interactive SGE scripts honour modules_path_append."""
+        scheduler = SGEScheduler()
+        job = Job(
+            command="xrun -f top.f",
+            modules=["xcelium/26.03.006"],
+            modules_path=["/site/modulefiles"],
+            modules_path_append=["/proj/modulefiles"],
+        )
+
+        scripts = [
+            scheduler.generate_script(job),
+            scheduler.generate_interactive_script(job, script_path="/tmp/wrap.sh"),
+        ]
+        for script in scripts:
+            assert "module use /site/modulefiles" in script
+            assert "module use --append /proj/modulefiles" in script
+            assert script.index("module use --append") < script.index("module load xcelium")
+
     def test_generate_script_merged_output(self):
         """Test script generation with merged output."""
         scheduler = SGEScheduler()

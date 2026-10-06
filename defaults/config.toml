@@ -6,7 +6,8 @@ cpu = 1
 mem = "4G"
 time = "1:00:00"
 inherit_env = true
-modules_path = []
+modules_path = []          # 'module use <path>' (searched first)
+modules_path_append = []   # 'module use --append <path>' (searched last)
 modules = []
 
 # SGE-specific settings

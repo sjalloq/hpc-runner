@@ -557,3 +557,68 @@ class TestModuleExpansion:
         with patch.dict(os.environ, {"TEST_KW_MODULE": "cuda/12.0"}):
             job = Job(command="echo hello", modules=["$TEST_KW_MODULE"])
         assert job.modules == ["cuda/12.0"]
+
+
+class TestModulesPathAppend:
+    """modules_path_append renders as ``module use --append`` and merges like modules_path."""
+
+    def _make_config(self, **kwargs) -> HPCConfig:
+        return HPCConfig(
+            defaults=kwargs.get("defaults", {}),
+            tools=kwargs.get("tools", {}),
+            types=kwargs.get("types", {}),
+        )
+
+    def test_default_is_empty(self):
+        job = Job(command="echo hello")
+        assert job.modules_path_append == []
+
+    def test_kwarg(self):
+        job = Job(command="echo hello", modules_path_append=["/my/modulefiles"])
+        assert job.modules_path_append == ["/my/modulefiles"]
+        assert job.modules_path == []
+
+    def test_from_config(self):
+        cfg = self._make_config(defaults={"modules_path_append": ["/site/local"]})
+        with patch("hpc_runner.core.config.get_config", return_value=cfg):
+            job = Job(command="echo hello")
+        assert job.modules_path_append == ["/site/local"]
+
+    def test_kwarg_overrides_config(self):
+        cfg = self._make_config(defaults={"modules_path_append": ["/site/local"]})
+        with patch("hpc_runner.core.config.get_config", return_value=cfg):
+            job = Job(command="echo hello", modules_path_append=["/override"])
+        assert job.modules_path_append == ["/override"]
+
+    def test_extra_appended_and_deduplicated(self):
+        cfg = self._make_config(defaults={"modules_path_append": ["/site/local"]})
+        with patch("hpc_runner.core.config.get_config", return_value=cfg):
+            job = Job(
+                command="echo hello",
+                extra_modules_path_append=["/site/local", "/mine"],
+            )
+        assert job.modules_path_append == ["/site/local", "/mine"]
+
+    def test_type_config_merges_with_defaults(self):
+        cfg = self._make_config(
+            defaults={"modules_path_append": ["/site/local"]},
+            types={"xrun": {"modules_path_append": ["/proj/modulefiles"]}},
+        )
+        with patch("hpc_runner.core.config.get_config", return_value=cfg):
+            job = Job(command="xrun", job_type="xrun")
+        assert job.modules_path_append == ["/site/local", "/proj/modulefiles"]
+
+    def test_env_var_expanded(self):
+        with patch.dict(os.environ, {"TEST_LOCAL_MODULEFILES": "/home/me/modulefiles"}):
+            job = Job(command="echo hello", modules_path_append=["$TEST_LOCAL_MODULEFILES"])
+        assert job.modules_path_append == ["/home/me/modulefiles"]
+
+    def test_undefined_env_var_raises(self):
+        from hpc_runner.core.exceptions import ConfigError
+
+        env = {k: v for k, v in os.environ.items() if k != "TEST_UNSET_APPEND_PATH"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(ConfigError, match="modules_path_append"),
+        ):
+            Job(command="echo hello", modules_path_append=["$TEST_UNSET_APPEND_PATH"])
