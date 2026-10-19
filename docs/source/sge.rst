@@ -92,3 +92,15 @@ through:
 .. code-block:: bash
 
    hpc run -P myproject -l exclusive=true -- python train.py
+
+
+Exit sentinels and job status
+-----------------------------
+
+With ``enforce_afterok`` enabled (the default), every batch job writes its
+exit code to ``<exit_dir>/<JOB_ID>.rc``, where ``exit_dir`` is
+``$HPC_EXIT_DIR`` or ``~/.cache/hpc-runner/exit``. These files implement
+afterok dependencies and also serve as the status fallback: if ``qstat`` no
+longer knows a job and ``qacct`` cannot report it (accounting disabled or
+delayed), hpc-runner reads the sentinel to report COMPLETED or FAILED and the
+exit code instead of UNKNOWN. Sentinels older than seven days are removed.

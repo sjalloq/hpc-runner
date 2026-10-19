@@ -81,6 +81,11 @@ def get_exit_dir(sweep_ttl_days: float = 7.0) -> Path:
     (sibling of the script dir, on the shared/NFS home as required so the
     dependent can read what the parent wrote).
 
+    The same sentinel is also the status fallback: when ``qacct`` cannot
+    report a finished job (accounting unavailable or already rotated),
+    ``SGEScheduler.get_status`` / ``get_exit_code`` read the exit code from
+    here instead of returning UNKNOWN.
+
     Stale sentinels older than *sweep_ttl_days* are opportunistically removed.
 
     Returns:
@@ -462,8 +467,39 @@ class SGEScheduler(BaseScheduler):
         except subprocess.CalledProcessError:
             return False
 
+    def _read_exit_sentinel(self, job_id: str) -> int | None:
+        """Read the exit code a job published to its exit sentinel.
+
+        Looks for ``<exit_dir>/<job_id>.rc`` and, failing that, the base id
+        (``123.4`` -> ``123.rc``) since array tasks share ``$JOB_ID``.
+
+        Returns:
+            The exit code, or None if sentinels are disabled
+            (``enforce_afterok`` off), the file is missing or unreadable,
+            or its content is not an integer.
+        """
+        if not self.exit_dir:
+            return None
+        exit_dir = Path(self.exit_dir)
+        base_id = job_id.split(".")[0]
+        for name in dict.fromkeys((job_id, base_id)):
+            try:
+                text = (exit_dir / f"{name}.rc").read_text()
+            except OSError:
+                continue
+            try:
+                return int(text.strip())
+            except ValueError:
+                return None
+        return None
+
     def get_status(self, job_id: str) -> JobStatus:
-        """Get job status via qstat/qacct."""
+        """Get job status via qstat, then qacct, then the exit sentinel.
+
+        Precedence is qstat (active jobs) > qacct (accounting) > exit
+        sentinel.  The sentinel is the fallback when accounting is
+        unavailable, e.g. qacct no longer returns finished jobs.
+        """
         # Try qstat first (running/pending jobs)
         try:
             result = subprocess.run(
@@ -491,16 +527,25 @@ class SGEScheduler(BaseScheduler):
             )
             if result.returncode == 0:
                 info = parse_qacct_output(result.stdout)
-                if info.get("exit_status") == "0":
-                    return JobStatus.COMPLETED
-                return JobStatus.FAILED
+                if "exit_status" in info:
+                    if info.get("exit_status") == "0":
+                        return JobStatus.COMPLETED
+                    return JobStatus.FAILED
         except subprocess.CalledProcessError:
             pass
 
-        return JobStatus.UNKNOWN
+        # Fall back to the exit sentinel when accounting has nothing.
+        rc = self._read_exit_sentinel(job_id)
+        if rc is None:
+            return JobStatus.UNKNOWN
+        return JobStatus.COMPLETED if rc == 0 else JobStatus.FAILED
 
     def get_exit_code(self, job_id: str) -> int | None:
-        """Get exit code from qacct."""
+        """Get exit code from qacct, falling back to the exit sentinel.
+
+        The sentinel is used when accounting is unavailable, e.g. qacct no
+        longer returns finished jobs.
+        """
         try:
             result = subprocess.run(
                 ["qacct", "-j", job_id],
@@ -514,7 +559,7 @@ class SGEScheduler(BaseScheduler):
                     return int(exit_status)
         except (subprocess.CalledProcessError, ValueError):
             pass
-        return None
+        return self._read_exit_sentinel(job_id)
 
     # =========================================================================
     # TUI Monitor API

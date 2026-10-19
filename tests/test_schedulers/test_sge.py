@@ -1,6 +1,6 @@
 """Tests for SGE scheduler."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -487,3 +487,102 @@ class TestSGEAfterok:
         assert ("SIM-RAN" in result.stdout) is expect_ran
         # The job always publishes its own exit code for its dependents.
         assert (tmp_path / "999.rc").read_text().strip() == str(expect_exit)
+
+
+class TestSGEExitSentinelFallback:
+    """Status/exit-code fallback to the exit sentinel when qacct is unavailable.
+
+    Precedence is qstat > qacct > sentinel.
+    """
+
+    QACCT_NOT_FOUND = "error: job id {job_id} not found\n"
+
+    def _fake_run(self, qacct_stdout=None, qacct_rc=1):
+        """Return a subprocess.run stand-in.
+
+        qstat never knows the job.  qacct returns *qacct_stdout* with
+        *qacct_rc*; by default it mimics SGE's "job id not found" (rc 1,
+        error on stderr, empty stdout).
+        """
+
+        def run(cmd, *args, **kwargs):
+            result = MagicMock()
+            result.stdout = ""
+            result.stderr = ""
+            if cmd[0] == "qstat":
+                result.returncode = 1
+                result.stderr = "Following jobs do not exist: \n"
+            elif cmd[0] == "qacct":
+                result.returncode = qacct_rc
+                if qacct_stdout is None:
+                    result.stderr = self.QACCT_NOT_FOUND.format(job_id=cmd[-1])
+                else:
+                    result.stdout = qacct_stdout
+            else:
+                result.returncode = 0
+            return result
+
+        return run
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        sched = SGEScheduler()
+        assert sched.exit_dir == str(tmp_path)
+        return sched
+
+    def test_sentinel_zero_completed(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("0\n")
+        with patch("subprocess.run", side_effect=self._fake_run()):
+            assert scheduler.get_status("123") == JobStatus.COMPLETED
+            assert scheduler.get_exit_code("123") == 0
+
+    def test_sentinel_nonzero_failed(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("3\n")
+        with patch("subprocess.run", side_effect=self._fake_run()):
+            assert scheduler.get_status("123") == JobStatus.FAILED
+            assert scheduler.get_exit_code("123") == 3
+
+    def test_array_task_falls_back_to_base_id(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("0\n")
+        with patch("subprocess.run", side_effect=self._fake_run()):
+            assert scheduler.get_status("123.4") == JobStatus.COMPLETED
+            assert scheduler.get_exit_code("123.4") == 0
+
+    def test_task_specific_sentinel_preferred(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("0\n")
+        (tmp_path / "123.4.rc").write_text("5\n")
+        assert scheduler._read_exit_sentinel("123.4") == 5
+
+    def test_no_sentinel_unknown(self, scheduler):
+        with patch("subprocess.run", side_effect=self._fake_run()):
+            assert scheduler.get_status("123") == JobStatus.UNKNOWN
+            assert scheduler.get_exit_code("123") is None
+
+    def test_unparsable_sentinel_ignored(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("garbage\n")
+        with patch("subprocess.run", side_effect=self._fake_run()):
+            assert scheduler.get_status("123") == JobStatus.UNKNOWN
+            assert scheduler.get_exit_code("123") is None
+
+    def test_enforce_afterok_off_ignores_sentinel(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("0\n")
+        scheduler.enforce_afterok = False
+        scheduler.exit_dir = ""
+        with patch("subprocess.run", side_effect=self._fake_run()):
+            assert scheduler.get_status("123") == JobStatus.UNKNOWN
+            assert scheduler.get_exit_code("123") is None
+
+    def test_qacct_without_exit_status_uses_sentinel(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("0\n")
+        run = self._fake_run(qacct_stdout="qname  all.q\n", qacct_rc=0)
+        with patch("subprocess.run", side_effect=run):
+            assert scheduler.get_status("123") == JobStatus.COMPLETED
+            assert scheduler.get_exit_code("123") == 0
+
+    def test_qacct_wins_over_sentinel(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("0\n")
+        qacct = "==============\nqname        all.q\nexit_status  2\n"
+        with patch("subprocess.run", side_effect=self._fake_run(qacct, 0)):
+            assert scheduler.get_status("123") == JobStatus.FAILED
+            assert scheduler.get_exit_code("123") == 2
