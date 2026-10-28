@@ -7,6 +7,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from hpc_runner.core.exceptions import (
+    DependencyCycleError,
+    DuplicateStepError,
+    NotSubmittedError,
+    PipelineError,
+    UnknownStepError,
+)
 from hpc_runner.core.job import Job
 from hpc_runner.workflow.dependency import DependencyType
 
@@ -78,7 +85,7 @@ class Pipeline:
             name = f"step_{len(self.jobs) + 1}"
 
         if name in self._name_map:
-            raise ValueError(f"Job name '{name}' already exists in pipeline")
+            raise DuplicateStepError(f"Job name '{name}' already exists in pipeline")
 
         job = Job(command, job_type=job_type, **job_kwargs)
         job.name = f"{self.name}_{name}"
@@ -88,7 +95,7 @@ class Pipeline:
             for dep in depends_on:
                 if isinstance(dep, str):
                     if dep not in self._name_map:
-                        raise ValueError(f"Unknown dependency: {dep}")
+                        raise UnknownStepError(f"Unknown dependency: {dep}")
                     dependencies.append(self._name_map[dep])
                 else:
                     dependencies.append(dep)
@@ -133,10 +140,10 @@ class Pipeline:
         from hpc_runner.schedulers import get_scheduler
 
         if not self.jobs:
-            raise RuntimeError("Pipeline has no jobs to submit")
+            raise PipelineError("Pipeline has no jobs to submit")
 
         if all(pjob.result is not None for pjob in self.jobs):
-            raise RuntimeError("Pipeline has already been submitted")
+            raise PipelineError("Pipeline has already been submitted")
 
         if scheduler is None:
             scheduler = self._scheduler
@@ -189,7 +196,7 @@ class Pipeline:
                     queue.append(dependent)
 
         if len(result) != len(self.jobs):
-            raise ValueError("Circular dependency detected in pipeline")
+            raise DependencyCycleError("Circular dependency detected in pipeline")
 
         return result
 
@@ -200,17 +207,17 @@ class Pipeline:
             Dict mapping job names to results
 
         Raises:
-            RuntimeError: If no jobs have been submitted.
-            RuntimeError: If some jobs were never submitted (partial failure).
+            NotSubmittedError: If no jobs have been submitted.
+            NotSubmittedError: If some jobs were never submitted (partial failure).
         """
         submitted = {pj.name: pj.result for pj in self.jobs if pj.result is not None}
 
         if not submitted:
-            raise RuntimeError("Pipeline has not been submitted")
+            raise NotSubmittedError("Pipeline has not been submitted")
 
         not_submitted = [pj.name for pj in self.jobs if pj.result is None]
         if not_submitted:
-            raise RuntimeError(
+            raise NotSubmittedError(
                 f"Jobs never submitted (partial failure): {', '.join(not_submitted)}. "
                 "Call submit() again to retry."
             )

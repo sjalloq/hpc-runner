@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-from hpc_runner.cli.main import Context, pass_context
+from hpc_runner.cli._context import Context, pass_context
 
 if TYPE_CHECKING:
     from hpc_runner.core.job import Job

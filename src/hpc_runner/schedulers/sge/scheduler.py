@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 import tempfile
 import time
 import uuid
@@ -14,6 +13,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from hpc_runner.core.config import get_config
+from hpc_runner.core.exceptions import (
+    AccountingNotAvailable,
+    JobNotFoundError,
+    SchedulerCommandError,
+    SchedulerUnavailableError,
+    SubmissionError,
+)
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
 from hpc_runner.schedulers.base import BaseScheduler
@@ -342,19 +348,7 @@ class SGEScheduler(BaseScheduler):
         workdir = Path(job.workdir).resolve() if job.workdir else None
 
         try:
-            result = subprocess.run(
-                ["qsub", str(script_path)],
-                capture_output=True,
-                text=True,
-                errors="replace",
-                check=True,
-                cwd=workdir,
-            )
-            job_id = parse_qsub_output(result.stdout)
-
-            if job_id is None:
-                raise RuntimeError(f"Failed to parse job ID: {result.stdout}")
-
+            job_id = self._qsub(["qsub", str(script_path)], script=script, cwd=workdir)
             return JobResult(job_id=job_id, scheduler=self, job=job)
         finally:
             # Clean up locally after qsub (script is copied to spool)
@@ -392,8 +386,9 @@ class SGEScheduler(BaseScheduler):
 
         workdir = Path(job.workdir).resolve() if job.workdir else None
 
-        # Run and capture exit code
-        result = subprocess.run(cmd, check=False, cwd=workdir)
+        # Run and capture exit code.  qrsh blocks for the job's lifetime, so
+        # no timeout, and its output streams straight to the terminal.
+        result = self._run(cmd, timeout=None, check=False, capture=False, cwd=workdir)
 
         # Clean up if script still exists and we're not keeping it
         if not keep_script:
@@ -439,32 +434,46 @@ class SGEScheduler(BaseScheduler):
         workdir = Path(array.job.workdir).resolve() if array.job.workdir else None
 
         try:
-            result = subprocess.run(
-                ["qsub", script_path],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=workdir,
-            )
-            job_id = parse_qsub_output(result.stdout)
-
-            if job_id is None:
-                raise RuntimeError(f"Failed to parse job ID: {result.stdout}")
-
+            job_id = self._qsub(["qsub", script_path], script=script, cwd=workdir)
             return ArrayJobResult(base_job_id=job_id, scheduler=self, array=array)
         finally:
             Path(script_path).unlink(missing_ok=True)
+
+    def _qsub(self, argv: list[str], *, script: str, cwd: Path | None) -> str:
+        """Run qsub and return the job id.
+
+        Raises:
+            SubmissionError: qsub exited non-zero (message is its stderr) or
+                its output carried no job id.
+        """
+        try:
+            result = self._run(argv, cwd=cwd)
+        except SchedulerCommandError as exc:
+            raise SubmissionError(exc.stderr, script=script, argv=exc.argv) from exc
+        job_id = parse_qsub_output(result.stdout)
+        if job_id is None:
+            raise SubmissionError(
+                f"could not parse job id from qsub output: {result.stdout.strip()!r}",
+                script=script,
+                argv=argv,
+                stderr=result.stderr,
+            )
+        return job_id
 
     # =========================================================================
     # Job Management
     # =========================================================================
 
     def cancel(self, job_id: str) -> bool:
-        """Cancel a job via qdel."""
+        """Cancel a job via qdel.
+
+        Returns False when qdel refuses; a missing qdel raises
+        ``SchedulerUnavailableError``.
+        """
         try:
-            subprocess.run(["qdel", job_id], check=True, capture_output=True)
+            self._run(["qdel", job_id])
             return True
-        except subprocess.CalledProcessError:
+        except SchedulerCommandError:
             return False
 
     def _read_exit_sentinel(self, job_id: str) -> int | None:
@@ -500,39 +509,26 @@ class SGEScheduler(BaseScheduler):
         sentinel.  The sentinel is the fallback when accounting is
         unavailable, e.g. qacct no longer returns finished jobs.
         """
-        # Try qstat first (running/pending jobs)
-        try:
-            result = subprocess.run(
-                ["qstat", "-j", job_id],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                result2 = subprocess.run(["qstat"], capture_output=True, text=True)
-                if result2.returncode == 0:
-                    jobs = parse_qstat_plain(result2.stdout)
-                    base_id = job_id.split(".")[0]
-                    if base_id in jobs:
-                        return state_to_status(jobs[base_id].get("state", ""))
-                return JobStatus.RUNNING
-        except subprocess.CalledProcessError:
-            pass
+        # Try qstat first (running/pending jobs).  Non-zero means "not in
+        # the queue", the normal path for a finished job.
+        result = self._run(["qstat", "-j", job_id], check=False)
+        if result.returncode == 0:
+            result2 = self._run(["qstat"], check=False)
+            if result2.returncode == 0:
+                jobs = parse_qstat_plain(result2.stdout)
+                base_id = job_id.split(".")[0]
+                if base_id in jobs:
+                    return state_to_status(jobs[base_id].get("state", ""))
+            return JobStatus.RUNNING
 
-        # Check qacct for completed jobs
-        try:
-            result = subprocess.run(
-                ["qacct", "-j", job_id],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                info = parse_qacct_output(result.stdout)
-                if "exit_status" in info:
-                    if info.get("exit_status") == "0":
-                        return JobStatus.COMPLETED
-                    return JobStatus.FAILED
-        except subprocess.CalledProcessError:
-            pass
+        # Check qacct for completed jobs (non-zero: no accounting record)
+        result = self._run(["qacct", "-j", job_id], check=False)
+        if result.returncode == 0:
+            info = parse_qacct_output(result.stdout)
+            if "exit_status" in info:
+                if info.get("exit_status") == "0":
+                    return JobStatus.COMPLETED
+                return JobStatus.FAILED
 
         # Fall back to the exit sentinel when accounting has nothing.
         rc = self._read_exit_sentinel(job_id)
@@ -546,19 +542,15 @@ class SGEScheduler(BaseScheduler):
         The sentinel is used when accounting is unavailable, e.g. qacct no
         longer returns finished jobs.
         """
-        try:
-            result = subprocess.run(
-                ["qacct", "-j", job_id],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                info = parse_qacct_output(result.stdout)
-                exit_status = info.get("exit_status")
-                if exit_status is not None:
+        result = self._run(["qacct", "-j", job_id], check=False)
+        if result.returncode == 0:
+            info = parse_qacct_output(result.stdout)
+            exit_status = info.get("exit_status")
+            if exit_status is not None:
+                try:
                     return int(exit_status)
-        except (subprocess.CalledProcessError, ValueError):
-            pass
+                except ValueError:
+                    pass
         return self._read_exit_sentinel(job_id)
 
     # =========================================================================
@@ -589,19 +581,10 @@ class SGEScheduler(BaseScheduler):
             # Show all users' jobs
             cmd.extend(["-u", "*"])
 
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                check=True,
-            )
-        except subprocess.CalledProcessError:
-            # qstat failed - likely no jobs or scheduler not available
-            return []
-        except FileNotFoundError:
-            # qstat not found
+        # Some sites' qstat exits non-zero when there are no jobs.  A missing
+        # qstat raises SchedulerUnavailableError.
+        result = self._run(cmd, check=False)
+        if result.returncode != 0:
             return []
 
         # Parse XML output
@@ -679,8 +662,6 @@ class SGEScheduler(BaseScheduler):
         Raises:
             AccountingNotAvailable: If qacct is not installed.
         """
-        from hpc_runner.core.exceptions import AccountingNotAvailable
-
         # Build qacct command
         cmd = ["qacct", "-j"]
         if user:
@@ -694,18 +675,12 @@ class SGEScheduler(BaseScheduler):
             cmd.extend(["-e", until.strftime(time_fmt)])
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                check=True,
-            )
-        except FileNotFoundError:
+            result = self._run(cmd, check=False)
+        except SchedulerUnavailableError as exc:
             raise AccountingNotAvailable(
                 "qacct not found. SGE accounting is not available on this system."
-            )
-        except subprocess.CalledProcessError:
+            ) from exc
+        if result.returncode != 0:
             # No matching records
             return []
 
@@ -738,26 +713,17 @@ class SGEScheduler(BaseScheduler):
             cwd, script_file, dependencies, project, department.
         """
         cmd = ["qstat", "-j", job_id, "-xml"]
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                check=True,
-            )
-            output = result.stdout
-        except subprocess.CalledProcessError as exc:
-            output = exc.stdout or exc.stderr or ""
+        result = self._run(cmd, check=False)
+        output = result.stdout
+        if result.returncode != 0:
+            output = result.stdout or result.stderr or ""
             if not output:
-                raise ValueError(f"Job {job_id} not found")
-        except FileNotFoundError:
-            raise RuntimeError("qstat not found")
+                raise JobNotFoundError(f"job {job_id} not found")
 
         # Parse XML output
         job_data = self._parse_qstat_j_xml(output)
         if not job_data and output:
-            raise ValueError(f"Job {job_id} not found")
+            raise JobNotFoundError(f"job {job_id} not found")
 
         # Separate extra details from JobInfo fields
         extra_details: dict[str, object] = {}

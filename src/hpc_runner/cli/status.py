@@ -10,7 +10,8 @@ import rich_click as click
 from rich.console import Console
 from rich.table import Table
 
-from hpc_runner.cli.main import Context, pass_context
+from hpc_runner.cli._context import Context, pass_context
+from hpc_runner.core.exceptions import JobNotFoundError
 
 if TYPE_CHECKING:
     from hpc_runner.core.job_info import JobInfo
@@ -265,7 +266,7 @@ def _show_single_job(
     # Try the rich get_job_details() first
     try:
         job_info, extra = scheduler.get_job_details(job_id)
-    except (NotImplementedError, ValueError):
+    except (NotImplementedError, JobNotFoundError):
         pass
 
     # Fall back to get_status() + get_exit_code()
@@ -345,7 +346,7 @@ def _enrich_working_dirs(scheduler: BaseScheduler, jobs: list[JobInfo]) -> None:
             detail, _ = scheduler.get_job_details(j.job_id)
             if detail.working_dir:
                 j.working_dir = detail.working_dir
-        except (NotImplementedError, ValueError, RuntimeError):
+        except (NotImplementedError, JobNotFoundError):
             pass
 
 

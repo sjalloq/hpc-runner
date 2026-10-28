@@ -21,7 +21,7 @@ HPC_CONFIG_ENV_VAR = "HPC_RUNNER_CONFIG"
 
 
 def _config_error(path: Path, message: str) -> ConfigError:
-    return ConfigError(f"{path}: {message}")
+    return ConfigError(message, path=path)
 
 
 @dataclass

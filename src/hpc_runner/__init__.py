@@ -7,13 +7,22 @@ except ImportError:
 
 from hpc_runner.core.config import HPCConfig, get_config, load_config, reload_config
 from hpc_runner.core.exceptions import (
+    AccountingNotAvailable,
     ConfigError,
-    ConfigNotFoundError,
+    DependencyCycleError,
+    DuplicateStepError,
     HPCToolsError,
+    JobFailedError,
     JobNotFoundError,
+    NotSubmittedError,
+    NotSupportedError,
+    PipelineError,
+    SchedulerCommandError,
     SchedulerError,
+    SchedulerTimeoutError,
+    SchedulerUnavailableError,
     SubmissionError,
-    ValidationError,
+    UnknownStepError,
 )
 from hpc_runner.core.job import Job
 from hpc_runner.core.job_array import JobArray
@@ -47,11 +56,20 @@ __all__ = [
     "PipelineJob",
     "DependencyType",
     # Exceptions
-    "HPCToolsError",
-    "SchedulerError",
-    "SubmissionError",
-    "JobNotFoundError",
+    "AccountingNotAvailable",
     "ConfigError",
-    "ConfigNotFoundError",
-    "ValidationError",
+    "DependencyCycleError",
+    "DuplicateStepError",
+    "HPCToolsError",
+    "JobFailedError",
+    "JobNotFoundError",
+    "NotSubmittedError",
+    "NotSupportedError",
+    "PipelineError",
+    "SchedulerCommandError",
+    "SchedulerError",
+    "SchedulerTimeoutError",
+    "SchedulerUnavailableError",
+    "SubmissionError",
+    "UnknownStepError",
 ]

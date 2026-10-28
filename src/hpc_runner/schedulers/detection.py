@@ -2,23 +2,20 @@
 
 import os
 import shutil
-import subprocess
+
+from hpc_runner.core.exceptions import SchedulerError
+from hpc_runner.schedulers import _subprocess
 
 
 def _check_sge_via_qstat() -> bool:
     """Check if qstat is SGE by examining its help output."""
     try:
-        result = subprocess.run(
-            ["qstat", "-help"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        # SGE's qstat -help starts with "SGE" or "GE" version info
-        output = result.stdout + result.stderr
-        return "SGE" in output or "Grid Engine" in output
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        result = _subprocess.run_command(["qstat", "-help"], timeout=5, check=False)
+    except (SchedulerError, OSError):
         return False
+    # SGE's qstat -help starts with "SGE" or "GE" version info
+    output = (result.stdout or "") + (result.stderr or "")
+    return "SGE" in output or "Grid Engine" in output
 
 
 def detect_scheduler() -> str:

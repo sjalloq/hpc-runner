@@ -5,6 +5,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from hpc_runner.core.config import HPCConfig
+from hpc_runner.core.exceptions import (
+    DependencyCycleError,
+    DuplicateStepError,
+    NotSubmittedError,
+    PipelineError,
+    UnknownStepError,
+)
 from hpc_runner.workflow import DependencyType, Pipeline
 
 
@@ -63,7 +70,7 @@ class TestPipeline:
         p = Pipeline()
         p.add("echo hello", name="step1")
 
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(DuplicateStepError, match="already exists"):
             p.add("echo world", name="step1")
 
     def test_unknown_dependency_raises(self):
@@ -71,7 +78,7 @@ class TestPipeline:
         p = Pipeline()
         p.add("echo hello", name="step1")
 
-        with pytest.raises(ValueError, match="Unknown dependency"):
+        with pytest.raises(UnknownStepError, match="Unknown dependency"):
             p.add("echo world", name="step2", depends_on=["nonexistent"])
 
     def test_topological_sort(self):
@@ -102,7 +109,7 @@ class TestPipeline:
         # Manually create a cycle
         p._name_map["step1"].depends_on.append(p._name_map["step2"])
 
-        with pytest.raises(ValueError, match="Circular dependency"):
+        with pytest.raises(DependencyCycleError, match="Circular dependency"):
             p._topological_sort()
 
     def test_get_job(self):
@@ -347,7 +354,7 @@ class TestPipelinePartialSubmission:
         """Submitting an empty pipeline raises."""
         p = Pipeline()
 
-        with pytest.raises(RuntimeError, match="no jobs to submit"):
+        with pytest.raises(PipelineError, match="no jobs to submit"):
             p.submit(scheduler=MagicMock())
 
     def test_submit_already_submitted_raises(self):
@@ -359,7 +366,7 @@ class TestPipelinePartialSubmission:
         mock_scheduler.submit.return_value = MagicMock(job_id="1")
         p.submit(scheduler=mock_scheduler)
 
-        with pytest.raises(RuntimeError, match="already been submitted"):
+        with pytest.raises(PipelineError, match="already been submitted"):
             p.submit(scheduler=mock_scheduler)
 
     def test_partial_failure_can_retry(self):
@@ -399,7 +406,7 @@ class TestPipelinePartialSubmission:
         p = Pipeline()
         p.add("echo hello", name="step1")
 
-        with pytest.raises(RuntimeError, match="has not been submitted"):
+        with pytest.raises(NotSubmittedError, match="has not been submitted"):
             p.wait()
 
     def test_wait_raises_on_partial_submission(self):
@@ -414,7 +421,7 @@ class TestPipelinePartialSubmission:
         with pytest.raises(RuntimeError):
             p.submit(scheduler=mock_scheduler)
 
-        with pytest.raises(RuntimeError, match="partial failure"):
+        with pytest.raises(NotSubmittedError, match="partial failure"):
             p.wait()
 
 

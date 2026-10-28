@@ -5,6 +5,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hpc_runner.core.exceptions import JobFailedError
+
 if TYPE_CHECKING:
     from hpc_runner.core.job import Job
     from hpc_runner.core.job_array import JobArray
@@ -79,10 +81,26 @@ class JobResult:
 
         start = time.time()
         while not self.is_complete:
-            if timeout and (time.time() - start) > timeout:
+            if timeout is not None and (time.time() - start) >= timeout:
                 raise TimeoutError(f"Job {self.job_id} did not complete within {timeout}s")
             time.sleep(poll_interval)
         return self.status
+
+    def result(self, poll_interval: float = 5.0, timeout: float | None = None) -> int | None:
+        """Wait for the job, then return its exit code.
+
+        ``concurrent.futures`` style: a job that did not finish COMPLETED
+        raises rather than returning a code the caller must check.
+
+        Raises:
+            JobFailedError: The final status is not COMPLETED.
+            TimeoutError: *timeout* elapsed first.
+        """
+        status = self.wait(poll_interval=poll_interval, timeout=timeout)
+        exit_code = self.returncode
+        if status != JobStatus.COMPLETED:
+            raise JobFailedError(status, self.job_id, exit_code)
+        return exit_code
 
     def cancel(self) -> bool:
         """Cancel the job."""
@@ -102,9 +120,9 @@ class JobResult:
         if not path or not path.exists():
             return ""
         content = path.read_text()
-        if tail:
+        if tail is not None:
             lines = content.splitlines()
-            content = "\n".join(lines[-tail:])
+            content = "\n".join(lines[max(len(lines) - tail, 0) :])
         return content
 
     def read_stderr(self, tail: int | None = None) -> str:
@@ -113,9 +131,9 @@ class JobResult:
         if not path or not path.exists():
             return ""
         content = path.read_text()
-        if tail:
+        if tail is not None:
             lines = content.splitlines()
-            content = "\n".join(lines[-tail:])
+            content = "\n".join(lines[max(len(lines) - tail, 0) :])
         return content
 
 

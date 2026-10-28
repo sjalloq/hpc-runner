@@ -3,7 +3,7 @@
 import rich_click as click
 from rich.console import Console
 
-from hpc_runner.cli.main import Context, pass_context
+from hpc_runner.cli._context import Context, pass_context
 
 console = Console()
 

@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import os
+
+# Exempt from the scheduler subprocess seam (schedulers/_subprocess.py):
+# this scheduler runs the *job itself* as a child process; it never calls a
+# scheduler CLI, so there is no argv to log or scheduler error to convert.
 import subprocess
 import tempfile
 from datetime import datetime

@@ -91,6 +91,13 @@ Monitoring jobs
    else:
        print("failed:", result.read_stderr(tail=50))
 
+Or wait and get the exit code in one call; a job that does not finish
+``COMPLETED`` raises ``JobFailedError``:
+
+.. code-block:: python
+
+   exit_code = result.result()
+
 Cancel a job:
 
 .. code-block:: python
@@ -270,6 +277,8 @@ remaining jobs:
 
 .. code-block:: python
 
+   from hpc_runner import SchedulerError
+
    p = Pipeline("etl")
    p.add("python extract.py", name="extract")
    p.add("python transform.py", name="transform", depends_on=["extract"])
@@ -277,7 +286,7 @@ remaining jobs:
 
    try:
        p.submit()
-   except RuntimeError:
+   except SchedulerError:
        # extract submitted, transform failed — fix the issue, then:
        p.submit()   # skips extract, retries transform and load
 
@@ -297,3 +306,45 @@ Use ``JobArray`` when you want a scheduler array job (SGE: ``qsub -t``):
 
    statuses = array_result.wait()
    print("completed:", sum(1 for s in statuses.values() if s.name == "COMPLETED"))
+
+
+Errors
+------
+
+Every error hpc-runner raises on purpose is an ``HPCToolsError``; anything
+else is a bug. All classes are importable from ``hpc_runner``.
+
+.. code-block:: text
+
+   HPCToolsError
+   ├── ConfigError                bad config or unknown scheduler name (.path, .line)
+   ├── SchedulerError             anything from a scheduler
+   │   ├── SchedulerUnavailableError   scheduler binary not on PATH
+   │   ├── SchedulerCommandError       command exited non-zero (.argv, .returncode, .stdout, .stderr)
+   │   ├── SchedulerTimeoutError       command did not finish in time (.argv, .timeout)
+   │   ├── SubmissionError             scheduler rejected the job, or its reply had no job id
+   │   │                               (message is the scheduler's stderr; .stderr, .script, .argv)
+   │   ├── JobNotFoundError            the scheduler does not know this job id
+   │   ├── NotSupportedError           this scheduler cannot honour the requested feature
+   │   ├── JobFailedError              from JobResult.result() (.status, .job_id, .exit_code)
+   │   └── AccountingNotAvailable      job history (qacct/sacct) is not available
+   └── PipelineError              pipeline misuse ("no jobs", "already submitted")
+       ├── DuplicateStepError         step name already used
+       ├── UnknownStepError           depends_on names an unknown step
+       ├── DependencyCycleError       the steps form a cycle
+       └── NotSubmittedError          wait() before (all of) the pipeline was submitted
+
+.. code-block:: python
+
+   from hpc_runner import Job, SubmissionError
+
+   try:
+       Job("python train.py", queue="gpu.q").submit()
+   except SubmissionError as e:
+       print("rejected:", e)        # first line of the scheduler's stderr
+       print(e.stderr)              # full stderr
+       print(e.script)              # the rendered job script
+
+Every scheduler command is logged at ``DEBUG`` on the ``hpc_runner.schedulers``
+logger. hpc-runner never configures logging itself; call
+``logging.basicConfig(level=logging.DEBUG)`` to see the commands.

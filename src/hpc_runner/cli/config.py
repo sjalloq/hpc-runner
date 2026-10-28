@@ -7,7 +7,7 @@ import rich_click as click
 from rich.console import Console
 from rich.syntax import Syntax
 
-from hpc_runner.cli.main import Context, pass_context
+from hpc_runner.cli._context import Context, pass_context
 
 console = Console()
 
@@ -56,46 +56,31 @@ def show(ctx: Context, raw: bool) -> None:
 
         console.print("[bold]Merged configuration:[/bold]\n")
 
-        # We need tomli_w for writing TOML
-        try:
-            import tomli_w  # type: ignore[import-not-found]
-
-            merged_dict = {
-                "defaults": config.defaults,
-                "schedulers": config.schedulers,
-                "tools": config.tools,
-                "types": config.types,
-            }
-            # Filter out empty sections
-            merged_dict = {k: v for k, v in merged_dict.items() if v}
-            content = tomli_w.dumps(merged_dict)
-        except ImportError:
-            # Fallback: manual formatting
-            lines = []
-            if config.defaults:
-                lines.append("[defaults]")
-                for k, v in config.defaults.items():
+        lines = []
+        if config.defaults:
+            lines.append("[defaults]")
+            for k, v in config.defaults.items():
+                lines.append(f"{k} = {_format_toml_value(v)}")
+            lines.append("")
+        if config.schedulers:
+            for sched, sched_config in config.schedulers.items():
+                lines.append(f"[schedulers.{sched}]")
+                for k, v in sched_config.items():
                     lines.append(f"{k} = {_format_toml_value(v)}")
                 lines.append("")
-            if config.schedulers:
-                for sched, sched_config in config.schedulers.items():
-                    lines.append(f"[schedulers.{sched}]")
-                    for k, v in sched_config.items():
-                        lines.append(f"{k} = {_format_toml_value(v)}")
-                    lines.append("")
-            if config.tools:
-                for tool, tool_config in config.tools.items():
-                    lines.append(f"[tools.{tool}]")
-                    for k, v in tool_config.items():
-                        lines.append(f"{k} = {_format_toml_value(v)}")
-                    lines.append("")
-            if config.types:
-                for typ, type_config in config.types.items():
-                    lines.append(f"[types.{typ}]")
-                    for k, v in type_config.items():
-                        lines.append(f"{k} = {_format_toml_value(v)}")
-                    lines.append("")
-            content = "\n".join(lines)
+        if config.tools:
+            for tool, tool_config in config.tools.items():
+                lines.append(f"[tools.{tool}]")
+                for k, v in tool_config.items():
+                    lines.append(f"{k} = {_format_toml_value(v)}")
+                lines.append("")
+        if config.types:
+            for typ, type_config in config.types.items():
+                lines.append(f"[types.{typ}]")
+                for k, v in type_config.items():
+                    lines.append(f"{k} = {_format_toml_value(v)}")
+                lines.append("")
+        content = "\n".join(lines)
 
         syntax = Syntax(content, "toml", theme="monokai", line_numbers=True)
         console.print(syntax)

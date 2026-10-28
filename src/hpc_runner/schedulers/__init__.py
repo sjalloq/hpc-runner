@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
+from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.schedulers.detection import detect_scheduler
 
 if TYPE_CHECKING:
@@ -26,13 +27,16 @@ def get_scheduler(name: str | None = None) -> BaseScheduler:
 
     Returns:
         Scheduler instance
+
+    Raises:
+        ConfigError: *name* is not a registered scheduler.
     """
     if name is None:
         name = detect_scheduler()
 
     if name not in _SCHEDULERS:
-        available = list(_SCHEDULERS.keys())
-        raise ValueError(f"Unknown scheduler: {name}. Available: {available}")
+        available = ", ".join(_SCHEDULERS)
+        raise ConfigError(f"unknown scheduler '{name}'; available: {available}")
 
     # Lazy import
     module_path, class_name = _SCHEDULERS[name].rsplit(":", 1)

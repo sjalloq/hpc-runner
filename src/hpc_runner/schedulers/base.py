@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from types import EllipsisType
 from typing import TYPE_CHECKING, Any
 
 from hpc_runner.core.descriptors import SchedulerArg
+from hpc_runner.schedulers import _subprocess
 
 if TYPE_CHECKING:
+    import subprocess
+
     from hpc_runner.core.job import Job
     from hpc_runner.core.job_array import JobArray
     from hpc_runner.core.job_info import JobInfo
@@ -36,6 +41,35 @@ class BaseScheduler(ABC):
 
     # Subclasses populate this in __init__ with config-driven values
     ARG_RENDERERS: dict[str, SchedulerArg[Any]] = {}
+
+    # Default timeout (seconds) for query and submit commands.
+    COMMAND_TIMEOUT: float = 60.0
+
+    # =========================================================================
+    # Subprocess seam
+    # =========================================================================
+
+    def _run(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout: float | EllipsisType | None = ...,
+        check: bool = True,
+        capture: bool = True,
+        cwd: Path | None = None,
+        input: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a scheduler command through the one subprocess seam.
+
+        *timeout* defaults to ``COMMAND_TIMEOUT``; pass ``None`` explicitly
+        for commands that block for a job's lifetime (interactive runs).
+        See :func:`hpc_runner.schedulers._subprocess.run_command` for the
+        exceptions raised.
+        """
+        effective = self.COMMAND_TIMEOUT if timeout is ... else timeout
+        return _subprocess.run_command(
+            argv, timeout=effective, check=check, capture=capture, cwd=cwd, input=input
+        )
 
     # =========================================================================
     # Rendering Protocol

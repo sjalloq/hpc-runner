@@ -4,11 +4,11 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 import hpc_runner.core.config as _config_mod
+from tests.fakes import patch_seam
 
 
 @pytest.fixture(autouse=True)
@@ -31,21 +31,17 @@ def temp_dir():
 
 @pytest.fixture
 def mock_sge_commands():
-    """Mock SGE commands (qsub, qstat, etc.)."""
-    with patch("subprocess.run") as mock_run:
+    """Mock SGE commands (qsub, qstat, etc.) at the subprocess seam."""
 
-        def side_effect(cmd, *args, **kwargs):
-            result = MagicMock()
-            result.returncode = 0
-            result.stdout = ""
-            result.stderr = ""
+    def respond(cmd):
+        stdout = ""
 
-            if cmd[0] == "qsub":
-                result.stdout = 'Your job 12345 ("test_job") has been submitted\n'
-            elif cmd[0] == "qstat":
-                if "-xml" in cmd:
-                    # XML output for list_active_jobs
-                    result.stdout = """<?xml version='1.0'?>
+        if cmd[0] == "qsub":
+            stdout = 'Your job 12345 ("test_job") has been submitted\n'
+        elif cmd[0] == "qstat":
+            if "-xml" in cmd:
+                # XML output for list_active_jobs
+                stdout = """<?xml version='1.0'?>
 <job_info>
   <queue_info>
     <job_list state="running">
@@ -79,17 +75,17 @@ def mock_sge_commands():
   </job_info>
 </job_info>
 """
-                elif "-j" in cmd:
-                    result.stdout = "job_number: 12345\n"
-                else:
-                    result.stdout = """job-ID  prior   name       user         state submit/start at     queue                          slots ja-task-ID
+            elif "-j" in cmd:
+                stdout = "job_number: 12345\n"
+            else:
+                stdout = """job-ID  prior   name       user         state submit/start at     queue                          slots ja-task-ID
 -----------------------------------------------------------------------------------------------------------------
 12345   0.55500 test_job   user         r     01/01/2024 10:00:00 all.q@node1                    1
 """
-            elif cmd[0] == "qdel":
-                result.stdout = "user has deleted job 12345\n"
-            elif cmd[0] == "qacct":
-                result.stdout = """==============================================================
+        elif cmd[0] == "qdel":
+            stdout = "user has deleted job 12345\n"
+        elif cmd[0] == "qacct":
+            stdout = """==============================================================
 qname        all.q
 hostname     node1
 owner        user
@@ -98,9 +94,9 @@ jobnumber    12345
 exit_status  0
 """
 
-            return result
+        return 0, stdout, ""
 
-        mock_run.side_effect = side_effect
+    with patch_seam(respond) as mock_run:
         yield mock_run
 
 
