@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from hpc_runner.core.config import HPCConfig
+from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.exceptions import (
     DependencyCycleError,
     DuplicateStepError,
@@ -13,8 +14,8 @@ from hpc_runner.core.exceptions import (
     PipelineError,
     UnknownStepError,
 )
-from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.core.units import Memory
 from hpc_runner.workflow import DependencyType, Pipeline
 from tests.fakes import make_host
 
@@ -67,7 +68,7 @@ class TestPipeline:
         assert step.spec is spec
         (job,) = _submitted_jobs(p)
         assert job.cpu == 4
-        assert job.mem == "8G"
+        assert job.mem == Memory.parse("8G")
 
     def test_add_job_with_dependencies(self):
         """Test adding job with dependencies."""
@@ -248,7 +249,7 @@ class TestPipelineConfig:
         p.add("echo hello", name="step1")
         (job,) = _submitted_jobs(p)
         assert job.cpu == 2
-        assert job.mem == "8G"
+        assert job.mem == Memory.parse("8G")
 
     def test_add_job_with_tool(self):
         config = HPCConfig(
@@ -274,7 +275,7 @@ class TestPipelineConfig:
         p.add(JobSpec("echo hello", cpu=16), name="step1")
         (job,) = _submitted_jobs(p)
         assert job.cpu == 16
-        assert job.mem == "4G"
+        assert job.mem == Memory.parse("4G")
 
     def test_job_name_prefixed_with_pipeline_name(self):
         p = _pipeline("my_pipe")

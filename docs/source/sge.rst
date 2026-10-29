@@ -58,13 +58,52 @@ hpc-runner renders ``mem`` and ``time`` using SGE hard resources:
 - config: ``[schedulers.sge].time_resource`` (default: ``h_rt``)
 - SGE: ``qsub -l <memory_resource>=<mem> -l <time_resource>=<time>``
 
+``mem`` is the memory for the **whole job** (see :ref:`memory-and-time`).
+SGE multiplies a consumable such as ``mem_free`` or ``h_vmem`` by the
+number of slots, so by default hpc-runner divides ``mem`` by ``cpu``
+(rounded up) before rendering: ``cpu = 4, mem = "16G"`` renders
+``-l mem_free=4G``. A site whose memory resource is per job sets
+``memory_per = "job"`` and the value is passed as given.
+
+- config: ``[schedulers.sge].memory_per`` (``"slot"``, the default, or ``"job"``)
+
+``mem`` renders in the largest exact binary unit (``16G``; ``1.5G`` becomes
+``1536M``) and ``time`` as ``H:MM:SS`` with unbounded hours (``2d`` becomes
+``48:00:00``).
+
 Example (site using ``h_vmem`` and ``h_rt``):
 
 .. code-block:: toml
 
    [schedulers.sge]
    memory_resource = "h_vmem"
+   memory_per = "slot"
    time_resource = "h_rt"
+
+
+Output files and job names
+--------------------------
+
+Every batch job gets an explicit, absolute ``-o``. The default pattern
+``${hpc.job_name}.${hpc.job_id}.out`` renders as
+``#$ -o <workdir>/$JOB_NAME.$JOB_ID.out``, which SGE expands; array jobs get
+``.$TASK_ID`` appended unless the pattern already uses ``${hpc.task_id}``.
+Without ``stderr``, ``#$ -j y`` merges stderr into the same file; a
+``stderr`` pattern renders ``#$ -e`` instead. The directory of each path is
+created before ``qsub`` (SGE silently drops output whose directory is
+missing). See :ref:`output-files`.
+
+A relative pattern is joined onto the job's working directory (``workdir``,
+else the submit directory) before rendering, so ``-o``/``-e`` are always
+absolute: ``use_cwd`` only decides where the command runs, and the recorded
+``stdout_path`` is right either way.
+
+SGE rejects job names that start with a digit or contain whitespace,
+``/``, ``:``, ``@``, ``\``, ``*`` or ``?``. hpc-runner sanitises the name
+it renders: a leading digit gets a ``j`` prefix and each invalid character
+becomes ``_`` (``--name "9 lives"`` is submitted as ``j9_lives``). The
+sanitised name is the one in ``-N``, ``$JOB_NAME`` and the recorded output
+path. Generated names (``<user>_<command>``) are unaffected.
 
 
 Custom resources

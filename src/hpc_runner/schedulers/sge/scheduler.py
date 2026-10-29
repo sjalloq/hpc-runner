@@ -10,11 +10,12 @@ import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from hpc_runner.core.dependency import DependencyType
 from hpc_runner.core.exceptions import (
     AccountingNotAvailable,
+    ConfigError,
     JobNotFoundError,
     NotSupportedError,
     SchedulerCommandError,
@@ -31,6 +32,7 @@ from hpc_runner.core.result import (
 )
 from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
 from hpc_runner.schedulers.sge.args import (
+    MEMORY_PER,
     SGEArrayArg,
     SGECpuArg,
     SGECwdArg,
@@ -46,6 +48,7 @@ from hpc_runner.schedulers.sge.args import (
     SGEQueueArg,
     SGEShellArg,
     SGETimeArg,
+    sanitise_job_name,
 )
 from hpc_runner.schedulers.sge.parser import (
     parse_qacct_output,
@@ -144,6 +147,7 @@ class SGEScheduler(BaseScheduler):
         "parallel_environment": str,
         "memory_resource": str,
         "time_resource": str,
+        "memory_per": str,
         "module_init_script": str,
         "module_system": str,
         "emulate_afterok": bool,
@@ -173,6 +177,15 @@ class SGEScheduler(BaseScheduler):
         self.pe_name = sge_config.get("parallel_environment", "smp")
         self.mem_resource = sge_config.get("memory_resource", "mem_free")
         self.time_resource = sge_config.get("time_resource", "h_rt")
+        # How the site's memory resource is consumed: per slot (SGE
+        # multiplies a consumable by the slots) or per job. ``mem`` is
+        # always per job (D10); per slot, the request is divided by cpu.
+        self.memory_per: str = sge_config.get("memory_per", "slot")
+        if self.memory_per not in MEMORY_PER:
+            raise ConfigError(
+                "[schedulers.sge] memory_per: expected one of "
+                f"{', '.join(repr(m) for m in MEMORY_PER)}, got {self.memory_per!r}"
+            )
 
         # afterok/afternotok emulation: SGE -hold_jid is afterany, so each
         # job publishes its exit code to a sentinel file and a guard in the
@@ -199,11 +212,12 @@ class SGEScheduler(BaseScheduler):
             "stderr": SGEErrorArg(),
             # Resource attributes (config-driven)
             "cpu": SGECpuArg(pe_name=self.pe_name),
-            "mem": SGEMemArg(resource_name=self.mem_resource),
+            "mem": SGEMemArg(resource_name=self.mem_resource, memory_per=self.memory_per),
             "time": SGETimeArg(resource_name=self.time_resource),
         }
 
         # Keep references for special-case rendering
+        self._mem_arg = cast(SGEMemArg, self.ARG_RENDERERS["mem"])
         self._array_arg = SGEArrayArg()
         self._hold_arg = SGEHoldArg()
         self._merge_output_arg = SGEMergeOutputArg()
@@ -211,6 +225,33 @@ class SGEScheduler(BaseScheduler):
     # =========================================================================
     # Script Generation
     # =========================================================================
+
+    def job_name(self, job: Job) -> str:
+        """*job*'s name as SGE accepts it: the base rules, then :func:`sanitise_job_name`."""
+        return sanitise_job_name(super().job_name(job))
+
+    def render_value(self, job: Job, attr_name: str) -> Any:
+        """SGE's view of *attr_name*: sanitised name, ``-o``/``-e`` paths, per-slot mem.
+
+        Output paths are rendered absolute (joined onto ``job.workdir``), so
+        they do not depend on ``use_cwd`` and match the recorded
+        ``stdout_path``. SGE expands them: ``${hpc.job_name}`` becomes
+        ``$JOB_NAME``, ``${hpc.task_id}`` ``$TASK_ID`` (see
+        :meth:`~hpc_runner.schedulers.base.BaseScheduler.output_pattern`
+        for arrays).
+        """
+        if attr_name == "name":
+            return self.job_name(job)
+        if attr_name in ("stdout", "stderr"):
+            pattern = self.output_pattern(job, "stdout" if attr_name == "stdout" else "stderr")
+            if pattern is None:
+                return None
+            # Always absolute: use_cwd only decides where the command runs.
+            path = str(Path(job.workdir) / pattern)
+            return self.render_hpc_vars(path, job=job, context="path")
+        if attr_name == "mem" and job.mem is not None:
+            return self._mem_arg.for_job(job.mem, job.cpu)
+        return super().render_value(job, attr_name)
 
     def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script :meth:`submit` would write for *job*.
@@ -381,19 +422,33 @@ class SGEScheduler(BaseScheduler):
         if keep_script:
             logger.debug("Script saved: %s", script_path)
 
-        workdir = Path(job.workdir).resolve() if job.workdir else None
+        self.make_output_dirs(job)
 
         try:
-            job_id = self._qsub(["qsub", str(script_path)], script=script, cwd=workdir)
+            job_id = self._qsub(["qsub", str(script_path)], script=script, cwd=Path(job.workdir))
         finally:
             # Clean up locally after qsub (script is copied to spool)
             # The script inside the job will also self-delete unless keep_script
             if not keep_script:
                 script_path.unlink(missing_ok=True)
 
+        stdout_path, stderr_path = self.output_paths(job, job_id)
         if job.array is not None:
-            return ArrayJobResult(scheduler=self, job_id=job_id, job=job, array=job.array)
-        return JobResult(scheduler=self, job_id=job_id, job=job)
+            return ArrayJobResult(
+                scheduler=self,
+                job_id=job_id,
+                job=job,
+                array=job.array,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+            )
+        return JobResult(
+            scheduler=self,
+            job_id=job_id,
+            job=job,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+        )
 
     def _submit_interactive(
         self, job: Job, keep_script: bool = False, verbose: bool = False
@@ -427,11 +482,9 @@ class SGEScheduler(BaseScheduler):
         # Build qrsh command with script path
         cmd = self._build_qrsh_command(job, str(script_path))
 
-        workdir = Path(job.workdir).resolve() if job.workdir else None
-
         # Run and capture exit code.  qrsh blocks for the job's lifetime, so
         # no timeout, and its output streams straight to the terminal.
-        result = self._run(cmd, timeout=None, check=False, capture=False, cwd=workdir)
+        result = self._run(cmd, timeout=None, check=False, capture=False, cwd=Path(job.workdir))
 
         # Clean up if script still exists and we're not keeping it
         if not keep_script:

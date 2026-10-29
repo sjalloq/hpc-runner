@@ -23,6 +23,7 @@ from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.merge import Edit, Set, merge_list
 from hpc_runner.core.schema import FIELD_VALIDATORS, PER_INVOCATION_FIELDS, find_line
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.core.units import Memory
 from hpc_runner.schedulers import scheduler_config_keys
 from tests.fakes import make_job
 
@@ -46,7 +47,7 @@ class TestHPCConfig:
         config = HPCConfig(defaults={"cpu": 2, "mem": "8G"})
         assert _layer_names(config, "unknown_tool") == ["defaults"]
         job = make_job("unknown_tool", config=config)
-        assert (job.cpu, job.mem) == (2, "8G")
+        assert (job.cpu, job.mem) == (2, Memory.parse("8G"))
 
     def test_tool_layer(self):
         config = HPCConfig(
@@ -56,7 +57,7 @@ class TestHPCConfig:
         assert _layer_names(config, "python script.py") == ["defaults", "tools.python"]
         job = make_job("python script.py", config=config)
         assert job.cpu == 4  # Overridden
-        assert job.mem == "4G"  # From defaults
+        assert job.mem == Memory.parse("4G")  # From defaults
         assert job.modules == ("python/3.11",)
 
     def test_type_layer(self):
@@ -537,7 +538,7 @@ class TestToolOptionMatching:
             },
         )
         result = _from_config(config, "fusesoc run --target lint --tool slang v:l:n:v")
-        assert result["mem"] == "16G"
+        assert result["mem"] == Memory.parse("16G")
         assert "slang/0.9" in result["modules"]
         assert "fusesoc/2.0" in result["modules"]
 
@@ -554,7 +555,7 @@ class TestToolOptionMatching:
             },
         )
         result = _from_config(config, "fusesoc run --tool=slang")
-        assert result["mem"] == "16G"
+        assert result["mem"] == Memory.parse("16G")
 
     def test_no_partial_match(self):
         """'--tool slang' must not match '--tool slang-lint'."""
@@ -602,7 +603,7 @@ class TestToolOptionMatching:
             },
         )
         result = _from_config(config, "fusesoc run --tool slang")
-        assert result["mem"] == "16G"
+        assert result["mem"] == Memory.parse("16G")
 
     def test_option_merges_with_base(self):
         """Option config merges on top of base, not replaces."""
@@ -620,7 +621,7 @@ class TestToolOptionMatching:
         )
         result = _from_config(config, "fusesoc run --tool slang")
         assert result["cpu"] == 2  # Inherited from base
-        assert result["mem"] == "16G"  # From option
+        assert result["mem"] == Memory.parse("16G")  # From option
 
     def test_options_key_excluded_from_base(self):
         """The 'options' key itself must not leak into job config."""
@@ -976,6 +977,43 @@ class TestSchema:
         assert errors == []
 
 
+class TestUnitValues:
+    """D10: mem and time are checked at load, with file and line."""
+
+    def test_bad_mem_reported_with_line(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[tools.sim]\ncpu = 2\nmem = "lots"\n')
+        (err,) = _errors(path)
+        assert (err.path, err.line) == (path, 4)
+        assert "[tools.sim] mem: invalid memory 'lots'" in str(err)
+
+    def test_bare_integer_time_reported(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[defaults]\ntime = "90"\n')
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert "ambiguous: use 90s or 90m" in str(err)
+
+    def test_valid_values_kept_as_written(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[defaults]\nmem = "16GiB"\ntime = "1h30m"\n')
+        config = load_config(path)
+        assert (config.defaults["mem"], config.defaults["time"]) == ("16GiB", "1h30m")
+
+    def test_variable_checked_at_resolve(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[defaults]\nmem = "${MEM}"\n')
+        assert load_config(path).defaults["mem"] == "${MEM}"
+
+
+class TestOutputPatterns:
+    @pytest.mark.parametrize(
+        ("key", "hint"),
+        [("stdout", "omit the key to use the default"), ("stderr", "omit the key to merge")],
+    )
+    def test_empty_is_error(self, tmp_path, key, hint):
+        path = _write(tmp_path, f'config_version = 1\n[defaults]\n{key} = ""\n')
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert f"[defaults] {key}: empty; {hint}" in str(err)
+
+
 class TestSchedulerSections:
     def test_declared_keys_accepted(self, tmp_path):
         path = _write(
@@ -991,6 +1029,10 @@ class TestSchedulerSections:
         (err,) = _errors(path)
         assert err.line == 3
         assert "[schedulers.sge] merge_output: unknown key" in str(err)
+
+    def test_memory_per_declared(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[schedulers.sge]\nmemory_per = "job"\n')
+        assert load_config(path).schedulers["sge"] == {"memory_per": "job"}
 
     def test_wrong_type_rejected(self, tmp_path):
         path = _write(tmp_path, "config_version = 1\n[schedulers.local]\nmodule_system = 1\n")

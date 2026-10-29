@@ -33,15 +33,16 @@ Options:
 
 - ``--name TEXT``
 - ``--cpu N``
-- ``--mem TEXT`` (e.g. ``16G``)
-- ``--time TEXT`` (e.g. ``4:00:00``)
+- ``--mem TEXT`` (memory for the whole job, e.g. ``16G``, ``1.5GiB``; see :ref:`memory-and-time`)
+- ``--time TEXT`` (e.g. ``4:00:00``, ``4h``, ``1h30m``; a bare integer is an error)
 - ``--queue TEXT`` (SGE queue)
 - ``--nodes N`` (number of nodes, MPI jobs)
 - ``--ntasks N`` (number of tasks, MPI jobs)
 - ``--directory PATH`` (working dir)
 - ``-t, --type TEXT`` (named profile from config)
-- ``--stdout TEXT`` (stdout file path pattern)
-- ``--stderr TEXT`` (separate stderr file; default: merged)
+- ``--stdout TEXT`` (stdout file pattern, batch only; default
+  ``${hpc.job_name}.${hpc.job_id}.out``; see :ref:`output-files`)
+- ``--stderr TEXT`` (separate stderr file pattern; default: merged into stdout)
 - ``--array TEXT`` (e.g. ``1-100``)
 - ``--depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
   e.g. ``afterok:123:124,afterany:125``)

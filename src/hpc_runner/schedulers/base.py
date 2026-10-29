@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from hpc_runner.core.descriptors import SchedulerArg
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
 from hpc_runner.core.job import RENDER_ORDER
+from hpc_runner.core.result import TASK_ID_PLACEHOLDER
 from hpc_runner.schedulers import _subprocess
 from hpc_runner.templates import ShellWord
 
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
 # A ``${hpc.<name>}`` reference (names are checked by resolve()).
 _HPC_REF = re.compile(r"\$\{hpc\.([A-Za-z_][A-Za-z0-9_]*)\}")
+_HOST_REF = "${hpc.host}"
 # Shell text that is a bare variable expansion, e.g. ``$NSLOTS``.
 _SHELL_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
 
@@ -35,6 +37,7 @@ _SHELL_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
 MODULE_SYSTEMS = ("modules", "lmod", "")
 
 RenderContext = Literal["script", "path"]
+Stream = Literal["stdout", "stderr"]
 
 
 def refuse_interactive_dependencies(job: Job) -> None:
@@ -169,6 +172,72 @@ class BaseScheduler(ABC):
         }
 
     # =========================================================================
+    # Output paths (D9)
+    # =========================================================================
+
+    def job_name(self, job: Job) -> str:
+        """The name this scheduler submits *job* under.
+
+        The name is part of the default output file name on every
+        scheduler, so whitespace, ``/`` and non-printable characters become
+        ``_``. A scheduler with stricter rules extends this.
+        """
+        return "".join(
+            "_" if c == "/" or c.isspace() or not c.isprintable() else c for c in job.name
+        )
+
+    def output_pattern(self, job: Job, stream: Stream) -> str | None:
+        """*job*'s output pattern for *stream*, as the scheduler renders it.
+
+        None for ``stderr`` when it is merged into stdout. An array job's
+        pattern without ``${hpc.task_id}`` gets ``.${hpc.task_id}``
+        appended, so tasks never write the same file.
+        """
+        pattern = job.stdout if stream == "stdout" else job.stderr
+        if pattern is None:
+            return None
+        if job.array is not None and TASK_ID_PLACEHOLDER not in pattern:
+            pattern += f".{TASK_ID_PLACEHOLDER}"
+        return pattern
+
+    def output_paths(self, job: Job, job_id: str) -> tuple[Path | None, Path | None]:
+        """``(stdout_path, stderr_path)`` recorded on *job*'s result at submit.
+
+        The known values (job name and *job_id*) are substituted in Python;
+        an array job's paths keep ``${hpc.task_id}``. A path is None when
+        *job* is interactive, when stderr is merged, or when the pattern
+        uses ``${hpc.host}``. Relative patterns are relative to
+        ``job.workdir``.
+        """
+        if job.interactive:
+            return None, None
+        return (
+            self._output_path(job, self.output_pattern(job, "stdout"), job_id),
+            self._output_path(job, self.output_pattern(job, "stderr"), job_id),
+        )
+
+    def _output_path(self, job: Job, pattern: str | None, job_id: str) -> Path | None:
+        if pattern is None or _HOST_REF in pattern:
+            return None
+        text = pattern.replace("${hpc.job_name}", self.job_name(job))
+        return Path(job.workdir) / text.replace("${hpc.job_id}", job_id)
+
+    def make_output_dirs(self, job: Job) -> None:
+        """Create the directory of each output path on the submit host.
+
+        Called by ``submit()`` before submission: SGE silently discards
+        output whose directory does not exist. ``resolve()`` rejects
+        ``${hpc.*}`` in the directory part, so it is always known here.
+        """
+        if job.interactive:
+            return
+        streams: tuple[Stream, ...] = ("stdout", "stderr")
+        for stream in streams:
+            pattern = self.output_pattern(job, stream)
+            if pattern is not None:
+                (Path(job.workdir) / pattern).parent.mkdir(parents=True, exist_ok=True)
+
+    # =========================================================================
     # Subprocess seam
     # =========================================================================
 
@@ -211,7 +280,7 @@ class BaseScheduler(ABC):
         """
         directives: list[str] = []
         for attr_name in RENDER_ORDER:
-            value = getattr(job, attr_name)
+            value = self.render_value(job, attr_name)
             if value is None:
                 continue
             renderer = self.ARG_RENDERERS.get(attr_name)
@@ -231,7 +300,7 @@ class BaseScheduler(ABC):
         """
         args: list[str] = []
         for attr_name in RENDER_ORDER:
-            value = getattr(job, attr_name)
+            value = self.render_value(job, attr_name)
             if value is None:
                 continue
             renderer = self.ARG_RENDERERS.get(attr_name)
@@ -239,6 +308,15 @@ class BaseScheduler(ABC):
                 continue
             args.extend(renderer.to_args(value))
         return args
+
+    def render_value(self, job: Job, attr_name: str) -> Any:
+        """The value of *attr_name* handed to its ``ARG_RENDERERS`` entry.
+
+        The base passes the job attribute through; a scheduler overrides
+        this where its rendering needs more of the job (e.g. sanitising the
+        name, or dividing ``mem`` by ``cpu``).
+        """
+        return getattr(job, attr_name)
 
     def _passthrough_args(self, job: Job) -> tuple[str, ...]:
         """The job's raw scheduler arguments for this scheduler."""
@@ -287,7 +365,11 @@ class BaseScheduler(ABC):
         """Get job exit code."""
 
     def result(self, job_id: str) -> JobResult:
-        """A handle on an existing job, without the in-memory ``Job``."""
+        """A handle on an existing job, without the in-memory ``Job``.
+
+        The job's output patterns are not known from an id, so the handle's
+        ``stdout_path`` and ``stderr_path`` are None.
+        """
         from hpc_runner.core.result import JobResult
 
         return JobResult(scheduler=self, job_id=job_id)
@@ -295,18 +377,6 @@ class BaseScheduler(ABC):
     # =========================================================================
     # Optional Methods - Override if scheduler supports these
     # =========================================================================
-
-    def get_output_path(self, job_id: str, stream: str) -> Path | None:
-        """Get path to output file.
-
-        Args:
-            job_id: Job ID
-            stream: "stdout" or "stderr"
-
-        Returns:
-            Path to output file, or None if not determinable.
-        """
-        return None
 
     def list_active_jobs(
         self,

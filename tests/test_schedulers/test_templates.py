@@ -9,6 +9,7 @@ import pytest
 
 from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.exceptions import ConfigError
+from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
 from tests.fakes import make_host, make_job
@@ -127,14 +128,13 @@ class TestQuotingRoundTrip:
             tmp_path,
             workdir=str(tmp_path),
             stdout=str(out),
-            interactive=True,
         )
         job = dataclasses.replace(
             job,
             command='printf "%s\\n" "$NASTY" "$PATH" "$PYTHONPATH" "$HPC_TEST_VENV_ACTIVE"',
         )
         result = LocalScheduler(config).submit(job)
-        assert result.exit_code == 0
+        assert result.wait(poll_interval=0.05) is JobStatus.COMPLETED
         nasty, path, pythonpath, venv = out.read_text().splitlines()
         assert nasty == NASTY
         assert path.startswith("/pre bin:")
@@ -214,7 +214,9 @@ class TestModuleCommands:
     @requires_bash
     def test_success_is_quiet_and_log_removed(self, tmp_path):
         init = _stub_modules(tmp_path, 'echo "Loading $2" >&2')
-        job = make_job('echo "$_hpc_modlog"', modules=["ok/1"], workdir=str(tmp_path))
+        job = make_job(
+            'echo "$_hpc_modlog"', modules=["ok/1"], workdir=str(tmp_path), interactive=True
+        )
         script = LocalScheduler(_sched_config(module_init_script=init)).preview(job)
         result = subprocess.run(
             ["bash", "-c", script], text=True, capture_output=True, cwd=tmp_path
@@ -234,7 +236,7 @@ class TestHpcVars:
     def test_local_renders_literals(self):
         job = make_job("x", cpu=4, name="my job", env_vars={"M": "-j${hpc.cpus} ${hpc.job_name}"})
         script = LocalScheduler(HPCConfig()).preview(job)
-        assert "export M=-j4' ''my job'" in script
+        assert "export M=-j4' 'my_job" in script  # the sanitised name
 
     def test_local_cpus_defaults_to_one(self):
         job = make_job("x", env_vars={"M": "-j${hpc.cpus}"})
@@ -256,10 +258,9 @@ class TestHpcVars:
             env_vars={"A": "${hpc.cpus}:${hpc.task_id}:${hpc.job_id}"},
             workdir=str(tmp_path),
             stdout=str(out),
-            interactive=True,
         )
         local = LocalScheduler(config)
-        assert local.submit(job).exit_code == 0
+        assert local.submit(job).wait(poll_interval=0.05) is JobStatus.COMPLETED
         cpus, task, job_id = out.read_text().strip().split(":")
         assert (cpus, task) == ("3", "")
         assert job_id.startswith("local_")
@@ -315,9 +316,8 @@ class TestInheritEnv:
             host=host,
             workdir=str(tmp_path),
             stdout=str(out),
-            interactive=True,
         )
-        assert LocalScheduler(config).submit(job).exit_code == 0
+        assert LocalScheduler(config).submit(job).wait(poll_interval=0.05) is JobStatus.COMPLETED
         assert out.read_text().strip() == "none :9"
 
 
@@ -328,3 +328,12 @@ class TestScriptPathsQuoted:
         job = make_job("x")
         assert "rm -f '/a b/s.sh'" in sge._render_batch(job, "/a b/s.sh", keep_script=False)
         assert f"_hpc_exit_dir='{tmp_path}/exit dir'" in sge.preview(job)
+
+
+class TestBaseJobName:
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [("ok-name.1", "ok-name.1"), ("3 bad/name", "3_bad_name"), ("a\tb\x01c", "a_b_c")],
+    )
+    def test_baseline_sanitisation(self, name, expected):
+        assert LocalScheduler(HPCConfig()).job_name(make_job(name=name)) == expected

@@ -4,8 +4,12 @@ config_version = 1
 
 [defaults]
 cpu = 1
-mem = "4G"
-time = "1:00:00"
+mem = "4G"                 # per job (D10): 16G, 4096M, 1.5GiB, ...
+time = "1:00:00"           # HH:MM:SS, D-HH:MM:SS or 90s, 30m, 4h, 2d, 1h30m
+# Output file, relative to the working directory. ${hpc.*} values are filled
+# in by the scheduler; array jobs get .${hpc.task_id} appended unless used.
+# stderr is merged into stdout unless a stderr pattern is set.
+stdout = "${hpc.job_name}.${hpc.job_id}.out"
 inherit_env = true
 modules_path = []          # 'module use <path>' (searched first)
 modules_path_append = []   # 'module use --append <path>' (searched last)
@@ -18,6 +22,9 @@ env_passthrough = []       # With inherit_env = false: submit-host variables to 
 parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
+# "slot": memory_resource is consumed per slot, so mem is divided by cpu;
+# "job": it is requested for the whole job as given.
+memory_per = "slot"
 # Emulate afterok/afternotok with exit-code sentinels in a shared directory
 # (SGE -hold_jid alone is afterany). false: only afterany dependencies work.
 emulate_afterok = true

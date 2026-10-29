@@ -47,15 +47,17 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
 # always run via a generated script.
 @click.option("--name", "job_name", help="Job name")
 @click.option("--cpu", type=int, help="Number of CPUs")
-@click.option("--mem", help="Memory requirement (e.g., 16G)")
-@click.option("--time", "time_limit", help="Time limit (e.g., 4:00:00)")
+@click.option("--mem", help="Memory for the whole job (e.g., 16G, 1.5GiB)")
+@click.option("--time", "time_limit", help="Time limit (e.g., 4:00:00, 4h, 1h30m)")
 @click.option("--queue", help="Queue/partition name")
 @click.option("--nodes", type=int, help="Number of nodes (MPI jobs)")
 @click.option("--ntasks", type=int, help="Number of tasks (MPI jobs)")
 @click.option("--directory", type=click.Path(exists=True), help="Working directory")
 @click.option("-t", "--type", "job_type", help="Job type from config")
-@click.option("--stderr", help="Separate stderr file (default: merged)")
-@click.option("--stdout", "stdout", help="Stdout file path pattern")
+@click.option("--stderr", help="Separate stderr file pattern (default: merged into stdout)")
+@click.option(
+    "--stdout", "stdout", help="Stdout file pattern (default: ${hpc.job_name}.${hpc.job_id}.out)"
+)
 @click.option("--array", help="Array job specification (e.g., 1-100)")
 @click.option(
     "--depend",
@@ -244,6 +246,10 @@ def _show_dry_run(job: "Job", scheduler: "BaseScheduler", *, verbose: bool = Fal
         f"[bold]Command:[/bold] {job.command}",
         f"[bold]venv:[/bold] {escape(job.venv) if job.venv else 'none'}",
     ]
+    if job.mem is not None:
+        lines.append(f"[bold]mem:[/bold] {job.mem}")
+    if job.time is not None:
+        lines.append(f"[bold]time:[/bold] {job.time}")
     if job.array is not None:
         lines.append(f"[bold]Array job:[/bold] {job.array.range_str} ({job.array.count} tasks)")
     passthrough = job.scheduler_args.get(scheduler.name, ())

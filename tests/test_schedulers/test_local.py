@@ -142,7 +142,7 @@ class TestLocalScheduler:
         result = scheduler.submit(job)
         result.wait(poll_interval=0.05)
 
-        stdout_path = scheduler.get_output_path(result.job_id, "stdout")
+        stdout_path = result.stdout_path
         assert stdout_path is not None
         assert stdout_path.exists()
         assert "hello" in stdout_path.read_text()
@@ -159,24 +159,83 @@ class TestLocalScheduler:
         result = scheduler.submit(job)
         result.wait(poll_interval=0.05)
 
-        stdout_path = scheduler.get_output_path(result.job_id, "stdout")
+        stdout_path = result.stdout_path
         content = stdout_path.read_text()
 
         assert "stdout" in content
         assert "stderr" in content  # Merged
 
-    def test_passthrough_mode(self, temp_dir):
-        """Test passthrough mode: no stdout/stderr means no output files."""
+    def test_default_pattern_read_stdout(self, temp_dir):
+        """B7: with no stdout set, the default pattern is recorded and readable."""
         scheduler = LocalScheduler(HPCConfig())
-        job = make_job("echo passthrough", workdir=str(temp_dir))
+        job = make_job("echo hi", name="greet", workdir=str(temp_dir))
 
         result = scheduler.submit(job)
         result.wait(poll_interval=0.05)
 
-        assert result.returncode == 0
-        # No output paths should be stored in passthrough mode
-        stdout_path = scheduler.get_output_path(result.job_id, "stdout")
-        assert stdout_path is None
+        assert result.stdout_path == temp_dir / f"greet.{result.job_id}.out"
+        assert result.stderr_path is None  # merged
+        assert result.read_stdout() == "hi\n"
+        assert result.read_stderr() is None
+
+    def test_unsafe_name_sanitised_in_file_name(self, temp_dir):
+        scheduler = LocalScheduler(HPCConfig())
+        job = make_job(
+            "echo hi", name="3 bad/name", workdir=str(temp_dir), env_vars={"N": "${hpc.job_name}"}
+        )
+        result = scheduler.submit(job)
+        assert result.wait(poll_interval=0.05) is JobStatus.COMPLETED
+        assert result.stdout_path == temp_dir / f"3_bad_name.{result.job_id}.out"
+        assert result.read_stdout() == "hi\n"
+        assert "export N=3_bad_name" in scheduler.preview(job)
+
+    def test_separate_stderr(self, temp_dir):
+        scheduler = LocalScheduler(HPCConfig())
+        job = make_job(
+            "echo out; echo err >&2",
+            name="n",
+            workdir=str(temp_dir),
+            stderr="${hpc.job_name}.err",
+        )
+        result = scheduler.submit(job)
+        result.wait(poll_interval=0.05)
+        assert result.read_stdout() == "out\n"
+        assert result.stderr_path == temp_dir / "n.err"
+        assert result.read_stderr() == "err\n"
+
+    def test_output_directory_created(self, temp_dir):
+        scheduler = LocalScheduler(HPCConfig())
+        job = make_job("echo hi", workdir=str(temp_dir), stdout="logs/day1/${hpc.job_name}.out")
+        result = scheduler.submit(job)
+        result.wait(poll_interval=0.05)
+        assert result.stdout_path is not None
+        assert result.stdout_path.parent == temp_dir / "logs" / "day1"
+        assert result.read_stdout() == "hi\n"
+
+    def test_host_in_pattern_path_unknown(self, temp_dir):
+        scheduler = LocalScheduler(HPCConfig())
+        job = make_job("echo hi", workdir=str(temp_dir), stdout="out.${hpc.host}")
+        result = scheduler.submit(job)
+        result.wait(poll_interval=0.05)
+        assert result.stdout_path is None
+        with pytest.raises(ValueError, match=r"\$\{hpc.host\}"):
+            result.read_stdout()
+        assert len(list(temp_dir.glob("out.*"))) == 1  # the shell filled in $HOSTNAME
+
+    def test_interactive_has_no_output_paths(self, temp_dir):
+        scheduler = LocalScheduler(HPCConfig())
+        job = make_job("true", interactive=True, workdir=str(temp_dir))
+        result = scheduler.submit(job)
+        assert result.stdout_path is None
+        assert result.read_stdout() is None
+        assert "exec >" not in scheduler.preview(job)
+        assert list(temp_dir.iterdir()) == []
+
+    def test_preview_shows_placeholder_id(self):
+        script = LocalScheduler(HPCConfig()).preview(
+            make_job("true", name="n", workdir="/tmp/x y", stderr="e.${hpc.host}")
+        )
+        assert """exec > '/tmp/x y/'n.'<job_id>'.out 2> '/tmp/x y/e.'"$HOSTNAME"\n""" in script
 
     def test_generate_script_with_modules(self, temp_dir):
         """Test that generated script includes module commands."""
@@ -228,7 +287,7 @@ class TestLocalScheduler:
         result.wait(poll_interval=0.05)
 
         assert result.returncode == 0
-        stdout_path = scheduler.get_output_path(result.job_id, "stdout")
+        stdout_path = result.stdout_path
         content = stdout_path.read_text().strip()
         assert content == "true"
 
@@ -248,7 +307,7 @@ class TestLocalScheduler:
         result.wait(poll_interval=0.05)
 
         assert result.returncode == 0
-        stdout_path = scheduler.get_output_path(result.job_id, "stdout")
+        stdout_path = result.stdout_path
         content = stdout_path.read_text().strip()
         assert content == "true true"
 
@@ -268,7 +327,7 @@ class TestLocalScheduler:
         result.wait(poll_interval=0.05)
 
         assert result.returncode == 0
-        stdout_path = scheduler.get_output_path(result.job_id, "stdout")
+        stdout_path = result.stdout_path
         content = stdout_path.read_text().strip()
         assert content == "1.0"
 

@@ -12,6 +12,7 @@ from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.resources import Resource, ResourceSet
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.core.units import Duration, Memory
 from tests.fakes import make_host, make_job
 
 
@@ -33,8 +34,8 @@ class TestBasics:
         job = make_job(cpu=4, mem="16G", time="2:00:00", queue="gpu", project="proj1")
         assert (job.cpu, job.mem, job.time, job.queue, job.project) == (
             4,
-            "16G",
-            "2:00:00",
+            Memory.parse("16G"),
+            Duration(7200),
             "gpu",
             "proj1",
         )
@@ -173,7 +174,7 @@ class TestVenv:
 class TestConfigLayers:
     def test_defaults_applied(self):
         job = make_job(config=_config(defaults={"cpu": 2, "mem": "8G", "queue": "batch"}))
-        assert (job.cpu, job.mem, job.queue) == (2, "8G", "batch")
+        assert (job.cpu, job.mem, job.queue) == (2, Memory.parse("8G"), "batch")
 
     def test_tool_auto_detected(self):
         cfg = _config(tools={"python": {"cpu": 4, "modules": ["python/3.11"]}})
@@ -203,7 +204,7 @@ class TestConfigLayers:
 
     def test_spec_overrides_config(self):
         job = make_job(cpu=16, mem="64G", config=_config(defaults={"cpu": 2, "mem": "4G"}))
-        assert (job.cpu, job.mem) == (16, "64G")
+        assert (job.cpu, job.mem) == (16, Memory.parse("64G"))
 
     def test_config_overrides_package_defaults(self):
         cfg = _config(defaults={"shell": "/bin/zsh", "inherit_env": False, "use_cwd": False})
@@ -380,7 +381,7 @@ class TestTypeComposition:
             ("slang/0.9", "tools.slang"),
         )
         assert (job.cpu, job.provenance["cpu"]) == (2, "types.lint")
-        assert (job.mem, job.provenance["mem"]) == ("8G", "tools.slang")
+        assert (job.mem, job.provenance["mem"]) == (Memory.parse("8G"), "tools.slang")
         assert job.provenance["resources"][0][1] == "tools.xrun"
 
     def test_type_ignores_argv_tool(self):
@@ -543,12 +544,15 @@ class TestExpandedFields:
 
     ENV = {"V": "val"}
 
-    @pytest.mark.parametrize(
-        "field", ["name", "mem", "time", "queue", "project", "stdout", "stderr", "workdir"]
-    )
+    @pytest.mark.parametrize("field", ["name", "queue", "project", "stdout", "stderr", "workdir"])
     def test_scalar(self, field):
         job = make_job(host=make_host(env=self.ENV), **{field: "x-$V"})
-        assert getattr(job, field) == "x-val"
+        expected = "/work/x-val" if field == "workdir" else "x-val"
+        assert getattr(job, field) == expected
+
+    def test_mem_time_expanded_then_parsed(self):
+        job = make_job(host=make_host(env={"M": "16", "T": "4"}), mem="${M}G", time="${T}h")
+        assert (job.mem, job.time) == (Memory.parse("16G"), Duration(4 * 3600))
 
     @pytest.mark.parametrize("field", ["modules", "modules_path", "modules_path_append"])
     def test_module_lists(self, field):
@@ -683,3 +687,93 @@ class TestModuleExpansion:
     def test_modules_path_append_undefined_raises(self):
         with pytest.raises(ConfigError, match="modules_path_append"):
             make_job(modules_path_append=["$TEST_UNSET_APPEND_PATH"])
+
+
+class TestOutputPaths:
+    """D9: the default output pattern, and what an output path may use."""
+
+    def test_default_stdout_pattern(self):
+        job = make_job()
+        assert job.stdout == "${hpc.job_name}.${hpc.job_id}.out"
+        assert job.provenance["stdout"] == "package"
+        assert job.stderr is None
+        assert job.merge_output is True
+
+    def test_config_stdout_wins(self):
+        job = make_job(config=_config(defaults={"stdout": "logs/${hpc.job_id}.log"}))
+        assert (job.stdout, job.provenance["stdout"]) == ("logs/${hpc.job_id}.log", "defaults")
+
+    @pytest.mark.parametrize("field", ["stdout", "stderr"])
+    @pytest.mark.parametrize("name", ["cpus", "tmpdir"])
+    def test_runtime_only_values_rejected(self, field, name):
+        with pytest.raises(
+            ConfigError, match=rf"spec: {field}: \$\{{hpc.{name}\}} is not available in output"
+        ):
+            make_job(**{field: f"out.${{hpc.{name}}}"})
+
+    def test_config_layer_named_in_error(self):
+        config = _config(tools={"make": {"stdout": "make.${hpc.cpus}.out"}})
+        with pytest.raises(ConfigError, match=r"^tools.make: stdout:"):
+            make_job("make all", config=config)
+
+    @pytest.mark.parametrize("name", ["job_name", "job_id", "task_id", "host"])
+    def test_path_values_allowed(self, name):
+        pattern = f"logs/o.${{hpc.{name}}}"
+        assert make_job(stdout=pattern).stdout == pattern
+
+    @pytest.mark.parametrize("field", ["stdout", "stderr"])
+    @pytest.mark.parametrize("name", ["job_name", "job_id", "task_id", "host"])
+    def test_runtime_value_in_directory_rejected(self, field, name):
+        with pytest.raises(
+            ConfigError,
+            match=rf"spec: {field}: the directory part of {field} cannot depend on "
+            r"\$\{hpc\.\*\}; SGE discards output to a missing directory",
+        ):
+            make_job(**{field: f"logs/${{hpc.{name}}}/x.out"})
+
+    @pytest.mark.parametrize(
+        ("field", "hint"),
+        [("stdout", "omit the key to use the default"), ("stderr", "omit the key to merge")],
+    )
+    def test_empty_rejected(self, field, hint):
+        with pytest.raises(ConfigError, match=rf"^spec: {field}: empty; {hint}"):
+            make_job(**{field: ""})
+
+    def test_empty_after_expansion_rejected(self):
+        config = _config(defaults={"stdout": "${OUT}"})
+        with pytest.raises(ConfigError, match=r"^defaults: stdout: empty"):
+            make_job(config=config, host=make_host(env={"OUT": ""}))
+
+
+class TestWorkdir:
+    def test_defaults_to_host_cwd(self):
+        job = make_job(host=make_host(cwd=Path("/work/proj")))
+        assert (job.workdir, job.provenance["workdir"]) == ("/work/proj", "host")
+
+    def test_relative_made_absolute(self):
+        job = make_job(host=make_host(cwd=Path("/work/proj")), workdir="sub/../run")
+        assert (job.workdir, job.provenance["workdir"]) == ("/work/proj/run", "spec")
+
+    def test_absolute_kept(self):
+        assert make_job(workdir="/scratch/x").workdir == "/scratch/x"
+
+
+class TestUnits:
+    """D10: mem and time are parsed after expansion."""
+
+    def test_spec_accepts_value_types(self):
+        job = make_job(mem=Memory.parse("2G"), time=Duration(60))
+        assert (job.mem, job.time) == (Memory.parse("2G"), Duration(60))
+
+    def test_unset_is_none(self):
+        job = make_job()
+        assert (job.mem, job.time) == (None, None)
+
+    def test_mem_parse_error_names_layer(self):
+        config = _config(tools={"sim": {"mem": "${M}"}})
+        with pytest.raises(ConfigError, match=r"^tools.sim: mem: invalid memory 'lots'"):
+            make_job("sim", config=config, host=make_host(env={"M": "lots"}))
+
+    def test_time_parse_error_names_layer(self):
+        with pytest.raises(ConfigError, match=r"^spec: time: .*ambiguous: use 90s or 90m"):
+            make_job(time="90")

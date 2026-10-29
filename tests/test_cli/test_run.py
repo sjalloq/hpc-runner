@@ -1,9 +1,19 @@
 """Tests for CLI run command."""
 
+from functools import partialmethod
+
 import pytest
 from click.testing import CliRunner
 
 from hpc_runner.cli.main import cli
+from hpc_runner.core.exceptions import ConfigError
+from hpc_runner.core.result import JobResult
+
+
+@pytest.fixture
+def fast_wait(monkeypatch):
+    """``--wait`` polls every 50 ms instead of 5 s."""
+    monkeypatch.setattr(JobResult, "wait", partialmethod(JobResult.wait, poll_interval=0.05))
 
 
 @pytest.fixture
@@ -36,6 +46,22 @@ class TestRunCommand:
         assert result.exit_code == 0
         assert "Dry Run" in result.output
         assert "echo hello" in result.output
+
+    def test_dry_run_shows_parsed_mem_and_time(self, runner):
+        result = runner.invoke(
+            cli,
+            ["--scheduler", "local", "run", "--dry-run", "--mem", "16G", "--time", "4h", "true"],
+        )
+        assert result.exit_code == 0, result.output
+        assert "mem: 16 GiB (17179869184 bytes)" in result.output
+        assert "time: 4:00:00 (14400 s)" in result.output
+
+    def test_bare_integer_time_rejected(self, runner):
+        result = runner.invoke(
+            cli, ["--scheduler", "local", "run", "--dry-run", "--time", "90", "true"]
+        )
+        assert isinstance(result.exception, ConfigError)
+        assert "spec: time: invalid time '90': ambiguous: use 90s or 90m" in str(result.exception)
 
     def test_dry_run_shows_no_venv(self, runner, monkeypatch):
         monkeypatch.delenv("VIRTUAL_ENV", raising=False)
@@ -201,13 +227,15 @@ class TestRunCommand:
         assert "Array job" in result.output
         assert "10 tasks" in result.output
 
-    def test_run_with_stdout(self, runner, temp_dir):
-        """Test --stdout directs output to a file."""
+    def test_run_with_stdout(self, runner, temp_dir, fast_wait):
+        """Test --stdout directs a batch job's output to a file."""
         result = runner.invoke(
             cli,
             [
                 "run",
                 "--local",
+                "--batch",
+                "--wait",
                 "--directory",
                 str(temp_dir),
                 "--stdout",
@@ -220,13 +248,15 @@ class TestRunCommand:
         out = (temp_dir / "out.log").read_text()
         assert "hello" in out
 
-    def test_run_with_stderr(self, runner, temp_dir):
+    def test_run_with_stderr(self, runner, temp_dir, fast_wait):
         """Test --stderr directs stderr to a separate file."""
         result = runner.invoke(
             cli,
             [
                 "run",
                 "--local",
+                "--batch",
+                "--wait",
                 "--directory",
                 str(temp_dir),
                 "--stdout",
@@ -243,7 +273,7 @@ class TestRunCommand:
         err = (temp_dir / "err.log").read_text()
         assert "stderr msg" in err
 
-    def test_run_with_directory(self, runner, temp_dir):
+    def test_run_with_directory(self, runner, temp_dir, fast_wait):
         """Test --directory sets the working directory."""
         subdir = temp_dir / "workdir"
         subdir.mkdir()
@@ -252,6 +282,8 @@ class TestRunCommand:
             [
                 "run",
                 "--local",
+                "--batch",
+                "--wait",
                 "--directory",
                 str(subdir),
                 "--stdout",
@@ -263,7 +295,7 @@ class TestRunCommand:
         out = (subdir / "pwd.log").read_text()
         assert str(subdir) in out
 
-    def test_run_with_relative_directory_and_stdout(self, runner, temp_dir):
+    def test_run_with_relative_directory_and_stdout(self, runner, temp_dir, fast_wait):
         """Test --directory with relative path combined with --stdout."""
         subdir = temp_dir / "reltest"
         subdir.mkdir()
@@ -277,6 +309,8 @@ class TestRunCommand:
                 [
                     "run",
                     "--local",
+                    "--batch",
+                    "--wait",
                     "--directory",
                     "reltest",
                     "--stdout",

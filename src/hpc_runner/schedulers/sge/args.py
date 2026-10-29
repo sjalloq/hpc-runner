@@ -6,7 +6,24 @@ arguments for qrsh. Renderers for flags qrsh rejects (-S, -o, -e, -j, -N)
 are declared ``interactive_ok=False``.
 """
 
+import re
+
 from hpc_runner.core.descriptors import SchedulerArg
+from hpc_runner.core.units import Duration, Memory
+
+# Characters SGE does not accept in a job name (sge_types(1) "name"):
+# anything but printable ASCII, and / : @ \ * ?
+_NAME_INVALID = re.compile(r"[^!-~]|[/:@\\*?]")
+
+
+def sanitise_job_name(name: str) -> str:
+    """*name* as SGE accepts it for ``-N``.
+
+    A leading digit gets a ``j`` prefix; each invalid character (whitespace,
+    ``/`` and the others SGE rejects) becomes ``_``.
+    """
+    name = _NAME_INVALID.sub("_", name)
+    return f"j{name}" if name[:1].isdigit() else name
 
 
 class SGEArg(SchedulerArg[str]):
@@ -152,29 +169,43 @@ class SGECpuArg(SchedulerArg[int]):
         return f"#$ -pe {self.pe_name} {value}"
 
 
-class SGEMemArg(SchedulerArg[str]):
+#: Accepted values of ``[schedulers.sge] memory_per``.
+MEMORY_PER = ("slot", "job")
+
+
+class SGEMemArg(SchedulerArg[Memory]):
     """Memory request: -l <resource>=<value>
 
     The resource name is configurable (e.g., 'mem_free', 'h_vmem', 'mem').
+    ``mem`` is per job (D10); with ``memory_per = "slot"`` (the site's
+    resource is consumed per slot, as SGE multiplies a consumable by the
+    slot count) :meth:`for_job` divides it by the job's slots.
     """
 
-    def __init__(self, resource_name: str = "mem_free"):
-        super().__init__("l", doc=f"Memory ({resource_name})")
+    def __init__(self, resource_name: str = "mem_free", memory_per: str = "slot"):
+        super().__init__("l", doc=f"Memory ({resource_name}, per {memory_per})")
         self.resource_name = resource_name
+        self.memory_per = memory_per
 
-    def to_args(self, value: str | None) -> list[str]:
+    def for_job(self, mem: Memory, cpu: int | None) -> Memory:
+        """The amount to request for a job of *mem* on *cpu* slots."""
+        if self.memory_per == "slot" and cpu is not None and cpu > 1:
+            return mem / cpu
+        return mem
+
+    def to_args(self, value: Memory | None) -> list[str]:
         if value is None:
             return []
-        return ["-l", f"{self.resource_name}={value}"]
+        return ["-l", f"{self.resource_name}={value.to_sge()}"]
 
-    def to_directive(self, value: str | None) -> str | None:
+    def to_directive(self, value: Memory | None) -> str | None:
         if value is None:
             return None
-        return f"#$ -l {self.resource_name}={value}"
+        return f"#$ -l {self.resource_name}={value.to_sge()}"
 
 
-class SGETimeArg(SchedulerArg[str]):
-    """Time limit: -l <resource>=<HH:MM:SS>
+class SGETimeArg(SchedulerArg[Duration]):
+    """Time limit: -l <resource>=<H:MM:SS>
 
     The resource name is configurable (e.g., 'h_rt', 's_rt').
     """
@@ -183,15 +214,15 @@ class SGETimeArg(SchedulerArg[str]):
         super().__init__("l", doc=f"Time limit ({resource_name})")
         self.resource_name = resource_name
 
-    def to_args(self, value: str | None) -> list[str]:
+    def to_args(self, value: Duration | None) -> list[str]:
         if value is None:
             return []
-        return ["-l", f"{self.resource_name}={value}"]
+        return ["-l", f"{self.resource_name}={value.to_sge()}"]
 
-    def to_directive(self, value: str | None) -> str | None:
+    def to_directive(self, value: Duration | None) -> str | None:
         if value is None:
             return None
-        return f"#$ -l {self.resource_name}={value}"
+        return f"#$ -l {self.resource_name}={value.to_sge()}"
 
 
 # =============================================================================

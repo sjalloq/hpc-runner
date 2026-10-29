@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from hpc_runner.core.dependency import Dependency, DependencyType, dependency_on
 from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resources import ResourceSet
+from hpc_runner.core.units import Duration, Memory
 
 if TYPE_CHECKING:
     from hpc_runner.core.result import JobResult
@@ -37,8 +38,9 @@ class JobSpec:
 
     name: str | None = None
     cpu: int | None = None
-    mem: str | None = None
-    time: str | None = None
+    # A string is expanded (D5) then parsed by resolve(); see core.units.
+    mem: str | Memory | None = None
+    time: str | Duration | None = None
     queue: str | None = None
     priority: int | None = None
     project: str | None = None

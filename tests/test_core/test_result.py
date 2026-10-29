@@ -1,6 +1,7 @@
 """Tests for JobResult.result(), wait() and output tails."""
 
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +15,7 @@ from hpc_runner.core.result import (
     JobStatus,
     status_from_exit_code,
 )
+from tests.fakes import make_job
 
 
 def _result(status: JobStatus, exit_code: int | None) -> JobResult:
@@ -135,10 +137,58 @@ class TestReadTail:
         out = tmp_path / "out.txt"
         out.write_text("a\nb\nc\n")
         res = _result(JobStatus.COMPLETED, 0)
-        res.scheduler.get_output_path.return_value = out
+        res.stdout_path = out
         assert res.read_stdout(tail=0) == ""
         assert res.read_stdout(tail=2) == "b\nc"
         assert res.read_stdout() == "a\nb\nc\n"
+
+
+class TestOutputPaths:
+    def test_missing_file_is_none(self, tmp_path):
+        res = _result(JobStatus.COMPLETED, 0)
+        res.stdout_path = tmp_path / "never-written.out"
+        assert res.read_stdout() is None
+
+    def test_host_dependent_path_raises(self):
+        res = _result(JobStatus.COMPLETED, 0)
+        res.job = make_job(stdout="out.${hpc.host}")
+        with pytest.raises(ValueError, match=r"depends on \$\{hpc.host\}"):
+            res.read_stdout()
+
+    def test_handle_from_id_is_none(self):
+        res = _result(JobStatus.COMPLETED, 0)
+        res.job = None
+        assert res.read_stdout() is None
+
+    def test_array_whole_job_read_refused(self):
+        res = ArrayJobResult(scheduler=MagicMock(), job_id="9", array=ArrayRange.parse("1-2"))
+        with pytest.raises(NotSupportedError, match=r"array job: use read_task_stdout\(n\)"):
+            res.read_stdout()
+        with pytest.raises(NotSupportedError, match="array job"):
+            res.read_stderr()
+
+    def test_array_read_task(self, tmp_path):
+        res = ArrayJobResult(
+            scheduler=MagicMock(),
+            job_id="9",
+            array=ArrayRange.parse("1-2"),
+            stdout_path=tmp_path / "a.9.${hpc.task_id}",
+        )
+        (tmp_path / "a.9.2").write_text("x\ny\nz\n")
+        assert res.read_task_stdout(2) == "x\ny\nz\n"
+        assert res.read_task_stdout(2, tail=1) == "z"
+        assert res.read_task_stdout(1) is None  # not written
+        assert res.read_task_stderr(2) is None  # merged
+
+    def test_array_task_paths(self):
+        res = ArrayJobResult(
+            scheduler=MagicMock(),
+            job_id="9",
+            array=ArrayRange.parse("1-4"),
+            stdout_path=Path("/w/a.9.${hpc.task_id}"),
+        )
+        assert res.task_stdout_path(3) == Path("/w/a.9.3")
+        assert res.task_stderr_path(3) is None
 
 
 class TestInteractiveHandle:
@@ -169,8 +219,9 @@ class TestInteractiveHandle:
         assert info.value.exit_code == 5
 
     def test_no_output_paths(self):
-        assert self._interactive(0).stdout_path() is None
-        assert self._interactive(0).read_stdout() == ""
+        assert self._interactive(0).stdout_path is None
+        assert self._interactive(0).read_stdout() is None
+        assert self._interactive(0).read_stderr() is None
 
 
 class TestHandleWithoutJob:

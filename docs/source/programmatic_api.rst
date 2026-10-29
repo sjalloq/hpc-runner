@@ -27,6 +27,7 @@ Quick start
    job = resolve(JobSpec("python train.py", cpu=4, mem="16G"), config, Host.capture())
    result = scheduler.submit(job)
    print(result.wait(), result.returncode)
+   print(result.read_stdout())
 
 
 The three stages
@@ -67,11 +68,30 @@ A job goes through three values, each with one job:
        project="ml",
        modules=["python/3.11", "cuda/12.0"],
        workdir="/path/to/project",
-       stdout="train.out",
+       stdout="train.${hpc.job_id}.out",   # relative to workdir
        stderr=None,   # None means "merge stderr into stdout"
    )
    job = resolve(spec, load_config(), Host.capture())
    print(job.cpu, job.provenance["cpu"])   # 4 spec
+   print(job.mem, job.time)   # 16 GiB (17179869184 bytes) 4:00:00 (14400 s)
+
+``mem`` and ``time`` accept a string (expanded, then parsed by
+``resolve()``; see :ref:`memory-and-time`) or a value: ``Memory`` (bytes)
+and ``Duration`` (seconds) from ``hpc_runner.core.units``. On the resolved
+``Job`` they are always ``Memory`` / ``Duration`` (or ``None``):
+
+.. code-block:: python
+
+   from hpc_runner.core.units import Duration, Memory
+
+   Memory.parse("1.5G").to_sge()       # '1536M'
+   Memory.parse("16G") / 4             # per-slot share, rounded up to the byte
+   Duration.parse("1h30m").to_sge()    # '1:30:00'
+   Duration.parse("90")                # ValueError: ambiguous: use 90s or 90m
+
+``job.workdir`` is always set: the spec's or config's ``workdir`` made
+absolute, else the submit directory. ``job.stdout`` is the output pattern
+(default ``${hpc.job_name}.${hpc.job_id}.out``; see :ref:`output-files`).
 
 A list command is shell-quoted: ``JobSpec(["bash", "-c", "echo hi there"])``
 runs ``bash -c 'echo hi there'``. A string command is used as written.
@@ -148,7 +168,8 @@ Monitoring jobs
    if result.status == JobStatus.COMPLETED:
        print("ok:", result.read_stdout(tail=20))
    else:
-       print("failed:", result.read_stderr(tail=50))
+       # stderr is merged into stdout unless a stderr pattern was set
+       print("failed:", result.read_stdout(tail=50))
 
 ``wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` blocks until
 the job reaches a terminal status (``COMPLETED``, ``FAILED``, ``CANCELLED``,
@@ -184,6 +205,36 @@ Reconnect to a job by id, without the ``Job`` that created it (``job`` is
 
    result = scheduler.result("12345")
    print(result.status)
+
+A reconnected handle does not know the job's output pattern, so its
+``stdout_path`` and ``stderr_path`` are ``None``.
+
+Output files
+^^^^^^^^^^^^
+
+``submit()`` records where a batch job's output goes: ``result.stdout_path``
+(and ``result.stderr_path`` when stderr is not merged) are ``Path`` objects
+built from the job's pattern with the job name and id filled in, relative to
+``job.workdir``. ``read_stdout(tail=None)`` and ``read_stderr()`` return the
+file's content, or ``None`` when there is nothing to read:
+
+- an interactive run (its output went to your terminal; the paths are
+  ``None``);
+- ``read_stderr()`` when stderr is merged into stdout;
+- a batch job whose file does not exist yet.
+
+A pattern that uses ``${hpc.host}`` cannot be known at submit time: the path
+is ``None`` and ``read_stdout()`` raises ``ValueError``. For an array job the
+paths keep the literal ``${hpc.task_id}``; ``task_stdout_path(n)`` and
+``task_stderr_path(n)`` give task ``n``'s file, and ``read_task_stdout(n,
+tail=None)`` / ``read_task_stderr(n, tail=None)`` read it. ``read_stdout()``
+and ``read_stderr()`` on an ``ArrayJobResult`` raise ``NotSupportedError``:
+
+.. code-block:: python
+
+   result = scheduler.submit(job)          # job.array = 1-10
+   result.wait()
+   print(result.read_task_stdout(3, tail=20))
 
 
 Configuration-driven jobs

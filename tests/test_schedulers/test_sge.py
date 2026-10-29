@@ -134,12 +134,12 @@ class TestSGEScheduler:
         script = scheduler.preview(job)
 
         assert "#$ -j y" not in script
-        assert "#$ -e error.log" in script
+        assert "#$ -e /work/error.log" in script
 
-    def test_submit_job(self, mock_sge_commands):
+    def test_submit_job(self, mock_sge_commands, tmp_path):
         """Test job submission with mocked qsub."""
         scheduler = SGEScheduler(HPCConfig())
-        job = make_job("echo hello", name="test_job")
+        job = make_job("echo hello", name="test_job", workdir=str(tmp_path))
 
         result = scheduler.submit(job)
 
@@ -157,15 +157,18 @@ class TestSGEScheduler:
         status = scheduler.get_status("12345")
         assert status == JobStatus.RUNNING
 
-    def test_batch_options_are_all_directives(self, mock_sge_commands):
+    def test_batch_options_are_all_directives(self, mock_sge_commands, tmp_path):
         """Batch submission is ``qsub <script>``: every option is a #$ directive."""
         scheduler = SGEScheduler(HPCConfig())
-        job = make_job("echo hello", name="test_job", cpu=4, mem="16G", queue="batch")
+        job = make_job(
+            "echo hello", name="test_job", cpu=4, mem="16G", queue="batch", workdir=str(tmp_path)
+        )
 
         script = scheduler.preview(job)
         scheduler.submit(job)
 
-        for directive in ("#$ -N test_job", "#$ -pe smp 4", "#$ -l mem_free=16G", "#$ -q batch"):
+        # mem is per job; mem_free is per slot by default, so 16G / 4 slots.
+        for directive in ("#$ -N test_job", "#$ -pe smp 4", "#$ -l mem_free=4G", "#$ -q batch"):
             assert directive in script
         qsub = [c.args[0] for c in mock_sge_commands.call_args_list if c.args[0][0] == "qsub"]
         assert len(qsub) == 1
@@ -247,7 +250,7 @@ class TestSGEScheduler:
         assert scheduler.mem_resource == "h_vmem"
         script = scheduler.preview(make_job(cpu=2, mem="1G"))
         assert "#$ -pe mpi 2" in script
-        assert "#$ -l h_vmem=1G" in script
+        assert "#$ -l h_vmem=512M" in script  # 1G per job over 2 slots
 
     def test_list_active_jobs(self, mock_sge_commands):
         """Test listing active jobs."""
@@ -879,14 +882,16 @@ class TestSGESubmissionContract:
         assert "--constraint" not in scheduler.preview(job)
 
     def test_preview_equals_submitted_script(self, scheduler, tmp_path, mock_sge_commands):
-        job = make_job("echo hello", name="j", cpu=2, dependencies=[Dependency("5")])
+        job = make_job(
+            "echo hello", name="j", cpu=2, dependencies=[Dependency("5")], workdir=str(tmp_path)
+        )
         scheduler.submit(job, keep_script=True)
         written = list((tmp_path / "scripts").glob("hpc_batch_*.sh"))
         assert len(written) == 1
         assert written[0].read_text() == scheduler.preview(job)
 
     def test_script_deleted_without_keep_script(self, scheduler, tmp_path, mock_sge_commands):
-        scheduler.submit(make_job())
+        scheduler.submit(make_job(workdir=str(tmp_path)))
         assert list((tmp_path / "scripts").glob("*.sh")) == []
 
     def test_project_directive(self, scheduler):
@@ -905,10 +910,10 @@ class TestSGESubmissionContract:
         assert "_hpc_dep_check_id afterok 1\n" in script
         assert "_hpc_dep_check_id afterany" not in script
 
-    def test_array_job(self, scheduler, mock_sge_commands):
+    def test_array_job(self, scheduler, mock_sge_commands, tmp_path):
         from hpc_runner.core.result import ArrayJobResult
 
-        job = make_job(array="1-10:2%3")
+        job = make_job(array="1-10:2%3", workdir=str(tmp_path))
         assert "#$ -t 1-10:2%3" in scheduler.preview(job)
         result = scheduler.submit(job)
         assert isinstance(result, ArrayJobResult)
@@ -960,3 +965,165 @@ class TestSGESubmissionContract:
         assert handle.job is None
         assert handle.job_id == "12345"
         assert handle.status == JobStatus.RUNNING
+
+
+QSUB_OK = (0, 'Your job 4242 ("x") has been submitted\n', "")
+QSUB_ARRAY_OK = (0, 'Your job-array 4242.1-4:1 ("x") has been submitted\n', "")
+
+
+def _directives(script: str) -> list[str]:
+    return [line for line in script.splitlines() if line.startswith("#$ ")]
+
+
+class TestSGEOutputPaths:
+    """D9: -o/-e are always rendered and the result records where they go."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        return SGEScheduler(HPCConfig())
+
+    def test_default_pattern(self, scheduler):
+        directives = _directives(scheduler.preview(make_job()))
+        assert "#$ -o /work/$JOB_NAME.$JOB_ID.out" in directives
+        assert "#$ -j y" in directives
+        assert not any(d.startswith("#$ -e") for d in directives)
+
+    def test_array_appends_task_id(self, scheduler):
+        directives = _directives(scheduler.preview(make_job(array="1-4", stderr="e.log")))
+        assert "#$ -o /work/$JOB_NAME.$JOB_ID.out.$TASK_ID" in directives
+        assert "#$ -e /work/e.log.$TASK_ID" in directives
+
+    def test_array_pattern_with_task_id_kept(self, scheduler):
+        job = make_job(array="1-4", stdout="t/${hpc.job_id}.${hpc.task_id}")
+        assert "#$ -o /work/t/$JOB_ID.$TASK_ID" in _directives(scheduler.preview(job))
+
+    def test_non_array_has_no_task_suffix(self, scheduler):
+        assert "$TASK_ID" not in scheduler.preview(make_job())
+
+    def test_separate_stderr(self, scheduler):
+        directives = _directives(scheduler.preview(make_job(stderr="${hpc.job_name}.err")))
+        assert "#$ -e /work/$JOB_NAME.err" in directives
+        assert "#$ -j y" not in directives
+
+    @pytest.mark.parametrize("use_cwd", [True, False])
+    def test_absolute_regardless_of_use_cwd(self, scheduler, use_cwd):
+        job = make_job(use_cwd=use_cwd, workdir="/proj/run", stdout="o/${hpc.job_id}.out")
+        assert "#$ -o /proj/run/o/$JOB_ID.out" in _directives(scheduler.preview(job))
+
+    def test_absolute_pattern_kept(self, scheduler):
+        job = make_job(stdout="/logs/${hpc.job_id}.out")
+        assert "#$ -o /logs/$JOB_ID.out" in _directives(scheduler.preview(job))
+
+    def test_host_renders_hostname(self, scheduler):
+        job = make_job(stdout="${hpc.host}.out")
+        assert "#$ -o /work/$HOSTNAME.out" in _directives(scheduler.preview(job))
+
+    def test_submit_records_paths(self, scheduler, tmp_path):
+        job = make_job("echo hi", name="9 lives", workdir=str(tmp_path), stderr="e/${hpc.job_id}")
+        with patch_seam(lambda argv: QSUB_OK):
+            result = scheduler.submit(job)
+        assert result.stdout_path == tmp_path / "j9_lives.4242.out"
+        assert result.stderr_path == tmp_path / "e" / "4242"
+        assert result.read_stdout() is None  # not written yet
+
+    def test_read_stdout_after_job_writes(self, scheduler, tmp_path):
+        job = make_job("echo hi", name="n", workdir=str(tmp_path))
+        with patch_seam(lambda argv: QSUB_OK):
+            result = scheduler.submit(job)
+        (tmp_path / "n.4242.out").write_text("hi\n")
+        assert result.read_stdout() == "hi\n"
+
+    def test_array_task_paths(self, scheduler, tmp_path):
+        job = make_job(name="a", array="1-4", workdir=str(tmp_path))
+        with patch_seam(lambda argv: QSUB_ARRAY_OK):
+            result = scheduler.submit(job)
+        assert result.task_stdout_path(3) == tmp_path / "a.4242.out.3"
+        assert result.task_stderr_path(3) is None
+
+    def test_directory_created_before_qsub(self, scheduler, tmp_path):
+        seen = []
+
+        def respond(argv):
+            seen.append((tmp_path / "logs" / "n").is_dir())
+            return QSUB_OK
+
+        job = make_job(name="n", workdir=str(tmp_path), stdout="logs/n/${hpc.job_name}.out")
+        with patch_seam(respond):
+            scheduler.submit(job)
+        assert seen == [True]
+
+    def test_host_in_pattern_unknown_path(self, scheduler, tmp_path):
+        job = make_job(workdir=str(tmp_path), stdout="out.${hpc.host}")
+        with patch_seam(lambda argv: QSUB_OK):
+            result = scheduler.submit(job)
+        assert result.stdout_path is None
+        with pytest.raises(ValueError, match="not known at submit time"):
+            result.read_stdout()
+
+    def test_qsub_runs_in_workdir(self, scheduler, tmp_path):
+        with patch_seam(lambda argv: QSUB_OK) as seam:
+            scheduler.submit(make_job(workdir=str(tmp_path)))
+        assert seam.call_args.kwargs["cwd"] == tmp_path
+
+    def test_interactive_has_no_paths(self, scheduler, tmp_path):
+        job = make_job("xterm", interactive=True, workdir=str(tmp_path), stdout="logs/x")
+        with patch_seam(lambda argv: (0, "", "")):
+            result = scheduler.submit(job)
+        assert (result.stdout_path, result.stderr_path) == (None, None)
+        assert result.read_stdout() is None
+        assert not (tmp_path / "logs").exists()
+
+
+class TestSGEJobName:
+    @pytest.mark.parametrize(
+        ("name", "rendered"),
+        [
+            ("alice_sim", "alice_sim"),
+            ("9lives", "j9lives"),
+            ("my job", "my_job"),
+            ("a/b", "a_b"),
+            ("a\tb:c@d", "a_b_c_d"),
+            ("3 bad/name", "j3_bad_name"),
+        ],
+    )
+    def test_sanitised(self, name, rendered):
+        script = SGEScheduler(HPCConfig()).preview(make_job(name=name))
+        assert f"#$ -N {rendered}" in _directives(script)
+
+
+class TestSGEUnits:
+    """D10: mem is per job; the site says how its resource is consumed."""
+
+    def _script(self, job, **sge):
+        return SGEScheduler(HPCConfig(schedulers={"sge": sge})).preview(job)
+
+    def test_per_slot_divides_by_cpu(self):
+        assert "#$ -l mem_free=4G" in self._script(make_job(cpu=4, mem="16G"))
+
+    def test_per_slot_rounds_up(self):
+        assert "#$ -l mem_free=342M" in self._script(make_job(cpu=3, mem="1G"))
+
+    def test_per_slot_single_cpu_unchanged(self):
+        assert "#$ -l mem_free=16G" in self._script(make_job(mem="16G"))
+
+    def test_per_job_not_divided(self):
+        script = self._script(make_job(cpu=4, mem="16G"), memory_per="job")
+        assert "#$ -l mem_free=16G" in script
+
+    def test_bad_memory_per(self):
+        from hpc_runner.core.exceptions import ConfigError
+
+        with pytest.raises(ConfigError, match="memory_per: expected one of 'slot', 'job'"):
+            SGEScheduler(HPCConfig(schedulers={"sge": {"memory_per": "node"}}))
+
+    def test_qrsh_gets_divided_mem(self):
+        cmd = SGEScheduler(HPCConfig())._build_qrsh_command(
+            make_job(cpu=2, mem="8G", interactive=True), "/s.sh"
+        )
+        assert cmd[cmd.index("-l") + 1] == "mem_free=4G"
+
+    def test_time_rendered_h_rt(self):
+        assert "#$ -l h_rt=4:00:00" in self._script(make_job(time="4h"))
+        assert "#$ -l h_rt=48:00:00" in self._script(make_job(time="2d"))

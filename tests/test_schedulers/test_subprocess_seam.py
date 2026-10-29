@@ -5,6 +5,7 @@ import sys
 
 import pytest
 
+from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.exceptions import (
     ConfigError,
     JobNotFoundError,
@@ -13,7 +14,6 @@ from hpc_runner.core.exceptions import (
     SchedulerUnavailableError,
     SubmissionError,
 )
-from hpc_runner.core.config import HPCConfig
 from hpc_runner.schedulers import get_scheduler
 from hpc_runner.schedulers._subprocess import run_command
 from hpc_runner.schedulers.sge import SGEScheduler
@@ -74,44 +74,44 @@ def sge(monkeypatch, tmp_path):
 class TestSGEErrors:
     """SGE raise sites, through a fake seam that honours ``check``."""
 
-    def test_qsub_rejection_is_submission_error(self, sge):
+    def test_qsub_rejection_is_submission_error(self, sge, tmp_path):
         with patch_seam(lambda argv: (1, "", QSUB_REJECT)):
             with pytest.raises(SubmissionError) as info:
-                sge.submit(make_job("echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j", workdir=str(tmp_path)))
         exc = info.value
         assert str(exc).startswith("Unable to run job: Job was rejected")
         assert exc.stderr == QSUB_REJECT
         assert exc.script is not None and "echo hi" in exc.script
         assert exc.argv is not None and exc.argv[0] == "qsub"
 
-    def test_unparseable_qsub_output(self, sge):
+    def test_unparseable_qsub_output(self, sge, tmp_path):
         with patch_seam(lambda argv: (0, "something odd\n", "")):
             with pytest.raises(SubmissionError, match="could not parse job id") as info:
-                sge.submit(make_job("echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j", workdir=str(tmp_path)))
         assert info.value.script is not None
 
-    def test_array_qsub_rejection(self, sge):
-        job = make_job("echo hi", name="j", array="1-3")
+    def test_array_qsub_rejection(self, sge, tmp_path):
+        job = make_job("echo hi", name="j", array="1-3", workdir=str(tmp_path))
         with patch_seam(lambda argv: (1, "", QSUB_REJECT)):
             with pytest.raises(SubmissionError) as info:
                 sge.submit(job)
         assert info.value.script is not None
 
-    def test_missing_qsub(self, sge):
+    def test_missing_qsub(self, sge, tmp_path):
         def respond(argv):
             raise SchedulerUnavailableError(f"{argv[0]} not found on PATH")
 
         with patch_seam(respond):
             with pytest.raises(SchedulerUnavailableError):
-                sge.submit(make_job("echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j", workdir=str(tmp_path)))
 
-    def test_qsub_timeout(self, sge):
+    def test_qsub_timeout(self, sge, tmp_path):
         def respond(argv):
             raise SchedulerTimeoutError(argv, 60.0)
 
         with patch_seam(respond):
             with pytest.raises(SchedulerTimeoutError):
-                sge.submit(make_job("echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j", workdir=str(tmp_path)))
 
     def test_query_commands_get_default_timeout(self, sge):
         with patch_seam(lambda argv: (0, "", "")) as mock:

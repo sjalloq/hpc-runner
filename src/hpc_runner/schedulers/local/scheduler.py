@@ -22,8 +22,8 @@ from hpc_runner.core.exceptions import (
 )
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobResult, JobStatus, status_from_exit_code
-from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
-from hpc_runner.templates import render_template
+from hpc_runner.schedulers.base import BaseScheduler, Stream, refuse_interactive_dependencies
+from hpc_runner.templates import ShellWord, render_template
 
 if TYPE_CHECKING:
     from hpc_runner.core.config import HPCConfig
@@ -60,7 +60,7 @@ class LocalScheduler(BaseScheduler):
         super().__init__(config)
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._exit_codes: dict[str, int] = {}
-        self._output_paths: dict[str, dict[str, Path]] = {}
+        self._results: dict[str, JobResult] = {}
         self._script_paths: dict[str, Path] = {}
 
     def hpc_vars(self, job: Job, *, job_id: str | None = None) -> Mapping[str, str]:
@@ -74,7 +74,7 @@ class LocalScheduler(BaseScheduler):
             "cpus": shlex.quote(str(job.cpu or 1)),
             "job_id": shlex.quote(job_id or "<job_id>"),
             "task_id": "''",
-            "job_name": shlex.quote(job.name),
+            "job_name": shlex.quote(self.job_name(job)),
         }
 
     def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
@@ -93,30 +93,24 @@ class LocalScheduler(BaseScheduler):
         # passthrough variables. The script sets env_* itself.
         env = os.environ.copy() if job.inherit_env else dict(job.env_passthrough)
 
-        workdir = Path(job.workdir).resolve() if job.workdir else Path.cwd()
-
-        stdout_path, stderr_path = self._resolve_output_paths(job, job_id, workdir)
-        if stdout_path is not None:
-            self._output_paths[job_id] = {
-                "stdout": stdout_path,
-                "stderr": stderr_path if stderr_path else stdout_path,
-            }
+        workdir = Path(job.workdir)
+        self.make_output_dirs(job)
 
         # Generate and write script (template handles output redirection)
-        script = self._render(job, job_id, stdout_path, stderr_path, verbose=verbose)
+        script = self._render(job, job_id, verbose=verbose)
         script_path = Path(tempfile.gettempdir()) / f".hpc_local_{job_id}.sh"
         script_path.write_text(script)
         script_path.chmod(0o755)
 
         if job.interactive:
-            result = subprocess.run(
+            completed = subprocess.run(
                 [str(script_path)],
                 cwd=workdir,
                 env=env,
             )
             if not keep_script:
                 script_path.unlink(missing_ok=True)
-            return JobResult(scheduler=self, job_id=None, job=job, exit_code=result.returncode)
+            return JobResult(scheduler=self, job_id=None, job=job, exit_code=completed.returncode)
 
         proc = subprocess.Popen(
             [str(script_path)],
@@ -125,7 +119,16 @@ class LocalScheduler(BaseScheduler):
         )
         self._processes[job_id] = proc
         self._script_paths[job_id] = script_path
-        return JobResult(scheduler=self, job_id=job_id, job=job)
+        stdout_path, stderr_path = self.output_paths(job, job_id)
+        result = JobResult(
+            scheduler=self,
+            job_id=job_id,
+            job=job,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+        )
+        self._results[job_id] = result
+        return result
 
     def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script :meth:`submit` would write for *job*.
@@ -134,21 +137,19 @@ class LocalScheduler(BaseScheduler):
         submit, so the preview shows ``<job_id>`` in its place.
         """
         _check_supported(job)
-        workdir = Path(job.workdir).resolve() if job.workdir else Path.cwd()
-        stdout_path, stderr_path = self._resolve_output_paths(job, "<job_id>", workdir)
-        return self._render(job, None, stdout_path, stderr_path, verbose=verbose)
+        return self._render(job, None, verbose=verbose)
 
-    @staticmethod
-    def _resolve_output_paths(
-        job: Job, job_id: str, workdir: Path
-    ) -> tuple[Path | None, Path | None]:
-        """Output files for template-based redirection (None = inherit)."""
-        if job.stdout is None and job.stderr is None:
-            return None, None
-        stdout_path = workdir / (job.stdout or f"{job.name}.{job_id}.out")
-        if job.merge_output:
-            return stdout_path, None
-        return stdout_path, workdir / (job.stderr or f"{job.name}.{job_id}.err")
+    def _redirect(self, job: Job, stream: Stream, job_id: str | None) -> ShellWord | None:
+        """The shell word a batch job's *stream* is redirected to, or None.
+
+        None for an interactive run (output goes to the terminal) and for
+        a merged stderr. The pattern's ``${hpc.*}`` values are the literals
+        of :meth:`hpc_vars` (``$HOSTNAME`` for the host).
+        """
+        pattern = self.output_pattern(job, stream)
+        if job.interactive or pattern is None:
+            return None
+        return self.shell_word(str(Path(job.workdir) / pattern), job=job, job_id=job_id)
 
     def cancel(self, job_id: str) -> bool:
         """Cancel a local job."""
@@ -206,30 +207,25 @@ class LocalScheduler(BaseScheduler):
 
         return None
 
-    def get_output_path(self, job_id: str, stream: str) -> Path | None:
-        """Get output file path."""
-        if job_id in self._output_paths:
-            return self._output_paths[job_id].get(stream)
-        return None
-
     def _render(
         self,
         job: Job,
         job_id: str | None,
-        stdout_path: Path | None,
-        stderr_path: Path | None,
         *,
         verbose: bool = False,
     ) -> str:
-        """Render the local execution script."""
+        """Render the local execution script.
+
+        Local runs ignore ``mem`` and ``time``: there is no scheduler to
+        request them from, and limits are not enforced.
+        """
         return render_template(
             "local/templates/job.sh.j2",
             job=job,
             scheduler=self,
             environment=self.environment_context(job, job_id=job_id, verbose=verbose),
-            stdout_path=stdout_path,
-            stderr_path=stderr_path,
-            merge_output=job.merge_output,
+            stdout=self._redirect(job, "stdout", job_id),
+            stderr=self._redirect(job, "stderr", job_id),
         )
 
     # -------------------------------------------------------------------------
@@ -296,6 +292,7 @@ class LocalScheduler(BaseScheduler):
     def get_job_details(self, job_id: str) -> tuple[JobInfo, dict[str, object]]:
         """Get details for a local job."""
         current_user = os.environ.get("USER", "unknown")
+        result = self._results.get(job_id)
 
         if job_id in self._processes:
             proc = self._processes[job_id]
@@ -308,8 +305,8 @@ class LocalScheduler(BaseScheduler):
                 status=status,
                 queue="local",
                 exit_code=poll if poll is not None else None,
-                stdout_path=self._output_paths.get(job_id, {}).get("stdout"),
-                stderr_path=self._output_paths.get(job_id, {}).get("stderr"),
+                stdout_path=result.stdout_path if result else None,
+                stderr_path=result.stderr_path if result else None,
             )
             return job_info, {}
 
@@ -322,8 +319,8 @@ class LocalScheduler(BaseScheduler):
                 status=status_from_exit_code(exit_code),
                 queue="local",
                 exit_code=exit_code,
-                stdout_path=self._output_paths.get(job_id, {}).get("stdout"),
-                stderr_path=self._output_paths.get(job_id, {}).get("stderr"),
+                stdout_path=result.stdout_path if result else None,
+                stderr_path=result.stderr_path if result else None,
             )
             return job_info, {}
 

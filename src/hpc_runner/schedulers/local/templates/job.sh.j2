@@ -12,19 +12,14 @@ _hpc_on_exit() {
 trap _hpc_on_exit EXIT
 
 {% include "_environment.sh.j2" %}
-{% if stdout_path and merge_output %}
+{% if stdout and not stderr %}
 
-# Redirect stdout and stderr to file
-exec > {{ stdout_path | sh }} 2>&1
-{% elif stdout_path %}
+# Redirect stdout and stderr (merged) to file
+exec > {{ stdout | sh }} 2>&1
+{% elif stdout %}
 
-# Redirect stdout to file
-exec > {{ stdout_path | sh }}
-{% endif %}
-{% if stderr_path and not merge_output %}
-
-# Redirect stderr to file
-exec 2> {{ stderr_path | sh }}
+# Redirect stdout and stderr to separate files
+exec > {{ stdout | sh }} 2> {{ stderr | sh }}
 {% endif %}
 
 # Execute command

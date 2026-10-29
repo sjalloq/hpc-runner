@@ -174,6 +174,8 @@ types cannot list types); a type naming an undefined tool, or a ``-t``
 naming an undefined type, is an error.
 
 
+.. _scheduler-args:
+
 Scheduler-specific arguments
 ----------------------------
 
@@ -202,7 +204,78 @@ SGE mapping notes
 - ``queue`` maps to SGE ``qsub -q <queue>``.
 - ``cpu`` maps to SGE parallel environment slots: ``qsub -pe <parallel_environment> <cpu>``.
 - ``mem`` and ``time`` map to SGE hard resources via ``-l <resource>=<value>``, where the
-  resource names are configured under ``[schedulers.sge]``.
+  resource names are configured under ``[schedulers.sge]``. ``mem`` is per job;
+  with ``memory_per = "slot"`` (the default) it is divided by ``cpu`` (see
+  :doc:`sge`).
+- ``stdout``/``stderr`` map to ``-o``/``-e``; without ``stderr``, ``-j y``.
+
+
+.. _output-files:
+
+Output files
+------------
+
+hpc-runner always names a batch job's output file itself, never leaving it
+to the scheduler's default, so the path is known when the job is submitted
+and ``JobResult.stdout_path`` / ``read_stdout()`` work on every scheduler.
+
+- **Default:** ``stdout = "${hpc.job_name}.${hpc.job_id}.out"``, the same
+  on every scheduler. A site that prefers SGE's native ``*.o<id>`` names
+  sets its own pattern.
+- **Patterns** use the ``${hpc.*}`` runtime values
+  (:ref:`variable-expansion`) that the scheduler knows before the job
+  starts: ``${hpc.job_name}``, ``${hpc.job_id}``, ``${hpc.task_id}`` and
+  ``${hpc.host}``, and only in the final path component: the directory is
+  created before submission, so ``logs/${hpc.job_id}/x.out`` is an error
+  (SGE discards output to a missing directory). ``${hpc.cpus}`` and
+  ``${hpc.tmpdir}`` are an error anywhere in an output path. On SGE the
+  pattern becomes ``<workdir>/$JOB_NAME.$JOB_ID.out`` and SGE fills it in.
+- **Arrays:** a pattern without ``${hpc.task_id}`` gets ``.${hpc.task_id}``
+  appended, so tasks never write the same file
+  (``name.123.out.4``). The same applies to ``stderr``.
+- **Relative paths** are relative to the job's working directory
+  (``workdir``, else the directory you submit from). The directory part is
+  created on the submit host before submission.
+- **stderr** is merged into stdout unless a ``stderr`` pattern is set, which
+  turns merging off.
+- ``${hpc.job_name}`` is the name as the scheduler submits it: on every
+  scheduler whitespace, ``/`` and non-printable characters become ``_``
+  (SGE adds its own rules, see :doc:`sge`).
+- An **empty** ``stdout`` or ``stderr`` is an error: omit the key to use the
+  default (stdout) or to merge (stderr).
+- **Interactive** jobs write to your terminal; ``stdout`` and ``stderr`` do
+  not apply.
+
+.. code-block:: toml
+
+   [defaults]
+   stdout = "logs/${hpc.job_name}.${hpc.job_id}.out"
+   stderr = "logs/${hpc.job_name}.${hpc.job_id}.err"
+
+
+.. _memory-and-time:
+
+Memory and time
+---------------
+
+``mem`` and ``time`` are values hpc-runner owns: they are parsed once and
+rendered in each scheduler's syntax, so a config file means the same thing
+on every cluster. A value that does not parse is reported with its file and
+line when the config is loaded.
+
+``mem`` is the memory for the **whole job**, regardless of ``cpu``.
+Accepted forms: ``16G``, ``16GB``, ``16GiB``, ``4096M``, ``1.5G``,
+``512K``, ``2T``. Units are binary (``G`` is 2\ :sup:`30` bytes, as SGE
+reads it) and case-insensitive; a bare integer is bytes.
+
+``time`` accepts ``HH:MM:SS``, ``MM:SS``, ``D-HH:MM:SS``, ``D-HH:MM``,
+``D-HH``, and units ``90s``, ``30m``, ``4h``, ``2d`` or a compound such as
+``1h30m`` or ``1d2h``. **A bare integer is an error** ("ambiguous: use 90s
+or 90m"): SGE reads ``90`` as seconds and Slurm as minutes.
+
+Values are expanded (:ref:`variable-expansion`) before they are parsed.
+Odd site resources still go through :ref:`scheduler_args <scheduler-args>`
+untouched.
 
 
 .. _variable-expansion:
@@ -448,8 +521,8 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    use_cwd = true
    inherit_env = true
 
-   stdout = "hpc.%N.%J.out"
-   stderr = ""                 # empty means "unset"
+   stdout = "${hpc.job_name}.${hpc.job_id}.out"   # the default
+   # stderr = "${hpc.job_name}.${hpc.job_id}.err"  # unset: merged into stdout
 
    modules = ["gcc/12.2", "python/3.11"]
    modules_path = []           # module use <path>: searched before the site paths
@@ -476,6 +549,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    parallel_environment = "smp"
    memory_resource = "mem_free"
    time_resource = "h_rt"
+   memory_per = "slot"         # mem is per job; divided by cpu for a per-slot resource
 
    module_init_script = ""
    module_system = "modules"

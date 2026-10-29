@@ -9,6 +9,7 @@ from typing import Any
 from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.resources import ResourceSet
+from hpc_runner.core.units import Duration, Memory
 
 # Order in which schedulers render the simple per-attribute directives.
 RENDER_ORDER: tuple[str, ...] = (
@@ -59,17 +60,19 @@ class Job:
     name: str
 
     cpu: int | None
-    mem: str | None
-    time: str | None
+    mem: Memory | None  # per job (D10)
+    time: Duration | None
     queue: str | None
     priority: int | None
     project: str | None
     nodes: int | None
     tasks: int | None
-    stdout: str | None
+    # Output path patterns (D9), relative to workdir; may contain ${hpc.*}.
+    # stderr None means merged into stdout.
+    stdout: str
     stderr: str | None
     inherit_env: bool
-    workdir: str | None
+    workdir: str  # absolute
     shell: str
     use_cwd: bool
     venv: str | None

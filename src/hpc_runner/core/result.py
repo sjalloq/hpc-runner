@@ -130,6 +130,13 @@ def wait_for_statuses(
     return final
 
 
+#: The placeholder an array job's :attr:`JobResult.stdout_path` keeps for
+#: the task id; :meth:`ArrayJobResult.task_stdout_path` substitutes it.
+TASK_ID_PLACEHOLDER = "${hpc.task_id}"
+
+_HOST_REF = "${hpc.host}"
+
+
 @dataclass
 class JobResult:
     """A handle on a submitted job.
@@ -138,12 +145,23 @@ class JobResult:
     ``scheduler.result(job_id)`` (``job`` is None). An interactive run has
     already finished when its handle is returned: ``job_id`` is None and
     ``exit_code`` holds its exit status.
+
+    ``stdout_path`` and ``stderr_path`` are recorded at submit time from
+    the job's output patterns (D9). ``stderr_path`` is None when stderr is
+    merged into stdout. Both are None for an interactive run (its output
+    went to the terminal), when the pattern uses ``${hpc.host}`` (not known at
+    submit time), and on a handle from ``scheduler.result(job_id)``, which
+    does not know the job's patterns. For an array job they contain the
+    literal :data:`TASK_ID_PLACEHOLDER`; see
+    :meth:`ArrayJobResult.task_stdout_path`.
     """
 
     scheduler: BaseScheduler
     job_id: str | None  # None for a completed interactive run
     job: Job | None = None  # None when rebuilt from an id via scheduler.result()
     exit_code: int | None = None  # set for interactive runs (the run already finished)
+    stdout_path: Path | None = None
+    stderr_path: Path | None = None
 
     @property
     def status(self) -> JobStatus:
@@ -227,30 +245,40 @@ class JobResult:
             return False
         return self.scheduler.cancel(self.job_id)
 
-    def stdout_path(self) -> Path | None:
-        """Get path to stdout file."""
-        if self.job_id is None:
-            return None
-        return self.scheduler.get_output_path(self.job_id, "stdout")
+    def read_stdout(self, tail: int | None = None) -> str | None:
+        """The job's stdout (the last *tail* lines if given).
 
-    def stderr_path(self) -> Path | None:
-        """Get path to stderr file."""
-        if self.job_id is None:
-            return None
-        return self.scheduler.get_output_path(self.job_id, "stderr")
+        Returns:
+            The file's content, or None when there is no file: an
+            interactive run, a handle without a recorded path, or a batch
+            job whose output file does not exist (yet).
 
-    def read_stdout(self, tail: int | None = None) -> str:
-        """Read stdout content."""
-        return _read(self.stdout_path(), tail)
+        Raises:
+            ValueError: The output path depends on ``${hpc.host}``.
+        """
+        self._check_known(self.stdout_path, "stdout")
+        return _read(self.stdout_path, tail)
 
-    def read_stderr(self, tail: int | None = None) -> str:
-        """Read stderr content."""
-        return _read(self.stderr_path(), tail)
+    def read_stderr(self, tail: int | None = None) -> str | None:
+        """The job's stderr; None when stderr is merged into stdout (see :meth:`read_stdout`).
+
+        Raises:
+            ValueError: The output path depends on ``${hpc.host}``.
+        """
+        self._check_known(self.stderr_path, "stderr")
+        return _read(self.stderr_path, tail)
+
+    def _check_known(self, path: Path | None, stream: str) -> None:
+        if path is not None or self.job is None or self.job.interactive:
+            return
+        pattern = getattr(self.job, stream)
+        if pattern is not None and _HOST_REF in pattern:
+            raise ValueError("output path depends on ${hpc.host}, not known at submit time")
 
 
-def _read(path: Path | None, tail: int | None) -> str:
-    if not path or not path.exists():
-        return ""
+def _read(path: Path | None, tail: int | None) -> str | None:
+    if path is None or not path.exists():
+        return None
     content = path.read_text()
     if tail is not None:
         lines = content.splitlines()
@@ -276,6 +304,44 @@ class ArrayJobResult(JobResult):
     def task_status(self, index: int) -> JobStatus:
         """The status of task *index* itself (not of the array as a whole)."""
         return self.scheduler.get_status(self.task_id(index))
+
+    def task_stdout_path(self, index: int) -> Path | None:
+        """Task *index*'s stdout file (see :attr:`JobResult.stdout_path`)."""
+        return _task_path(self.stdout_path, index)
+
+    def task_stderr_path(self, index: int) -> Path | None:
+        """Task *index*'s stderr file; None when stderr is merged into stdout."""
+        return _task_path(self.stderr_path, index)
+
+    # An array job has one output file per task, so the whole-job readers
+    # are refused; read a task's file with read_task_stdout(n).
+    def read_stdout(self, tail: int | None = None) -> str | None:
+        """Not defined for array jobs; use :meth:`read_task_stdout`."""
+        raise NotSupportedError("array job: use read_task_stdout(n)")
+
+    def read_stderr(self, tail: int | None = None) -> str | None:
+        """Not defined for array jobs; use :meth:`read_task_stderr`."""
+        raise NotSupportedError("array job: use read_task_stderr(n)")
+
+    def read_task_stdout(self, index: int, tail: int | None = None) -> str | None:
+        """Task *index*'s stdout, as :meth:`JobResult.read_stdout`.
+
+        Raises:
+            ValueError: The output path depends on ``${hpc.host}``.
+        """
+        path = self.task_stdout_path(index)
+        self._check_known(path, "stdout")
+        return _read(path, tail)
+
+    def read_task_stderr(self, index: int, tail: int | None = None) -> str | None:
+        """Task *index*'s stderr; None when stderr is merged into stdout.
+
+        Raises:
+            ValueError: The output path depends on ``${hpc.host}``.
+        """
+        path = self.task_stderr_path(index)
+        self._check_known(path, "stderr")
+        return _read(path, tail)
 
     def task_ids(self) -> list[str]:
         """The job id of every task, in index order."""
@@ -316,3 +382,9 @@ class ArrayJobResult(JobResult):
     def cancel(self) -> bool:
         """Cancel all array tasks."""
         return self.scheduler.cancel(self._base_id())
+
+
+def _task_path(path: Path | None, index: int) -> Path | None:
+    if path is None:
+        return None
+    return Path(str(path).replace(TASK_ID_PLACEHOLDER, str(index)))

@@ -71,7 +71,14 @@ result = scheduler.submit(job)
 # Wait for completion
 status = result.wait()
 print(f"Exit code: {result.returncode}")
+print(result.read_stdout())   # the job's output file, recorded at submit
 ```
+
+Every batch job writes to a file hpc-runner names itself (default
+`${hpc.job_name}.${hpc.job_id}.out` in the working directory, stderr merged),
+so `result.stdout_path` is known at submit and `read_stdout()` works on SGE
+as well as locally. It returns `None` for an interactive run, whose output
+went to the terminal.
 
 Jobs submitted from the API are batch unless `interactive=True` is set on the
 spec (or by the tool/type config). An interactive run has already finished
@@ -295,8 +302,9 @@ section lets you match your site's conventions without touching job definitions.
 | Job Field | SGE Flag | Configurable Via |
 |-----------|----------|------------------|
 | `cpu`     | `-pe <pe_name> <slots>` | `parallel_environment` |
-| `mem`     | `-l <resource>=<value>` | `memory_resource` |
-| `time`    | `-l <resource>=<value>` | `time_resource` |
+| `mem`     | `-l <resource>=<value>` | `memory_resource`, `memory_per` |
+| `time`    | `-l <resource>=<H:MM:SS>` | `time_resource` |
+| `stdout`/`stderr` | `-o`/`-e` (`-j y` without `stderr`) | direct |
 | `queue`   | `-q <queue>` | direct |
 | `resources` | `-l <name>=<value>` | direct |
 
@@ -308,6 +316,8 @@ section lets you match your site's conventions without touching job definitions.
 parallel_environment = "smp"    # PE name for CPU slots (some sites use "mpi", "threaded", etc.)
 memory_resource = "mem_free"    # Memory resource name (common alternatives: "h_vmem", "virtual_free")
 time_resource = "h_rt"          # Time limit resource name (commonly "h_rt")
+memory_per = "slot"             # mem is per job; "slot" divides it by cpu (SGE multiplies
+                                # a consumable by the slots), "job" passes it as given
 
 # Module system ('module purge' always runs first)
 module_init_script = ""         # Path to module init script (auto-detected if empty)
@@ -317,7 +327,11 @@ module_system = ""              # "modules" (exports MODULES_VERBOSITY=concise),
 emulate_afterok = true          # afterok/afternotok via exit sentinels; false: afterany only
 ```
 
-Output is merged (`-j y`) unless a job sets `stderr`. Variables to unset in
+`mem` is the memory for the whole job (`16G`, `4096M`, `1.5GiB`); `time` is
+`HH:MM:SS`, `D-HH:MM:SS` or units such as `90m`, `4h`, `1h30m`. A bare
+integer time is an error ("ambiguous: use 90s or 90m"). Output is merged
+(`-j y`) unless a job sets `stderr`; job names SGE would reject (a leading
+digit, whitespace, `/`) are sanitised. Variables to unset in
 the job are a job setting, `env_unset`, on `[defaults]`, a tool or a type.
 
 **Fully populated config example:**
@@ -332,7 +346,7 @@ time = "1:00:00"
 queue = "batch.q"
 use_cwd = true
 inherit_env = true
-stdout = "hpc.%N.%J.out"
+stdout = "${hpc.job_name}.${hpc.job_id}.out"   # the default; arrays add .${hpc.task_id}
 modules = ["gcc/12.2", "python/3.11"]
 modules_path = ["/site/modulefiles"]           # module use <path>, searched first
 modules_path_append = ["$HOME/modulefiles"]   # module use --append <path>, searched last
@@ -402,15 +416,15 @@ Runs interactively by default; --batch submits and returns.
 Options:
   --name TEXT           Job name
   --cpu INTEGER         Number of CPUs
-  --mem TEXT            Memory (e.g., 16G, 4096M)
-  --time TEXT           Time limit (e.g., 4:00:00)
+  --mem TEXT            Memory for the whole job (e.g., 16G, 1.5GiB)
+  --time TEXT           Time limit (e.g., 4:00:00, 4h, 1h30m)
   --queue TEXT          Queue/partition name
   --nodes INTEGER       Number of nodes (MPI jobs)
   --ntasks INTEGER      Number of tasks (MPI jobs)
   --directory PATH      Working directory
   -t, --type TEXT       Job type from config
-  --stdout TEXT         Stdout file path pattern
-  --stderr TEXT         Separate stderr file (default: merged)
+  --stdout TEXT         Stdout file pattern (default: ${hpc.job_name}.${hpc.job_id}.out)
+  --stderr TEXT         Separate stderr file pattern (default: merged into stdout)
   --array TEXT          Array spec (e.g., 1-100, 1-100%5)
   --depend TEXT         Job dependency, repeatable: ID or TYPE:ID[:ID...][,TYPE:ID...]
   -b, --batch           Submit as a batch job (default: interactive via qrsh/srun)

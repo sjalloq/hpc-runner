@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import shlex
 from collections.abc import Iterator, Mapping
 from types import MappingProxyType
@@ -24,6 +26,7 @@ from hpc_runner.core.schema import (
     env_conflicts,
 )
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.core.units import Duration, Memory
 
 # Package defaults for fields that are never left unset.
 _PACKAGE_DEFAULTS: dict[str, Any] = {
@@ -31,7 +34,19 @@ _PACKAGE_DEFAULTS: dict[str, Any] = {
     "shell": "/bin/bash",
     "use_cwd": True,
     "interactive": False,
+    # D9: hpc-runner always names the output file; never the scheduler default.
+    "stdout": "${hpc.job_name}.${hpc.job_id}.out",
 }
+
+# ${hpc.*} names that only exist inside the running job, so an output path
+# (which the scheduler opens before the job starts) cannot use them.
+_NOT_IN_PATHS = ("cpus", "tmpdir")
+# Why an empty output pattern is wrong (also the schema's message).
+_EMPTY_OUTPUT = {
+    "stdout": "empty; omit the key to use the default",
+    "stderr": "empty; omit the key to merge into stdout",
+}
+_HPC_REF = re.compile(r"\$\{hpc\.([A-Za-z_][A-Za-z0-9_]*)\}")
 
 # Scalar fields: the most specific layer that sets them, else package default.
 _SCALARS: tuple[str, ...] = (
@@ -68,12 +83,20 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
     is not. The returned :class:`Job` records the source of every value in
     ``provenance``.
 
+    ``mem`` and ``time`` are parsed into :class:`Memory` and
+    :class:`Duration` after expansion (D10). ``workdir`` is made absolute
+    against the host's cwd, which it defaults to; relative output paths
+    are relative to it (D9).
+
     Raises:
         ConfigError: The spec names an unknown type, the type lists an
             unknown tool, a value references an undefined variable, a
             module entry expands to nothing, an ``env_passthrough`` name is
-            not set on the host, the venv has no ``bin/activate``, or the
-            spec sets and prepends/appends the same variable.
+            not set on the host, the venv has no ``bin/activate``, the
+            spec sets and prepends/appends the same variable, ``mem`` or
+            ``time`` does not parse (D10), or an output path is empty,
+            uses ``${hpc.cpus}`` or ``${hpc.tmpdir}``, or has ``${hpc.*}``
+            in its directory part.
         NotSupportedError: An array job was requested interactively.
         ValueError: ``array`` is not a valid range.
     """
@@ -127,6 +150,34 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         return _PACKAGE_DEFAULTS.get(field)
 
     values: dict[str, Any] = {field: pick(field) for field in _SCALARS}
+
+    # D10: mem and time are parsed after expansion.
+    values["mem"] = _parse_unit(values["mem"], Memory, "mem", provenance)
+    values["time"] = _parse_unit(values["time"], Duration, "time", provenance)
+
+    # D9: output paths may use ${hpc.*} names the scheduler knows before the
+    # job starts; relative paths are relative to the working directory.
+    for field in ("stdout", "stderr"):
+        pattern = values[field]
+        if pattern is None:
+            continue
+        where = f"{provenance[field]}: {field}"
+        if pattern == "":
+            raise ConfigError(f"{where}: {_EMPTY_OUTPUT[field]}")
+        for ref in _HPC_REF.findall(pattern):
+            if ref in _NOT_IN_PATHS:
+                raise ConfigError(f"{where}: ${{hpc.{ref}}} is not available in output paths")
+        # The directory is created on the submit host before submission, so
+        # runtime values are allowed only in the final path component.
+        if "${hpc." in os.path.dirname(pattern):
+            raise ConfigError(
+                f"{where}: the directory part of {field} cannot depend on ${{hpc.*}}; "
+                "SGE discards output to a missing directory"
+            )
+
+    if values["workdir"] is None:
+        provenance["workdir"] = "host"
+    values["workdir"] = os.path.normpath(host.cwd / (values["workdir"] or "."))
 
     # Name: spec, config, else generated from the submitting user.
     name = pick("name")
@@ -221,6 +272,26 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         modules_path_append=module_list("modules_path_append"),
         **values,
     )
+
+
+def _parse_unit(
+    value: Any,
+    kind: type[Memory] | type[Duration],
+    field: str,
+    provenance: Mapping[str, Any],
+) -> Any:
+    """*value* as a :class:`Memory` / :class:`Duration`: parsed if a string.
+
+    Raises:
+        ConfigError: The string does not parse; names the field and the
+            layer that supplied it.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        return kind.parse(value)
+    except ValueError as exc:
+        raise ConfigError(f"{provenance[field]}: {field}: {exc}") from None
 
 
 def _resolve_venv(

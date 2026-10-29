@@ -17,6 +17,7 @@ from typing import Any
 
 from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.merge import Edit, Set
+from hpc_runner.core.units import Duration, Memory
 
 #: The config format this package reads.
 CONFIG_VERSION = 1
@@ -69,6 +70,37 @@ def _bool(value: Any) -> bool:
     if not isinstance(value, bool):
         raise _Invalid(f"expected true or false, got {_describe(value)}")
     return value
+
+
+def _parsed(parse: Callable[[str], Any]) -> Callable[[Any], str]:
+    """A string that must parse as a unit value (D10), kept as the string.
+
+    The string stays in the layer because ``resolve()`` expands it (D5)
+    before parsing; one containing ``$`` can only be checked then.
+    """
+
+    def validate(value: Any) -> str:
+        text = _str(value)
+        if "$" not in text:
+            try:
+                parse(text)
+            except ValueError as exc:
+                raise _Invalid(str(exc)) from None
+        return text
+
+    return validate
+
+
+def _output_path(empty: str) -> Callable[[Any], str]:
+    """An output pattern (D9): a non-empty string."""
+
+    def validate(value: Any) -> str:
+        text = _str(value)
+        if text == "":
+            raise _Invalid(empty)
+        return text
+
+    return validate
 
 
 def _venv(value: Any) -> str | bool:
@@ -179,15 +211,15 @@ def _scheduler_args(value: Any) -> dict[str, Any]:
 FIELD_VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "name": _str,
     "cpu": _int,
-    "mem": _str,
-    "time": _str,
+    "mem": _parsed(Memory.parse),
+    "time": _parsed(Duration.parse),
     "queue": _str,
     "priority": _int,
     "project": _str,
     "nodes": _int,
     "tasks": _int,
-    "stdout": _str,
-    "stderr": _str,
+    "stdout": _output_path("empty; omit the key to use the default"),
+    "stderr": _output_path("empty; omit the key to merge into stdout"),
     "inherit_env": _bool,
     "workdir": _str,
     "shell": _str,
