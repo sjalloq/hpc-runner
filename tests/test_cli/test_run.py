@@ -442,7 +442,8 @@ class TestToolAutoDetection:
     def config_with_tools(self, temp_dir):
         """Create a config file with tool definitions."""
         config_file = temp_dir / "hpc-runner.toml"
-        config_file.write_text("""
+        config_file.write_text("""config_version = 1
+
 [tools.python]
 cpu = 4
 mem = "16G"

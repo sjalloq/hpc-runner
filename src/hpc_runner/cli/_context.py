@@ -6,7 +6,7 @@ from typing import TypeVar
 
 import rich_click as click
 
-from hpc_runner.core.config import HPCConfig
+from hpc_runner.core.config import HPCConfig, load_config
 
 
 class Context:
@@ -14,10 +14,23 @@ class Context:
 
     def __init__(self) -> None:
         self.config_path: Path | None = None
-        # Loaded once by the ``hpc`` group callback.
-        self.config: HPCConfig = HPCConfig()
         self.scheduler: str | None = None
         self.verbose: bool = False
+        self._config: HPCConfig | None = None
+
+    @property
+    def config(self) -> HPCConfig:
+        """The configuration, loaded and validated on first use.
+
+        Lazy so ``hpc config check`` can report a broken config itself;
+        every other command refuses one before touching the scheduler.
+
+        Raises:
+            ConfigError: The configuration is invalid.
+        """
+        if self._config is None:
+            self._config = load_config(self.config_path)
+        return self._config
 
 
 F = TypeVar("F", bound=Callable[..., object])

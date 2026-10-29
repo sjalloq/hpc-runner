@@ -127,18 +127,18 @@ class TestJobTable:
             def compose(self) -> ComposeResult:
                 yield JobTable(id="jobs")
 
-            def on_job_table_job_selected(
-                self, event: JobTable.JobSelected
-            ) -> None:
+            def on_job_table_job_selected(self, event: JobTable.JobSelected) -> None:
                 messages_received.append(event)
 
         app = TestApp()
         async with app.run_test() as pilot:
             table = app.query_one(JobTable)
-            table.update_jobs([
-                make_job("12345", "first_job"),
-                make_job("12346", "second_job"),
-            ])
+            table.update_jobs(
+                [
+                    make_job("12345", "first_job"),
+                    make_job("12346", "second_job"),
+                ]
+            )
 
             # Focus and navigate
             table.focus()

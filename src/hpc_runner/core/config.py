@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+import shlex
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -16,6 +18,13 @@ else:
     import tomli as tomllib  # type: ignore[import-not-found]
 
 from hpc_runner.core.exceptions import ConfigError
+from hpc_runner.core.merge import compose, is_list_value, key_for
+from hpc_runner.core.schema import find_line, validate_file
+
+if TYPE_CHECKING:
+    from hpc_runner.core.spec import JobSpec
+
+logger = logging.getLogger("hpc_runner.config")
 
 # Environment variable for site/system config
 HPC_CONFIG_ENV_VAR = "HPC_RUNNER_CONFIG"
@@ -27,79 +36,81 @@ def _config_error(path: Path, message: str) -> ConfigError:
 
 @dataclass
 class HPCConfig:
-    """Loaded configuration."""
+    """Loaded, validated configuration.
+
+    List settings hold their layer value as written: a plain list (append),
+    :class:`~hpc_runner.core.merge.Set` or :class:`~hpc_runner.core.merge.Edit`;
+    :func:`~hpc_runner.resolve` applies them in :meth:`layers_for` order.
+    """
 
     defaults: dict[str, Any] = field(default_factory=dict)
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     types: dict[str, dict[str, Any]] = field(default_factory=dict)
     schedulers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+    #: Non-fatal problems found while loading (e.g. a section for a
+    #: scheduler this package does not have).
+    warnings: list[str] = field(default_factory=list)
+
     _source_paths: list[Path] = field(default_factory=list, repr=False)
 
-    def get_type_config(self, job_type: str) -> dict[str, Any]:
-        """Get configuration for a job type.
+    def layers_for(self, spec: JobSpec) -> list[tuple[str, dict[str, Any]]]:
+        """The ordered config layers for *spec*, least specific first.
 
-        Args:
-            job_type: Type name to look up in ``[types]``.
+        Each entry is ``(layer name, table)``. The chain is fixed (D2)::
 
-        Returns:
-            Defaults merged with the matching type entry, or just
-            defaults if *job_type* is not found.
+            no spec.type:  defaults -> tools.<argv0> -> tools.<argv0>.options.<first match>
+            spec.type=T:   defaults -> tools.<each of types.T.tools> -> types.T
+
+        With a type named, the tool inferred from the command is not
+        consulted and referenced tools' ``options`` are not applied.
+
+        Raises:
+            ConfigError: *spec* names a type that is not defined, or the
+                type lists a tool that is not defined.
         """
-        return _merge_layers(self.type_layers(job_type))
+        layers: list[tuple[str, dict[str, Any]]] = [("defaults", dict(self.defaults))]
 
-    def get_tool_config(self, command: str) -> dict[str, Any]:
-        """Get configuration matching a command.
+        if spec.type is not None:
+            entry = self.types.get(spec.type)
+            if entry is None:
+                known = ", ".join(sorted(self.types)) or "none defined"
+                raise ConfigError(f"unknown job type '{spec.type}' (types: {known})")
+            for tool in entry.get("tools", []):
+                if tool not in self.tools:
+                    raise ConfigError(
+                        f"[types.{spec.type}] tools: no tool '{tool}' is defined under [tools]"
+                    )
+                layers.append((f"tools.{tool}", _without(self.tools[tool], "options")))
+            layers.append((f"types.{spec.type}", _without(entry, "tools")))
+            return layers
 
-        Extracts tool name from command, looks up base config, then checks
-        for option-specific overrides by matching against command arguments.
-        """
-        return _merge_layers(self.tool_layers(command))
-
-    def type_layers(self, job_type: str) -> list[tuple[str, dict[str, Any]]]:
-        """The config layers for *job_type*, least specific first.
-
-        Each entry is ``(layer name, table)``: ``("defaults", ...)`` then
-        ``("types.<name>", ...)`` if that type exists.
-        """
-        return self._job_layers(job_type, namespace="types")
-
-    def tool_layers(self, command: str) -> list[tuple[str, dict[str, Any]]]:
-        """The config layers for *command*, least specific first.
-
-        ``defaults``, then ``tools.<tool>`` (the command's first word, path
-        stripped), then the first matching ``tools.<tool>.options.<key>``.
-        """
+        command = spec.command if isinstance(spec.command, str) else shlex.join(spec.command)
         parts = command.split()
         tool = Path(parts[0]).name if parts else ""
-        layers = self._job_layers(tool, namespace="tools")
+        tool_section = self.tools.get(tool)
+        if tool_section is None:
+            return layers
+        layers.append((f"tools.{tool}", _without(tool_section, "options")))
 
-        # Check for option specialisation.
-        tool_section = self.tools.get(tool, {})
+        # Option specialisation: first matching key wins.
         options = tool_section.get("options")
         if options and len(parts) > 1:
             cmd_tokens = _normalise_tokens(parts[1:])
             for option_key, option_config in options.items():
-                key_tokens = _normalise_tokens(option_key)
-                if _match_contiguous(cmd_tokens, key_tokens):
+                if _match_contiguous(cmd_tokens, _normalise_tokens(option_key)):
                     layers.append((f"tools.{tool}.options.{option_key}", dict(option_config)))
-                    break  # First match wins
+                    break
 
-        return layers
-
-    def _job_layers(self, name: str, *, namespace: str) -> list[tuple[str, dict[str, Any]]]:
-        layers: list[tuple[str, dict[str, Any]]] = [("defaults", dict(self.defaults))]
-        section = self.types if namespace == "types" else self.tools
-        if name in section:
-            # Shallow copy to avoid mutating the original.
-            entry = dict(section[name])
-            entry.pop("options", None)  # Handled separately by tool_layers
-            layers.append((f"{namespace}.{name}", entry))
         return layers
 
     def get_scheduler_config(self, scheduler: str) -> dict[str, Any]:
         """Get scheduler-specific configuration."""
         return self.schedulers.get(scheduler, {})
+
+
+def _without(table: dict[str, Any], key: str) -> dict[str, Any]:
+    return {k: v for k, v in table.items() if k != key}
 
 
 def _normalise_tokens(args: str | list[str]) -> list[str]:
@@ -135,32 +146,24 @@ def _match_contiguous(haystack: list[str], needle: list[str]) -> bool:
     return False
 
 
-def _merge_layers(layers: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
-    """Merge config layers in order, later layers taking precedence."""
-    merged: dict[str, Any] = {}
-    for _, table in layers:
-        merged = _merge(merged, table)
-    return merged
+def _merge(base: dict[str, Any], override: dict[str, Any], parent: str = "") -> dict[str, Any]:
+    """Merge two config files' tables: dicts recurse, lists compose per D1.
 
-
-def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Deep merge with override taking precedence."""
+    ``resources`` lists dedupe by name; the per-scheduler lists under
+    ``scheduler_args`` (*parent*) are argv and do not dedupe. Scalars:
+    later wins.
+    """
     result = base.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _merge(result[key], value)
-        elif key in result and isinstance(result[key], list) and isinstance(value, list):
-            # Check for list reset marker
-            if value and value[0] == "-":
-                result[key] = value[1:]
-            else:
-                seen: set[Any] = set()
-                merged: list[Any] = []
-                for item in result[key] + value:
-                    if item not in seen:
-                        seen.add(item)
-                        merged.append(item)
-                result[key] = merged
+            result[key] = _merge(result[key], value, key)
+        elif key in result and is_list_value(result[key]) and is_list_value(value):
+            result[key] = compose(
+                result[key],
+                value,
+                key=key_for(key),
+                dedupe=parent != "scheduler_args",
+            )
         else:
             result[key] = value
     return result
@@ -191,52 +194,61 @@ def _expand_env_vars(path_str: str, env: Mapping[str, str] | None = None) -> str
     return result
 
 
-def _resolve_extends(config_path: Path, seen: set[Path] | None = None) -> list[Path]:
-    """Resolve extends chain for a config file.
+def _read_toml(path: Path) -> tuple[str, dict[str, Any]]:
+    """Read and parse *path*; returns ``(text, data)``.
 
-    Returns list of paths in order they should be merged (base first).
-    Detects circular dependencies.
+    Raises:
+        ConfigError: The file cannot be read or is not valid TOML.
     """
-    if seen is None:
-        seen = set()
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise _config_error(path, f"could not read file — {e}") from e
+    except UnicodeDecodeError as e:
+        raise _config_error(path, f"invalid TOML — {e}") from e
+    try:
+        return text, tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise _config_error(path, f"invalid TOML — {e}") from e
 
+
+def _resolve_extends(config_path: Path, chain: list[Path] | None = None) -> list[Path]:
+    """Resolve the ``extends`` chain of *config_path*.
+
+    Returns the paths in merge order (base first).
+
+    Raises:
+        ConfigError: A file cannot be read or parsed, ``extends`` names a
+            file that does not exist, or the chain is a cycle.
+    """
+    chain = [] if chain is None else chain
     config_path = config_path.resolve()
 
-    if config_path in seen:
-        raise ValueError(f"Circular extends detected: {config_path}")
+    if config_path in chain:
+        cycle = " -> ".join(str(p) for p in [*chain[chain.index(config_path) :], config_path])
+        raise _config_error(config_path, f"extends cycle: {cycle}")
+    chain.append(config_path)
 
-    seen.add(config_path)
-
-    try:
-        with open(config_path, "rb") as f:
-            data = tomllib.load(f)
-    except tomllib.TOMLDecodeError as e:
-        raise _config_error(config_path, f"invalid TOML — {e}") from e
-    except OSError as e:
-        raise _config_error(config_path, f"could not read file — {e}") from e
-
+    text, data = _read_toml(config_path)
     extends = data.get("extends")
-    if not extends:
+    if not isinstance(extends, str) or not extends:
+        # A non-string extends is reported by validation.
         return [config_path]
 
     # Expand env vars and resolve relative to config file's directory
-    extends_expanded = _expand_env_vars(extends)
-    extends_path = Path(extends_expanded)
-
+    extends_path = Path(_expand_env_vars(extends))
     if not extends_path.is_absolute():
         extends_path = config_path.parent / extends_path
-
     extends_path = extends_path.resolve()
 
-    if not extends_path.exists():
-        # Missing extends target is tolerated (target may not exist yet);
-        # invalid TOML is not — the cases are deliberately asymmetric.
-        return [config_path]
+    if not extends_path.is_file():
+        raise ConfigError(
+            f"extends: file not found: {extends_path}",
+            path=config_path,
+            line=find_line(text, ["extends"]),
+        )
 
-    # Recursively resolve the parent's extends
-    parent_chain = _resolve_extends(extends_path, seen)
-
-    return parent_chain + [config_path]
+    return _resolve_extends(extends_path, chain) + [config_path]
 
 
 def find_config_files() -> list[Path]:
@@ -319,59 +331,93 @@ def _find_git_root(start: Path) -> Path | None:
     return None
 
 
-def _load_single_config(path: Path) -> dict[str, Any]:
-    """Load a single config file and return its data dict."""
-    try:
-        with open(path, "rb") as f:
-            data: dict[str, Any] = tomllib.load(f)
-    except tomllib.TOMLDecodeError as e:
-        raise _config_error(path, f"invalid TOML — {e}") from e
-    except OSError as e:
-        raise _config_error(path, f"could not read file — {e}") from e
+def _scheduler_config_keys(name: str) -> Mapping[str, type] | None:
+    # Imported here: the scheduler registry imports this module.
+    from hpc_runner.schedulers import scheduler_config_keys
 
-    # Remove 'extends' key - it's metadata, not config
-    data.pop("extends", None)
-
-    return data
+    return scheduler_config_keys(name)
 
 
-def load_config(path: Path | str | None = None) -> HPCConfig:
-    """Load and merge configuration from all discovered files.
+def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[ConfigError]]:
+    """Load configuration and return every problem instead of raising on them.
 
     Args:
-        path: Explicit config path or None to auto-discover and merge all
+        path: Explicit config path, or None to auto-discover.
+
+    Unlike :func:`load_config`, warnings are returned, not logged.
+
+    Returns:
+        ``(config, errors)``. ``config.warnings`` holds the warnings and
+        ``config._source_paths`` the files read. *config* is only usable
+        when *errors* is empty.
+
+    Raises:
+        ConfigError: A file cannot be read or parsed, or its ``extends``
+            chain is broken; nothing further can be checked.
     """
-    if path is not None:
-        # Explicit path - load just that file (with its extends chain)
-        path = Path(path)
-        config_files = _resolve_extends(path)
-    else:
-        # Auto-discover and merge all
-        config_files = find_config_files()
+    config_files = _resolve_extends(Path(path)) if path is not None else find_config_files()
 
-    if not config_files:
-        return HPCConfig()  # Empty config
-
-    # Merge all configs in order (first = lowest priority)
-    merged: dict[str, Any] = {
-        "defaults": {},
-        "tools": {},
-        "types": {},
-        "schedulers": {},
-    }
+    merged: dict[str, Any] = {"defaults": {}, "tools": {}, "types": {}, "schedulers": {}}
+    errors: list[ConfigError] = []
+    warnings: list[str] = []
+    texts: dict[Path, str] = {}
+    # Which file last set [types.T] tools, for locating structural errors.
+    type_tools_origin: dict[str, Path] = {}
 
     for config_path in config_files:
-        data = _load_single_config(config_path)
+        text, data = _read_toml(config_path)
+        texts[config_path] = text
+        converted, file_errors, file_warnings = validate_file(
+            config_path, text, data, _scheduler_config_keys
+        )
+        errors.extend(file_errors)
+        warnings.extend(file_warnings)
+        for name, entry in converted.get("types", {}).items():
+            if "tools" in entry:
+                type_tools_origin[name] = config_path
         for key in merged:
-            if key in data:
-                merged[key] = _merge(merged[key], data[key])
+            if key in converted:
+                merged[key] = _merge(merged[key], converted[key])
+
+    # Structural: a type may only reference tools that exist (D2).
+    for name, entry in merged["types"].items():
+        for tool in entry.get("tools", []):
+            if tool not in merged["tools"]:
+                origin = type_tools_origin[name]
+                errors.append(
+                    ConfigError(
+                        f"[types.{name}] tools: no tool '{tool}' is defined under [tools]",
+                        path=origin,
+                        line=find_line(texts[origin], ["types", name, "tools"]),
+                    )
+                )
 
     config = HPCConfig(
         defaults=merged["defaults"],
         tools=merged["tools"],
         types=merged["types"],
         schedulers=merged["schedulers"],
+        warnings=warnings,
     )
     config._source_paths = config_files
+    return config, errors
 
+
+def load_config(path: Path | str | None = None) -> HPCConfig:
+    """Load, validate and merge configuration from all discovered files.
+
+    Args:
+        path: Explicit config path (with its ``extends`` chain), or None to
+            auto-discover and merge all.
+
+    Raises:
+        ConfigError: Any file is unreadable, invalid TOML, fails the schema
+            or a structural check. Every problem found is reported in one
+            error; ``.errors`` lists them individually.
+    """
+    config, errors = check_config(path)
+    if errors:
+        raise ConfigError.collect(errors)
+    for warning in config.warnings:
+        logger.warning(warning)
     return config

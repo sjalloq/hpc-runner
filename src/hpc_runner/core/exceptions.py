@@ -28,13 +28,28 @@ class HPCToolsError(Exception):
 
 
 class ConfigError(HPCToolsError):
-    """Bad or unknown configuration; caught by callers that can fix their config."""
+    """Bad or unknown configuration; caught by callers that can fix their config.
+
+    ``errors`` lists the individual problems: ``[self]`` for a single one,
+    or every problem found when the loader reports several together (see
+    :meth:`collect`), in which case the message is one problem per line.
+    """
 
     def __init__(self, message: str, *, path: Path | None = None, line: int | None = None):
         super().__init__(message)
         self.message = message
         self.path = path
         self.line = line
+        self.errors: list[ConfigError] = [self]
+
+    @classmethod
+    def collect(cls, errors: Sequence[ConfigError]) -> ConfigError:
+        """One error reporting every problem in *errors* (which must be non-empty)."""
+        if len(errors) == 1:
+            return errors[0]
+        combined = cls("\n".join(str(e) for e in errors))
+        combined.errors = list(errors)
+        return combined
 
     def __str__(self) -> str:
         if self.path is None:

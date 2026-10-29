@@ -6,8 +6,9 @@ from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
+from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resolve import resolve
-from hpc_runner.core.resources import ResourceSet
+from hpc_runner.core.resources import Resource, ResourceSet
 from hpc_runner.core.spec import JobSpec
 from tests.fakes import make_host, make_job
 
@@ -157,9 +158,9 @@ class TestConfigLayers:
         job = make_job("python run.py", type="sim", config=cfg)
         assert job.cpu == 2
 
-    def test_unknown_type_falls_back_to_defaults(self):
-        job = make_job(type="nope", config=_config(defaults={"cpu": 3}))
-        assert job.cpu == 3
+    def test_unknown_type_is_error(self):
+        with pytest.raises(ConfigError, match="unknown job type 'nope'"):
+            make_job(type="nope", config=_config(defaults={"cpu": 3}))
 
     def test_spec_overrides_config(self):
         job = make_job(cpu=16, mem="64G", config=_config(defaults={"cpu": 2, "mem": "4G"}))
@@ -192,9 +193,14 @@ class TestConfigLayers:
         job = make_job(config=cfg)
         assert job.resources.get("scratch").value == "10G"
 
-    def test_spec_resources_win_outright(self):
+    def test_spec_resources_append(self):
         cfg = _config(defaults={"resources": [{"name": "scratch", "value": "10G"}]})
         job = make_job(config=cfg, resources=ResourceSet().add("gpu", 1))
+        assert [r.name for r in job.resources] == ["scratch", "gpu"]
+
+    def test_spec_resources_set_replaces(self):
+        cfg = _config(defaults={"resources": [{"name": "scratch", "value": "10G"}]})
+        job = make_job(config=cfg, resources=Set([Resource("gpu", 1)]))
         assert [r.name for r in job.resources] == ["gpu"]
 
     def test_interactive_from_config(self):
@@ -205,17 +211,22 @@ class TestConfigLayers:
         cfg = _config(tools={"xterm": {"interactive": True}})
         assert make_job("xterm", config=cfg, interactive=False).interactive is False
 
-    def test_array_from_config(self):
+    def test_array_never_from_config(self):
+        """array is per invocation; the schema rejects it and resolve ignores it."""
         cfg = _config(types={"sweep": {"array": "1-4"}})
-        assert make_job(type="sweep", config=cfg).array == ArrayRange(1, 4)
+        assert make_job(type="sweep", config=cfg).array is None
 
     def test_env_unset_from_config(self):
         cfg = _config(defaults={"env_unset": ["https_proxy"]})
         assert make_job(config=cfg).env_unset == ("https_proxy",)
 
-    def test_spec_env_unset_replaces(self):
+    def test_spec_env_unset_appends(self):
         cfg = _config(defaults={"env_unset": ["https_proxy"]})
-        assert make_job(config=cfg, env_unset=["X"]).env_unset == ("X",)
+        assert make_job(config=cfg, env_unset=["X"]).env_unset == ("https_proxy", "X")
+
+    def test_spec_env_unset_set_replaces(self):
+        cfg = _config(defaults={"env_unset": ["https_proxy"]})
+        assert make_job(config=cfg, env_unset=Set(["X"])).env_unset == ("X",)
 
 
 class TestProvenance:
@@ -246,11 +257,16 @@ class TestProvenance:
         assert fields <= set(job.provenance)
 
 
-class TestListsReplace:
-    """A spec list replaces the config list (task 3 / D1 changes this to append)."""
+class TestListsMerge:
+    """D1: a spec list appends to the config list like any other layer."""
 
-    def test_modules_replace_config(self):
+    def test_spec_modules_append(self):
         job = make_job(config=_config(defaults={"modules": ["default/1.0"]}), modules=["o/2.0"])
+        assert job.modules == ("default/1.0", "o/2.0")
+
+    def test_spec_modules_set_replaces(self):
+        cfg = _config(defaults={"modules": ["default/1.0"]})
+        job = make_job(config=cfg, modules=Set(["o/2.0"]))
         assert job.modules == ("o/2.0",)
 
     def test_config_modules_kept_without_spec(self):
@@ -261,10 +277,10 @@ class TestListsReplace:
         job = make_job(config=_config(defaults={"modules_path_append": ["/site/local"]}))
         assert job.modules_path_append == ("/site/local",)
 
-    def test_modules_path_append_spec_replaces(self):
+    def test_modules_path_append_spec_appends(self):
         cfg = _config(defaults={"modules_path_append": ["/site/local"]})
         job = make_job(config=cfg, modules_path_append=["/override"])
-        assert job.modules_path_append == ("/override",)
+        assert job.modules_path_append == ("/site/local", "/override")
         assert job.modules_path == ()
 
     def test_type_config_merges_with_defaults(self):
@@ -274,6 +290,134 @@ class TestListsReplace:
         )
         job = make_job("xrun", type="xrun", config=cfg)
         assert job.modules_path_append == ("/site/local", "/proj/modulefiles")
+
+    def test_type_edit_removes_default_module(self):
+        cfg = _config(
+            defaults={"modules": ["gcc/12", "python/3.11"]},
+            types={"py": {"modules": Edit(remove=["python/3.11"], add=["python/3.12"])}},
+        )
+        assert make_job(type="py", config=cfg).modules == ("gcc/12", "python/3.12")
+
+    def test_removed_entry_never_expanded(self):
+        """$VAR in an entry a later layer removed is not an error."""
+        cfg = _config(
+            defaults={"modules": ["$TEST_UNSET_REMOVED"]},
+            types={"t": {"modules": Set(["a"])}},
+        )
+        assert make_job(type="t", config=cfg).modules == ("a",)
+
+
+class TestTypeComposition:
+    """D2: types compose from tools; the chain is fixed."""
+
+    CFG = _config(
+        defaults={"cpu": 1, "modules": ["site/1"]},
+        tools={
+            "xrun": {
+                "modules": ["xcelium/23"],
+                "resources": [{"name": "xcelium_lic", "value": 1}],
+                "options": {"-gui": {"queue": "gui.q"}},
+            },
+            "slang": {"modules": ["slang/0.9"], "mem": "8G"},
+            "python": {"modules": ["python/3.11"], "cpu": 4},
+        },
+        types={"lint": {"tools": ["xrun", "slang"], "cpu": 2}},
+    )
+
+    def test_chain_without_type(self):
+        names = [n for n, _ in self.CFG.layers_for(JobSpec("xrun -gui top.f"))]
+        assert names == ["defaults", "tools.xrun", "tools.xrun.options.-gui"]
+
+    def test_chain_with_type(self):
+        names = [n for n, _ in self.CFG.layers_for(JobSpec("python x.py", type="lint"))]
+        assert names == ["defaults", "tools.xrun", "tools.slang", "types.lint"]
+
+    def test_type_pulls_in_tools_in_order(self):
+        job = make_job("make lint", type="lint", config=self.CFG)
+        assert job.modules == ("site/1", "xcelium/23", "slang/0.9")
+        assert job.provenance["modules"] == (
+            ("site/1", "defaults"),
+            ("xcelium/23", "tools.xrun"),
+            ("slang/0.9", "tools.slang"),
+        )
+        assert (job.cpu, job.provenance["cpu"]) == (2, "types.lint")
+        assert (job.mem, job.provenance["mem"]) == ("8G", "tools.slang")
+        assert job.provenance["resources"][0][1] == "tools.xrun"
+
+    def test_type_ignores_argv_tool(self):
+        job = make_job("python x.py", type="lint", config=self.CFG)
+        assert "python/3.11" not in job.modules
+        assert job.cpu == 2
+
+    def test_type_does_not_apply_tool_options(self):
+        job = make_job("xrun -gui top.f", type="lint", config=self.CFG)
+        assert job.queue is None
+
+    def test_without_type_options_applied(self):
+        job = make_job("xrun -gui top.f", config=self.CFG)
+        assert (job.queue, job.provenance["queue"]) == ("gui.q", "tools.xrun.options.-gui")
+        assert job.provenance["modules"] == (("site/1", "defaults"), ("xcelium/23", "tools.xrun"))
+
+    def test_spec_is_the_last_layer(self):
+        job = make_job("x", type="lint", config=self.CFG, cpu=8, modules=["extra/1"])
+        assert job.provenance["cpu"] == "spec"
+        assert job.provenance["modules"][-1] == ("extra/1", "spec")
+
+    def test_type_with_unknown_tool(self):
+        cfg = _config(types={"t": {"tools": ["missing"]}})
+        with pytest.raises(ConfigError, match=r"\[types.t\] tools: no tool 'missing'"):
+            make_job(type="t", config=cfg)
+
+
+class TestSchedulerArgs:
+    def test_merged_across_layers_per_scheduler(self):
+        cfg = _config(
+            defaults={"scheduler_args": {"sge": ["-binding", "linear:1"]}},
+            tools={"sim": {"scheduler_args": {"sge": ["-masterq", "a.q"], "slurm": ["--x"]}}},
+        )
+        job = make_job("sim run", config=cfg, scheduler_args={"sge": ["-l", "gpu=1"]})
+        assert job.scheduler_args == {
+            "sge": ("-binding", "linear:1", "-masterq", "a.q", "-l", "gpu=1"),
+            "slurm": ("--x",),
+        }
+        assert job.provenance["scheduler_args"][0] == (("sge", "-binding"), "defaults")
+        assert (("slurm", "--x"), "tools.sim") in job.provenance["scheduler_args"]
+        assert (("sge", "gpu=1"), "spec") in job.provenance["scheduler_args"]
+
+    def test_repeated_flags_kept(self):
+        # DECISION NEEDED (see resolve): scheduler_args are argv, not deduped.
+        cfg = _config(defaults={"scheduler_args": {"sge": ["-l", "a=1"]}})
+        job = make_job(config=cfg, scheduler_args={"sge": ["-l", "b=2", "-l", "c=3"]})
+        assert job.scheduler_args["sge"] == ("-l", "a=1", "-l", "b=2", "-l", "c=3")
+        assert [layer for _, layer in job.provenance["scheduler_args"]] == [
+            "defaults",
+            "defaults",
+            "spec",
+            "spec",
+            "spec",
+            "spec",
+        ]
+
+    def test_edit_removes_every_occurrence(self):
+        cfg = _config(defaults={"scheduler_args": {"sge": ["-pty", "y", "-l", "a=1"]}})
+        job = make_job(config=cfg, scheduler_args={"sge": Edit(remove=["-pty", "y"])})
+        assert job.scheduler_args["sge"] == ("-l", "a=1")
+
+    def test_verbs_apply_per_scheduler(self):
+        cfg = _config(defaults={"scheduler_args": {"sge": ["-binding", "linear:1"]}})
+        job = make_job(config=cfg, scheduler_args={"sge": Set(["-pty", "y"])})
+        assert job.scheduler_args["sge"] == ("-pty", "y")
+
+    def test_each_scheduler_reads_its_own(self):
+        from types import SimpleNamespace
+
+        from hpc_runner.schedulers.base import BaseScheduler
+
+        cfg = _config(defaults={"scheduler_args": {"sge": ["-binding", "linear:1"]}})
+        job = make_job(config=cfg)
+        sge, local = SimpleNamespace(name="sge"), SimpleNamespace(name="local")
+        assert BaseScheduler._passthrough_args(sge, job) == ("-binding", "linear:1")  # type: ignore[arg-type]
+        assert BaseScheduler._passthrough_args(local, job) == ()  # type: ignore[arg-type]
 
 
 class TestEnvVarExpansion:

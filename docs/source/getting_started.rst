@@ -84,7 +84,11 @@ Then open the file and set your site defaults, e.g. a default SGE queue:
 
 .. code-block:: toml
 
+   config_version = 1
+
    [defaults]
    queue = "batch.q"
+
+Run ``hpc config check`` after editing to validate it.
 
 See :doc:`configuration` for the full configuration format and examples.

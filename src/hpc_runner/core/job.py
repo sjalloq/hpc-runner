@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.dependency import Dependency
@@ -34,9 +35,19 @@ class Job:
 
     Built only by :func:`hpc_runner.resolve`, which applies config and
     package defaults to a :class:`~hpc_runner.JobSpec`. Schedulers render a
-    ``Job`` and never mutate it. ``provenance`` maps each field name to the
-    layer that supplied its value (``"spec"``, ``"tools.<name>"``,
-    ``"types.<name>"``, ``"defaults"``, ``"package"`` or ``"host"``).
+    ``Job`` and never mutate it.
+
+    ``provenance`` records where each value came from. Layer names are
+    ``"defaults"``, ``"tools.<name>"``, ``"tools.<name>.options.<key>"``,
+    ``"types.<name>"``, ``"spec"``, ``"package"`` and ``"host"``.
+
+    - Scalar and dict fields map to the one layer name that supplied the
+      value (for dicts, the most specific layer that set any key).
+    - List fields (``modules``, ``modules_path``, ``modules_path_append``,
+      ``env_unset``, ``resources``) map to a tuple of ``(item, layer)``
+      pairs, one per item in order; a resource item is its ``Resource``.
+    - ``scheduler_args`` maps to a tuple of ``((scheduler, arg), layer)``
+      pairs, schedulers in first-seen order.
     """
 
     command: str
@@ -74,7 +85,7 @@ class Job:
     array: ArrayRange | None
     interactive: bool
 
-    provenance: Mapping[str, str]
+    provenance: Mapping[str, str | tuple[tuple[Any, str], ...]]
 
     @property
     def merge_output(self) -> bool:

@@ -28,6 +28,7 @@ from hpc_runner.core.exceptions import (
 )
 from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
+from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.resources import Resource, ResourceSet
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
@@ -43,6 +44,8 @@ __all__ = [
     "Job",
     "Host",
     "resolve",
+    "Set",
+    "Edit",
     "ArrayRange",
     "Dependency",
     "DependencyType",

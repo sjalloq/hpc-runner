@@ -97,7 +97,8 @@ exit_status  0
 @pytest.fixture
 def sample_config(temp_dir):
     """Create a sample configuration file."""
-    config_content = """
+    config_content = """config_version = 1
+
 [defaults]
 cpu = 2
 mem = "8G"

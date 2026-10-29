@@ -32,6 +32,7 @@ class TestSchedulerDetection:
     def test_detect_slurm(self, clean_env):
         """Test Slurm detection."""
         with patch("shutil.which") as mock_which:
+
             def which_side_effect(cmd):
                 if cmd in ("sbatch", "squeue"):
                     return f"/usr/bin/{cmd}"

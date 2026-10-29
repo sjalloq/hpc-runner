@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from hpc_runner.core.descriptors import SchedulerArg
 from hpc_runner.core.job import RENDER_ORDER
@@ -37,6 +37,10 @@ class BaseScheduler(ABC):
     """
 
     name: str = ""
+
+    # The keys this backend reads from ``[schedulers.<name>]``, key -> the
+    # Python type its value must have. Config validation rejects any other.
+    CONFIG_KEYS: ClassVar[Mapping[str, type]] = {}
 
     # Subclasses populate this in __init__ with config-driven values
     ARG_RENDERERS: dict[str, SchedulerArg[Any]] = {}

@@ -1,6 +1,9 @@
 """Tests for configuration system."""
 
+import dataclasses
+import logging
 import os
+from pathlib import Path
 
 import pytest
 
@@ -12,11 +15,21 @@ from hpc_runner.core.config import (
     _merge,
     _normalise_tokens,
     _resolve_extends,
+    check_config,
     find_config_file,
     find_config_files,
     load_config,
 )
 from hpc_runner.core.exceptions import ConfigError
+from hpc_runner.core.merge import Edit, Set, merge_list
+from hpc_runner.core.schema import FIELD_VALIDATORS, PER_INVOCATION_FIELDS, find_line
+from hpc_runner.core.spec import JobSpec
+from hpc_runner.schedulers import scheduler_config_keys
+from tests.fakes import make_job
+
+
+def _layer_names(config: HPCConfig, command: str, type: str | None = None) -> list[str]:
+    return [name for name, _ in config.layers_for(JobSpec(command, type=type))]
 
 
 class TestHPCConfig:
@@ -28,72 +41,61 @@ class TestHPCConfig:
         assert config.defaults == {}
         assert config.tools == {}
         assert config.types == {}
+        assert config.warnings == []
 
-    def test_get_tool_config_defaults(self):
-        """Test getting tool config falls back to defaults."""
+    def test_unknown_tool_gets_defaults_only(self):
         config = HPCConfig(defaults={"cpu": 2, "mem": "8G"})
-        job_config = config.get_tool_config("unknown_tool")
+        assert _layer_names(config, "unknown_tool") == ["defaults"]
+        job = make_job("unknown_tool", config=config)
+        assert (job.cpu, job.mem) == (2, "8G")
 
-        assert job_config["cpu"] == 2
-        assert job_config["mem"] == "8G"
-
-    def test_get_tool_config_tool(self):
-        """Test getting tool config for a tool."""
+    def test_tool_layer(self):
         config = HPCConfig(
             defaults={"cpu": 1, "mem": "4G"},
             tools={"python": {"cpu": 4, "modules": ["python/3.11"]}},
         )
-        job_config = config.get_tool_config("python script.py")
+        assert _layer_names(config, "python script.py") == ["defaults", "tools.python"]
+        job = make_job("python script.py", config=config)
+        assert job.cpu == 4  # Overridden
+        assert job.mem == "4G"  # From defaults
+        assert job.modules == ("python/3.11",)
 
-        assert job_config["cpu"] == 4  # Overridden
-        assert job_config["mem"] == "4G"  # From defaults
-        assert job_config["modules"] == ["python/3.11"]
-
-    def test_get_type_config(self):
-        """Test getting type config for a type."""
+    def test_type_layer(self):
         config = HPCConfig(
             defaults={"cpu": 1},
             types={"gpu": {"queue": "gpu", "resources": [{"name": "gpu", "value": 1}]}},
         )
-        job_config = config.get_type_config("gpu")
+        assert _layer_names(config, "anything", type="gpu") == ["defaults", "types.gpu"]
+        job = make_job("anything", type="gpu", config=config)
+        assert job.cpu == 1  # From defaults
+        assert job.queue == "gpu"
 
-        assert job_config["cpu"] == 1  # From defaults
-        assert job_config["queue"] == "gpu"
-
-    def test_type_not_found_via_tool_config(self):
-        """Test that a type name is NOT matched via get_tool_config."""
+    def test_type_name_not_matched_as_tool(self):
+        """A type name in argv[0] is not a tool."""
         config = HPCConfig(
             defaults={"cpu": 1},
             tools={"python": {"cpu": 4}},
             types={"gpu": {"queue": "gpu"}},
         )
-        job_config = config.get_tool_config("gpu")
+        assert _layer_names(config, "gpu") == ["defaults"]
 
-        # Should return only defaults — "gpu" is a type, not a tool
-        assert job_config == {"cpu": 1}
-        assert "queue" not in job_config
+    def test_tool_name_is_not_a_type(self):
+        """A tool name given as a type is an unknown type."""
+        config = HPCConfig(tools={"python": {"cpu": 4}}, types={"gpu": {"queue": "gpu"}})
+        with pytest.raises(ConfigError, match="unknown job type 'python'"):
+            config.layers_for(JobSpec("x", type="python"))
 
-    def test_tool_not_found_via_type_config(self):
-        """Test that a tool name is NOT matched via get_type_config."""
-        config = HPCConfig(
-            defaults={"cpu": 1},
-            tools={"python": {"cpu": 4}},
-            types={"gpu": {"queue": "gpu"}},
-        )
-        job_config = config.get_type_config("python")
+    def test_tool_extracted_from_command(self):
+        config = HPCConfig(tools={"python": {"cpu": 4}})
+        assert _layer_names(config, "python script.py --arg value") == [
+            "defaults",
+            "tools.python",
+        ]
 
-        # Should return only defaults — "python" is a tool, not a type
-        assert job_config == {"cpu": 1}
-        assert "queue" not in job_config
-
-    def test_get_tool_config_extracts_name(self):
-        """Test that get_tool_config extracts tool name from command."""
-        config = HPCConfig(
-            tools={"python": {"cpu": 4}},
-        )
-        job_config = config.get_tool_config("python script.py --arg value")
-
-        assert job_config["cpu"] == 4
+    def test_list_command(self):
+        config = HPCConfig(tools={"python": {"cpu": 4}})
+        layers = config.layers_for(JobSpec(["python", "a b.py"]))
+        assert [name for name, _ in layers] == ["defaults", "tools.python"]
 
     def test_get_scheduler_config(self):
         """Test getting scheduler-specific config."""
@@ -113,7 +115,7 @@ class TestHPCConfig:
 
 
 class TestMerge:
-    """Tests for _merge deep merge logic."""
+    """_merge: one file's sections over an earlier file's (D1 for lists)."""
 
     def test_list_merge_preserves_order(self):
         """Module load order matters on HPC - merge must preserve it."""
@@ -126,23 +128,43 @@ class TestMerge:
         # Order from base should come first, then new items from override
         assert result["modules"] == ["gcc/12", "openmpi/4", "python/3.11", "cuda/12"]
 
-    def test_list_merge_reset_marker(self):
-        """The '-' marker should discard the base list entirely."""
+    def test_list_set_replaces(self):
         base = {"modules": ["gcc/12", "openmpi/4"]}
-        override = {"modules": ["-", "intel/2024", "impi/2024"]}
+        override = {"modules": Set(["intel/2024", "impi/2024"])}
         result = _merge(base, override)
 
-        assert result["modules"] == ["intel/2024", "impi/2024"]
+        assert result["modules"] == Set(["intel/2024", "impi/2024"])
+
+    def test_list_edit_composes(self):
+        """An earlier file's list then a later file's edit is one edit."""
+        base = {"modules": ["gcc/12", "python/3.11"]}
+        override = {"modules": Edit(remove=["python/3.11"], add=["python/3.12"])}
+        result = _merge(base, override)
+
+        assert merge_list(["site/1", "python/3.11"], result["modules"]) == [
+            "site/1",
+            "gcc/12",
+            "python/3.12",
+        ]
 
     def test_list_merge_no_duplicates_from_base(self):
-        """Duplicate entries within a single list should be preserved."""
-        base = {"args": ["-v"]}
-        override = {"args": ["-v", "-x"]}
+        """An item in both files appears once."""
+        base = {"env_unset": ["-v"]}
+        override = {"env_unset": ["-v", "-x"]}
         result = _merge(base, override)
 
-        # -v appears in both lists but dedup should keep only one
-        assert result["args"].count("-v") == 1
-        assert "-x" in result["args"]
+        assert result["env_unset"] == ["-v", "-x"]
+
+    def test_resources_merge(self):
+        """B2: two files both defining resources merge by name, later wins."""
+        base = {"resources": [{"name": "gpu", "value": 1}, {"name": "scratch", "value": "1G"}]}
+        override = {"resources": [{"name": "gpu", "value": 2}]}
+        result = _merge(base, override)
+
+        assert result["resources"] == [
+            {"name": "gpu", "value": 2},
+            {"name": "scratch", "value": "1G"},
+        ]
 
     def test_dict_merge_deep(self):
         """Nested dicts should merge recursively."""
@@ -220,7 +242,7 @@ class TestFindConfigFile:
     def test_find_config_in_current_dir(self, temp_dir):
         """Test finding config in current directory."""
         config_file = temp_dir / "hpc-runner.toml"
-        config_file.write_text("[defaults]\ncpu = 1\n")
+        config_file.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         old_cwd = os.getcwd()
         os.chdir(temp_dir)
@@ -288,10 +310,12 @@ class TestExtendsResolution:
     def test_resolve_extends_single(self, temp_dir):
         """Test resolving a single extends."""
         base_config = temp_dir / "base.toml"
-        base_config.write_text("[defaults]\ncpu = 1\n")
+        base_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         child_config = temp_dir / "child.toml"
-        child_config.write_text(f'extends = "{base_config}"\n[defaults]\nmem = "8G"\n')
+        child_config.write_text(
+            f'config_version = 1\nextends = "{base_config}"\n[defaults]\nmem = "8G"\n'
+        )
 
         chain = _resolve_extends(child_config)
 
@@ -302,10 +326,12 @@ class TestExtendsResolution:
     def test_resolve_extends_relative_path(self, temp_dir):
         """Test resolving extends with relative path."""
         base_config = temp_dir / "base.toml"
-        base_config.write_text("[defaults]\ncpu = 1\n")
+        base_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         child_config = temp_dir / "child.toml"
-        child_config.write_text('extends = "base.toml"\n[defaults]\nmem = "8G"\n')
+        child_config.write_text(
+            'config_version = 1\nextends = "base.toml"\n[defaults]\nmem = "8G"\n'
+        )
 
         chain = _resolve_extends(child_config)
 
@@ -315,13 +341,17 @@ class TestExtendsResolution:
     def test_resolve_extends_chain(self, temp_dir):
         """Test resolving a chain of extends."""
         grandparent = temp_dir / "grandparent.toml"
-        grandparent.write_text("[defaults]\ncpu = 1\n")
+        grandparent.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         parent = temp_dir / "parent.toml"
-        parent.write_text('extends = "grandparent.toml"\n[defaults]\nmem = "4G"\n')
+        parent.write_text(
+            'config_version = 1\nextends = "grandparent.toml"\n[defaults]\nmem = "4G"\n'
+        )
 
         child = temp_dir / "child.toml"
-        child.write_text('extends = "parent.toml"\n[defaults]\ntime = "1:00:00"\n')
+        child.write_text(
+            'config_version = 1\nextends = "parent.toml"\n[defaults]\ntime = "1:00:00"\n'
+        )
 
         chain = _resolve_extends(child)
 
@@ -335,22 +365,24 @@ class TestExtendsResolution:
         config_a = temp_dir / "a.toml"
         config_b = temp_dir / "b.toml"
 
-        config_a.write_text('extends = "b.toml"\n[defaults]\ncpu = 1\n')
-        config_b.write_text('extends = "a.toml"\n[defaults]\nmem = "4G"\n')
+        config_a.write_text('config_version = 1\nextends = "b.toml"\n[defaults]\ncpu = 1\n')
+        config_b.write_text('config_version = 1\nextends = "a.toml"\n[defaults]\nmem = "4G"\n')
 
-        with pytest.raises(ValueError, match="Circular extends"):
+        with pytest.raises(ConfigError, match="extends cycle"):
             _resolve_extends(config_a)
 
     def test_resolve_extends_with_env_var(self, temp_dir):
         """Test resolving extends with env var in path."""
         base_config = temp_dir / "base.toml"
-        base_config.write_text("[defaults]\ncpu = 1\n")
+        base_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         os.environ["TEST_CONFIG_DIR"] = str(temp_dir)
         try:
             child_config = temp_dir / "child.toml"
             child_config.write_text(
-                'extends = "${TEST_CONFIG_DIR}/base.toml"\n[defaults]\nmem = "8G"\n'
+                "config_version = 1\n"
+                'extends = "${TEST_CONFIG_DIR}/base.toml"\n'
+                '[defaults]\nmem = "8G"\n'
             )
 
             chain = _resolve_extends(child_config)
@@ -367,10 +399,14 @@ class TestConfigMerging:
     def test_load_config_merges_extends(self, temp_dir):
         """Test that extends configs are merged correctly."""
         base_config = temp_dir / "base.toml"
-        base_config.write_text('[defaults]\ncpu = 1\nmem = "4G"\n[schedulers.sge]\npe = "smp"\n')
+        base_config.write_text(
+            'config_version = 1\n[defaults]\ncpu = 1\nmem = "4G"\n'
+            '[schedulers.sge]\nparallel_environment = "smp"\n'
+        )
 
         child_config = temp_dir / "child.toml"
         child_config.write_text(
+            "config_version = 1\n"
             f'extends = "{base_config}"\n'
             "[defaults]\ncpu = 4\n"
             '[tools.python]\nmodules = ["python/3.11"]\n'
@@ -383,7 +419,7 @@ class TestConfigMerging:
         # mem inherited from base
         assert config.defaults["mem"] == "4G"
         # scheduler from base
-        assert config.schedulers["sge"]["pe"] == "smp"
+        assert config.schedulers["sge"]["parallel_environment"] == "smp"
         # tools from child
         assert config.tools["python"]["modules"] == ["python/3.11"]
 
@@ -393,12 +429,12 @@ class TestConfigMerging:
         git_dir = temp_dir / ".git"
         git_dir.mkdir()
         git_config = temp_dir / "hpc-runner.toml"
-        git_config.write_text("[defaults]\ncpu = 1\n")
+        git_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         # Create env var config in a different location
         env_config = temp_dir / "site" / "site.toml"
         env_config.parent.mkdir()
-        env_config.write_text("[defaults]\ncpu = 2\n")
+        env_config.write_text("config_version = 1\n[defaults]\ncpu = 2\n")
 
         # chdir to a subdirectory without hpc-runner.toml so Level 2 doesn't
         # pick up git_config as a cwd override
@@ -423,13 +459,13 @@ class TestConfigMerging:
         # Create env var config
         env_config = temp_dir / "site" / "site.toml"
         env_config.parent.mkdir()
-        env_config.write_text("[defaults]\ncpu = 2\n")
+        env_config.write_text("config_version = 1\n[defaults]\ncpu = 2\n")
 
         # Create a local override in a subdirectory
         subdir = temp_dir / "project"
         subdir.mkdir()
         local_config = subdir / "hpc-runner.toml"
-        local_config.write_text('[defaults]\nmem = "16G"\n')
+        local_config.write_text('config_version = 1\n[defaults]\nmem = "16G"\n')
 
         os.environ[HPC_CONFIG_ENV_VAR] = str(env_config)
         old_cwd = os.getcwd()
@@ -448,12 +484,25 @@ class TestConfigMerging:
     def test_config_tracks_source_paths(self, temp_dir):
         """Test that loaded config tracks its source paths."""
         config_file = temp_dir / "hpc-runner.toml"
-        config_file.write_text("[defaults]\ncpu = 1\n")
+        config_file.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
 
         config = load_config(config_file)
 
         assert len(config._source_paths) == 1
         assert config._source_paths[0] == config_file.resolve()
+
+
+def _from_config(config: HPCConfig, command: str) -> dict:
+    """The job fields config supplied for *command*, as a dict."""
+    job = make_job(command, config=config)
+    result = {}
+    for field, source in job.provenance.items():
+        if isinstance(source, tuple):
+            if source:
+                result[field] = [item for item, _ in source]
+        elif source not in ("spec", "package", "host"):
+            result[field] = getattr(job, field)
+    return result
 
 
 class TestToolOptionMatching:
@@ -465,7 +514,7 @@ class TestToolOptionMatching:
             defaults={"cpu": 1},
             tools={"python": {"cpu": 4}},
         )
-        result = config.get_tool_config("python script.py")
+        result = _from_config(config, "python script.py")
         assert result["cpu"] == 4
 
     def test_flag_match(self):
@@ -481,7 +530,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("mytool --gui input.dat")
+        result = _from_config(config, "mytool --gui input.dat")
         assert result["cpu"] == 2
         assert result["queue"] == "interactive.q"
 
@@ -501,7 +550,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("fusesoc run --target lint --tool slang v:l:n:v")
+        result = _from_config(config, "fusesoc run --target lint --tool slang v:l:n:v")
         assert result["mem"] == "16G"
         assert "slang/0.9" in result["modules"]
         assert "fusesoc/2.0" in result["modules"]
@@ -518,7 +567,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("fusesoc run --tool=slang")
+        result = _from_config(config, "fusesoc run --tool=slang")
         assert result["mem"] == "16G"
 
     def test_no_partial_match(self):
@@ -533,7 +582,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("fusesoc run --tool slang-lint")
+        result = _from_config(config, "fusesoc run --tool slang-lint")
         assert "mem" not in result
 
     def test_no_match_uses_base(self):
@@ -549,7 +598,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("mytool --batch input.dat")
+        result = _from_config(config, "mytool --batch input.dat")
         assert result["cpu"] == 2
         assert "queue" not in result
 
@@ -566,7 +615,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("fusesoc run --tool slang")
+        result = _from_config(config, "fusesoc run --tool slang")
         assert result["mem"] == "16G"
 
     def test_option_merges_with_base(self):
@@ -583,7 +632,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("fusesoc run --tool slang")
+        result = _from_config(config, "fusesoc run --tool slang")
         assert result["cpu"] == 2  # Inherited from base
         assert result["mem"] == "16G"  # From option
 
@@ -600,8 +649,8 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("mytool run")
-        assert "options" not in result
+        layers = config.layers_for(JobSpec("mytool run"))
+        assert all("options" not in table for _, table in layers)
 
     def test_short_flag_match(self):
         """Short flags match literally — no magic expansion."""
@@ -615,7 +664,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("mytool -g input.dat")
+        result = _from_config(config, "mytool -g input.dat")
         assert result["queue"] == "interactive.q"
 
     def test_command_with_path(self):
@@ -631,7 +680,7 @@ class TestToolOptionMatching:
                 }
             },
         )
-        result = config.get_tool_config("/usr/local/bin/mytool --gui")
+        result = _from_config(config, "/usr/local/bin/mytool --gui")
         assert result["cpu"] == 4
         assert result["queue"] == "interactive.q"
 
@@ -688,3 +737,279 @@ class TestMatchContiguous:
 
     def test_at_start(self):
         assert _match_contiguous(["a", "b", "c"], ["a", "b"]) is True
+
+
+def _write(tmp_path, text, name="hpc-runner.toml"):
+    path = tmp_path / name
+    path.write_text(text)
+    return path
+
+
+def _errors(path):
+    """Every ConfigError load_config reports for *path*."""
+    with pytest.raises(ConfigError) as info:
+        load_config(path)
+    return info.value.errors
+
+
+class TestConfigVersion:
+    def test_missing_is_error(self, tmp_path):
+        path = _write(tmp_path, "[defaults]\ncpu = 1\n")
+        (err,) = _errors(path)
+        assert str(err) == (
+            f"{path}: missing config_version; add `config_version = 1` as the first line"
+        )
+
+    def test_unknown_version_is_error(self, tmp_path):
+        path = _write(tmp_path, "config_version = 2\n")
+        (err,) = _errors(path)
+        assert err.line == 1
+        assert "unsupported version 2" in str(err)
+
+    def test_required_in_extends_parent(self, tmp_path):
+        _write(tmp_path, "[defaults]\ncpu = 1\n", name="base.toml")
+        child = _write(tmp_path, 'config_version = 1\nextends = "base.toml"\n')
+        (err,) = _errors(child)
+        assert err.path == (tmp_path / "base.toml").resolve()
+        assert "missing config_version" in str(err)
+
+
+class TestExtendsErrors:
+    def test_missing_file_is_error(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n\nextends = "nope.toml"\n')
+        with pytest.raises(ConfigError, match="extends: file not found") as info:
+            load_config(path)
+        assert info.value.line == 3
+
+    def test_cycle_is_config_error(self, tmp_path):
+        _write(tmp_path, 'config_version = 1\nextends = "b.toml"\n', name="a.toml")
+        _write(tmp_path, 'config_version = 1\nextends = "a.toml"\n', name="b.toml")
+        with pytest.raises(ConfigError, match="extends cycle"):
+            load_config(tmp_path / "a.toml")
+
+
+class TestSchema:
+    def test_wrong_type_names_file_line_section_key(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n\n[defaults]\nmem = "4G"\ncpu = "4"\n')
+        (err,) = _errors(path)
+        assert (err.path, err.line) == (path, 5)
+        assert str(err) == f'{path}:5: [defaults] cpu: expected an integer, got string "4"'
+
+    def test_string_for_list_is_error(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[tools.gcc]\nmodules = "gcc/12"\n')
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert "[tools.gcc] modules: expected a list of strings" in str(err)
+
+    def test_unknown_key_did_you_mean(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[types.sim]\nmodles = ["a"]\n')
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert "[types.sim] modles: unknown key; did you mean 'modules'?" in str(err)
+
+    def test_all_errors_reported_together(self, tmp_path):
+        path = _write(
+            tmp_path,
+            'config_version = 1\n[defaults]\ncpu = "4"\nmem = 16\n[tools.x]\nmodles = []\n',
+        )
+        with pytest.raises(ConfigError) as info:
+            load_config(path)
+        errors = info.value.errors
+        assert [e.line for e in errors] == [3, 4, 6]
+        assert str(info.value).splitlines() == [str(e) for e in errors]
+
+    def test_bool_is_not_an_int(self, tmp_path):
+        path = _write(tmp_path, "config_version = 1\n[defaults]\ncpu = true\n")
+        (err,) = _errors(path)
+        assert "expected an integer, got boolean true" in str(err)
+
+    def test_per_invocation_fields_rejected(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[types.sweep]\narray = "1-4"\n')
+        (err,) = _errors(path)
+        assert "[types.sweep] array: unknown key" in str(err)
+
+    def test_unknown_top_level_key(self, tmp_path):
+        path = _write(tmp_path, "config_version = 1\n[default]\ncpu = 1\n")
+        (err,) = _errors(path)
+        assert "default: unknown key; did you mean 'defaults'?" in str(err)
+
+    def test_tools_under_tool_rejected(self, tmp_path):
+        """Tools do not reference tools (D2)."""
+        path = _write(tmp_path, 'config_version = 1\n[tools.a]\ntools = ["b"]\n[tools.b]\n')
+        (err,) = _errors(path)
+        assert "[tools.a] tools: unknown key" in str(err)
+
+    def test_options_under_type_rejected(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[types.t.options."--gui"]\ncpu = 1\n')
+        (err,) = _errors(path)
+        assert "[types.t] options: unknown key" in str(err)
+        assert err.line == 2
+
+    def test_option_layer_validated(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[tools.f.options."--tool slang"]\nmem = 16\n')
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert '[tools.f.options."--tool slang"] mem: expected a string' in str(err)
+
+    def test_dict_value_located(self, tmp_path):
+        path = _write(tmp_path, "config_version = 1\n[defaults.env_vars]\nA = 'x'\nB = 1\n")
+        (err,) = _errors(path)
+        assert err.line == 4
+        assert "[defaults] env_vars.B: expected a string" in str(err)
+
+    def test_resource_entry_checked(self, tmp_path):
+        path = _write(
+            tmp_path, 'config_version = 1\n[defaults]\nresources = [{ name = "gpu", val = 1 }]\n'
+        )
+        (err,) = _errors(path)
+        assert "entry 1: unknown key 'val'" in str(err)
+
+    def test_venv_accepts_path_or_false(self, tmp_path):
+        ok = _write(
+            tmp_path, 'config_version = 1\n[defaults]\nvenv = false\n[tools.a]\nvenv = "/v"\n'
+        )
+        config = load_config(ok)
+        assert config.defaults["venv"] is False
+        bad = _write(tmp_path, "config_version = 1\n[defaults]\nvenv = true\n", name="b.toml")
+        (err,) = _errors(bad)
+        assert "expected a path or false" in str(err)
+
+    def test_verbs_converted(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "config_version = 1\n"
+            "[defaults]\n"
+            'modules = { set = ["a"] }\n'
+            'env_unset = { remove = ["X"], add = ["Y"] }\n'
+            'scheduler_args = { sge = ["-binding", "linear:1"], slurm = { add = ["--x"] } }\n',
+        )
+        config = load_config(path)
+        assert config.defaults["modules"] == Set(["a"])
+        assert config.defaults["env_unset"] == Edit(remove=["X"], add=["Y"])
+        assert config.defaults["scheduler_args"] == {
+            "sge": ["-binding", "linear:1"],
+            "slurm": Edit(add=["--x"]),
+        }
+
+    def test_unknown_verb_rejected(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[defaults]\nmodules = { replace = ["a"] }\n')
+        (err,) = _errors(path)
+        assert "unknown list verb 'replace'" in str(err)
+
+    def test_set_with_add_rejected(self, tmp_path):
+        path = _write(
+            tmp_path, 'config_version = 1\n[defaults]\nmodules = { set = ["a"], add = ["b"] }\n'
+        )
+        (err,) = _errors(path)
+        assert "'set' cannot be combined" in str(err)
+
+    def test_type_missing_tool(self, tmp_path):
+        path = _write(
+            tmp_path,
+            'config_version = 1\n[tools.xrun]\n\n[types.lint]\ntools = ["xrun", "slang"]\n',
+        )
+        (err,) = _errors(path)
+        assert (err.path, err.line) == (path.resolve(), 5)
+        assert "[types.lint] tools: no tool 'slang'" in str(err)
+
+    def test_type_tool_defined_in_other_file(self, tmp_path):
+        _write(tmp_path, "config_version = 1\n[tools.slang]\ncpu = 1\n", name="base.toml")
+        path = _write(
+            tmp_path, 'config_version = 1\nextends = "base.toml"\n[types.lint]\ntools = ["slang"]\n'
+        )
+        assert load_config(path).types["lint"]["tools"] == ["slang"]
+
+    def test_resources_merge_across_files(self, tmp_path):
+        """B2: two files both defining resources load and merge."""
+        _write(
+            tmp_path,
+            'config_version = 1\n[defaults]\nresources = [{ name = "gpu", value = 1 }]\n',
+            name="base.toml",
+        )
+        path = _write(
+            tmp_path,
+            'config_version = 1\nextends = "base.toml"\n'
+            '[defaults]\nresources = [{ name = "gpu", value = 2 }, { name = "s", value = "1G" }]\n',
+        )
+        assert load_config(path).defaults["resources"] == [
+            {"name": "gpu", "value": 2},
+            {"name": "s", "value": "1G"},
+        ]
+
+    def test_schema_covers_exactly_the_config_settable_jobspec_fields(self):
+        """A new JobSpec field must be added to the config schema (or excluded)."""
+        settable = {f.name for f in dataclasses.fields(JobSpec)} - PER_INVOCATION_FIELDS
+        assert set(FIELD_VALIDATORS) == settable
+
+    def test_shipped_default_config_is_valid(self):
+        path = Path(__file__).parents[2] / "defaults" / "config.toml"
+        config, errors = check_config(path)
+        assert errors == []
+
+
+class TestSchedulerSections:
+    def test_declared_keys_accepted(self, tmp_path):
+        path = _write(
+            tmp_path,
+            'config_version = 1\n[schedulers.sge]\nparallel_environment = "mpi"\n'
+            "enforce_afterok = false\n",
+        )
+        config = load_config(path)
+        assert config.schedulers["sge"] == {"parallel_environment": "mpi", "enforce_afterok": False}
+
+    def test_unknown_key_rejected(self, tmp_path):
+        path = _write(tmp_path, "config_version = 1\n[schedulers.sge]\nmerge_output = true\n")
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert "[schedulers.sge] merge_output: unknown key" in str(err)
+
+    def test_wrong_type_rejected(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[schedulers.local]\npurge_modules = "yes"\n')
+        (err,) = _errors(path)
+        assert "expected bool" in str(err)
+
+    def test_unknown_scheduler_is_warning(self, tmp_path, caplog):
+        path = _write(tmp_path, 'config_version = 1\n[schedulers.lsf]\nqueue = "x"\n')
+        with caplog.at_level(logging.WARNING, logger="hpc_runner.config"):
+            config = load_config(path)
+        assert len(config.warnings) == 1
+        assert "[schedulers.lsf] no scheduler 'lsf'" in config.warnings[0]
+        assert config.warnings[0] in caplog.text
+
+    def test_registered_but_missing_backend_is_warning(self, tmp_path):
+        path = _write(tmp_path, "config_version = 1\n[schedulers.slurm]\n")
+        assert len(load_config(path).warnings) == 1
+
+    def test_backend_declares_keys(self):
+        assert scheduler_config_keys("sge")["enforce_afterok"] is bool
+        assert scheduler_config_keys("nope") is None
+
+
+class TestFindLine:
+    TEXT = (
+        "config_version = 1\n"
+        "[defaults]\n"
+        "cpu = 1\n"
+        "\n"
+        "[tools.python]\n"
+        "  modules = []\n"
+        '[tools.fusesoc.options."--tool slang"]\n'
+        "mem = 1\n"
+        "[tools]\n"
+        "gcc = { cpu = 1 }\n"
+    )
+
+    @pytest.mark.parametrize(
+        "path, line",
+        [
+            (["config_version"], 1),
+            (["defaults", "cpu"], 3),
+            (["tools", "python", "modules"], 6),
+            (["tools", "python", "cpu"], 5),  # falls back to the header
+            (["tools", "fusesoc", "options", "--tool slang", "mem"], 8),
+            (["tools", "gcc", "cpu"], 10),  # inline table: its key line
+            (["types", "x"], None),
+        ],
+    )
+    def test_lookup(self, path, line):
+        assert find_line(self.TEXT, path) == line

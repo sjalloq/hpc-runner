@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from hpc_runner.core.config import load_config
@@ -52,6 +54,25 @@ def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -
     return scheduler_class(config)  # type: ignore[no-any-return]
 
 
+def scheduler_config_keys(name: str) -> Mapping[str, type] | None:
+    """The ``[schedulers.<name>]`` keys backend *name* declares, key -> type.
+
+    Imports only that backend, on demand. Returns None when the registry
+    does not know *name* or its module is not part of this installation.
+    """
+    if name not in _SCHEDULERS:
+        return None
+    module_path, class_name = _SCHEDULERS[name].rsplit(":", 1)
+    try:
+        if importlib.util.find_spec(module_path) is None:
+            return None
+    except ModuleNotFoundError:  # a parent package is missing
+        return None
+    scheduler_class = getattr(importlib.import_module(module_path), class_name)
+    keys: Mapping[str, type] = scheduler_class.CONFIG_KEYS
+    return keys
+
+
 def register_scheduler(name: str, import_path: str) -> None:
     """Register a custom scheduler.
 
@@ -67,4 +88,10 @@ def list_schedulers() -> list[str]:
     return list(_SCHEDULERS.keys())
 
 
-__all__ = ["get_scheduler", "register_scheduler", "list_schedulers", "detect_scheduler"]
+__all__ = [
+    "get_scheduler",
+    "register_scheduler",
+    "list_schedulers",
+    "detect_scheduler",
+    "scheduler_config_keys",
+]

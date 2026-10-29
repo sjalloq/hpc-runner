@@ -84,10 +84,6 @@ def cli(ctx: Context, config: Path | None, scheduler: str | None, verbose: bool)
     ctx.verbose = verbose
     _configure_logging(verbose)
 
-    from hpc_runner.core.config import load_config
-
-    ctx.config = load_config(config)
-
 
 cli.add_command(run)
 cli.add_command(status)

@@ -41,6 +41,12 @@ class LocalScheduler(BaseScheduler):
 
     name = "local"
 
+    CONFIG_KEYS = {
+        "module_init_script": str,
+        "purge_modules": bool,
+        "silent_modules": bool,
+    }
+
     _job_counter: int = 0
 
     def __init__(self, config: HPCConfig) -> None:

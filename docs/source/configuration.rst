@@ -27,37 +27,173 @@ You can always bypass discovery by providing ``--config /path/to/file.toml``.
 Top-level sections
 ------------------
 
-Configuration supports four top-level namespaces:
+Every file starts with ``config_version = 1``. A file without it, or with a
+version this hpc-runner does not know, is an error (the message gives the
+one-line fix); ``hpc config init`` writes it for you. The remaining
+top-level keys are:
 
+- ``extends = "path.toml"``: load another file first (relative to this
+  file; ``$VAR`` expanded). The target must exist, and a cycle is an error.
 - ``[defaults]``: baseline job settings applied to all jobs
-- ``[tools.<name>]``: overrides keyed by tool name (e.g., ``python``, ``make``).
+- ``[tools.<name>]``: settings keyed by tool name (e.g., ``python``, ``make``).
   Each tool entry can also contain an ``[tools.<name>.options]`` sub-table for
   argument-specific specialisation (see :ref:`tool-option-specialisation`).
-- ``[types.<name>]``: named job profiles (e.g., ``gpu``, ``mpi``)
-- ``[schedulers.<name>]``: scheduler-specific behavior (e.g., SGE resource names)
+- ``[types.<name>]``: named flows that compose tools (see :ref:`job-types`)
+- ``[schedulers.<name>]``: site facts for one scheduler (e.g., SGE resource names)
+
+``[defaults]``, ``[tools.*]``, ``[tools.*.options.*]`` and ``[types.*]`` all
+accept the same job settings: ``name``, ``cpu``, ``mem``, ``time``,
+``queue``, ``priority``, ``project``, ``nodes``, ``tasks``, ``stdout``,
+``stderr``, ``inherit_env``, ``workdir``, ``shell``, ``use_cwd``, ``venv``,
+``interactive``, ``env_vars``, ``env_prepend``, ``env_append``,
+``env_unset``, ``modules``, ``modules_path``, ``modules_path_append``,
+``resources`` and ``scheduler_args``. In addition ``options`` is allowed only
+under ``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
+
+
+Validation
+----------
+
+Config is checked on every load, so ``hpc run`` refuses a broken config
+before it touches the scheduler. An unknown key or a value of the wrong
+type is an error naming the file, line, section and key, with a "did you
+mean" suggestion for typos; every problem in the config is reported at once:
+
+.. code-block:: text
+
+   error: hpc-runner.toml:5: [defaults] cpu: expected an integer, got string "4"
+   error: hpc-runner.toml:9: [types.sim] modles: unknown key; did you mean 'modules'?
+
+``[schedulers.<name>]`` keys are checked against the keys that scheduler
+declares. A section for a scheduler this hpc-runner does not have is a
+warning, not an error, so a site config can lead support.
+
+Two commands help:
+
+- ``hpc config check [PATH]`` validates ``PATH`` (or the discovered files),
+  prints every error and warning, and exits 1 if there is any error.
+- ``hpc config resolve [-t TYPE] COMMAND...`` prints the job ``COMMAND``
+  would get, one row per field (one per item for lists) with the layer that
+  supplied it: ``defaults``, ``tools.<name>``, ``tools.<name>.options.<key>``,
+  ``types.<name>``, ``spec``, ``package`` (built-in default) or ``host``
+  (captured from the submitting shell).
 
 
 How jobs pick up config
 -----------------------
 
-``resolve(spec, config, host)`` consults the config hierarchy for every job.
-Values merge in this order:
+``resolve(spec, config, host)`` applies a fixed chain of layers, least
+specific first, then the spec (the CLI options or the fields set on the
+``JobSpec``):
 
-1. Start from ``[defaults]``.
-2. If the spec names a ``type`` (``-t`` on the CLI), merge ``[types.<name>]``.
-   Otherwise auto-detect the tool name from the command (first word, path
-   stripped) and merge ``[tools.<name>]`` if it exists.
-3. If ``[tools.<name>.options]`` entries exist and the command arguments match
-   one (see :ref:`tool-option-specialisation`), merge that option config on top.
-4. CLI options (or fields set on the ``JobSpec``) override whatever came from
-   config.
+.. code-block:: text
 
-.. note::
+   no type:      defaults -> tools.<argv0> -> tools.<argv0>.options.<first match> -> spec
+   with -t T:    defaults -> tools.<each of types.T.tools, in order> -> types.T -> spec
 
-   List values use a "merge by union" strategy — items from both the base and
-   override are combined, preserving order and deduplicating.
-   If you need to *replace* a list instead of merging, use a leading ``"-"`` entry
-   to reset it, e.g. ``modules = ["-", "python/3.11"]``.
+``<argv0>`` is the command's first word with any path stripped. With a type
+named, the tool inferred from the command is **not** consulted, and the
+``options`` of the type's tools are not applied: the type is the whole
+specification.
+
+- **Scalars** (``cpu``, ``queue``, ...): the most specific layer that sets
+  one wins.
+- **Tables** (``env_vars``, ``env_prepend``, ``env_append``,
+  ``scheduler_args``): keys merge across layers; the later layer wins per key.
+- **Lists**: see below.
+
+When several files are loaded (``extends``, project and local override), a
+section set in more than one file merges with the same rules, later file
+over earlier.
+
+
+.. _list-merging:
+
+Lists: append, set, remove
+--------------------------
+
+``modules``, ``modules_path``, ``modules_path_append``, ``env_unset``,
+``resources`` and each scheduler's ``scheduler_args`` list follow one rule
+in every layer, including the spec:
+
+- A plain list **appends** to what the earlier layers built, dropping
+  duplicates (first-seen order kept).
+- ``{ set = [...] }`` **replaces** the list outright.
+- ``{ remove = [...], add = [...] }`` removes items, then appends ``add``
+  (either key may be omitted).
+
+.. code-block:: toml
+
+   [defaults]
+   modules = ["gcc/12", "python/3.11"]
+
+   [tools.xrun]
+   modules = ["xcelium/23"]                    # gcc/12, python/3.11, xcelium/23
+
+   [tools.legacy]
+   modules = { set = ["gcc/9"] }               # gcc/9 only
+
+   [tools.pytorch]
+   modules = { remove = ["python/3.11"], add = ["python/3.12"] }
+
+``resources`` entries are matched by ``name``: a later layer setting
+``{ name = "gpu", value = 2 }`` over an earlier ``gpu = 1`` requests one
+``gpu=2``, and ``remove`` drops entries by name. ``scheduler_args`` lists
+are raw arguments, so repeated flags (``-l a=1 -l b=2``) are kept.
+
+The Python API mirrors the verbs: ``modules=[...]`` appends,
+``modules=Set([...])`` replaces, ``modules=Edit(remove=[...], add=[...])``
+edits (``from hpc_runner import Set, Edit``).
+
+
+.. _job-types:
+
+Types compose tools
+-------------------
+
+A type defines a flow and everything it needs. Rather than restating tool
+settings, it pulls tools in by name, in order, then applies its own keys:
+
+.. code-block:: toml
+
+   [tools.xrun]
+   modules = ["xcelium/23.09"]
+   resources = [{ name = "xcelium_lic", value = 1 }]
+
+   [tools.slang]
+   modules = ["slang/0.9"]
+
+   [types.lint]
+   tools = ["xrun", "slang"]   # pulled in, in this order, then the keys below
+   cpu = 2
+
+``hpc run -t lint make lint`` loads ``xcelium/23.09`` and ``slang/0.9``,
+requests the licence and two CPUs. One type per job; a combined flow is its
+own named type. References are one level deep (tools cannot list tools,
+types cannot list types); a type naming an undefined tool, or a ``-t``
+naming an undefined type, is an error.
+
+
+Scheduler-specific arguments
+----------------------------
+
+``scheduler_args`` is an escape hatch for flags hpc-runner does not model
+(``-binding``, ``-masterq``, ``--constraint``, ...). It may appear on any job
+layer, as a table of argument lists keyed by scheduler name; each list
+merges per :ref:`list-merging`, and each scheduler uses only its own:
+
+.. code-block:: toml
+
+   [defaults.scheduler_args]
+   sge = ["-binding", "linear:1"]
+
+   [tools.sim]
+   scheduler_args = { sge = ["-masterq", "fast.q"], slurm = ["--constraint=avx512"] }
+
+On the command line, raw arguments go before ``--``
+(``hpc run -q batch.q -- make sim``) and are appended after config's.
+``[schedulers.<name>]`` holds site facts only (PE name, resource names,
+module init script).
 
 
 SGE mapping notes
@@ -114,11 +250,11 @@ different environments depending on how it is invoked.
 
    [tools.fusesoc.options."--tool slang"]
    mem = "16G"
-   modules = ["slang/0.9"]          # union-merged → ["fusesoc/2.0", "slang/0.9"]
+   modules = ["slang/0.9"]          # appended → ["fusesoc/2.0", "slang/0.9"]
 
    [tools.fusesoc.options."--tool verilator"]
    cpu = 4
-   modules = ["verilator/5.0"]      # union-merged → ["fusesoc/2.0", "verilator/5.0"]
+   modules = ["verilator/5.0"]      # appended → ["fusesoc/2.0", "verilator/5.0"]
 
    [tools.mytool]
    cpu = 2
@@ -156,6 +292,8 @@ Example: fully populated config (standalone file)
 Save as ``hpc-runner.toml`` at your git root or in the current directory:
 
 .. code-block:: toml
+
+   config_version = 1
 
    [defaults]
    name = "job"
@@ -207,7 +345,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    mem = "16G"
    time = "4:00:00"
    queue = "short.q"
-   modules = ["-", "python/3.11"]  # replace list rather than union-merge
+   modules = { set = ["python/3.11"] }  # replace the list rather than append
    resources = [
      { name = "tmpfs", value = "8G" }
    ]
@@ -230,6 +368,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    mem = "8G"
 
    [types.gpu]
+   tools = ["python"]
    queue = "gpu.q"
    cpu = 8
    mem = "64G"

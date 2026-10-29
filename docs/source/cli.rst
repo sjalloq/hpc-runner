@@ -131,3 +131,7 @@ Other commands
 - ``hpc config show``: print the active config file contents
 - ``hpc config path``: print the active config file path
 - ``hpc config init``: create a starter ``hpc-runner.toml`` in the current directory
+- ``hpc config check [PATH]``: validate the config (or ``PATH``), print every
+  error and warning, exit 1 on any error
+- ``hpc config resolve [-t TYPE] COMMAND...``: show the job ``COMMAND`` would
+  get and which config layer supplied each value

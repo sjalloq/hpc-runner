@@ -147,33 +147,82 @@ hpc-runner uses TOML configuration files. Discovery uses a two-level model:
 
 Both levels are deep-merged (local override wins). You can bypass discovery with `--config /path/to/file.toml`.
 
+Every file starts with `config_version = 1` and is validated on load: an
+unknown key or a wrong type is an error naming file, line, section and key
+(with "did you mean"), so `hpc run` refuses a broken config before touching
+the scheduler. `hpc config check [PATH]` prints every problem;
+`hpc config resolve [-t TYPE] COMMAND...` shows the job a command would get
+and which layer set each value.
+
 ### Example Configuration
 
 ```toml
+config_version = 1
+
 [defaults]
 cpu = 1
 mem = "4G"
 time = "1:00:00"
 inherit_env = true
+modules = ["gcc/12"]
 
 [schedulers.sge]
 parallel_environment = "smp"
 memory_resource = "mem_free"
-purge_modules = true
 
-[types.gpu]
-queue = "gpu"
-resources = [{name = "gpu", value = 1}]
+[tools.xrun]
+modules = ["xcelium/23.09"]
+resources = [{ name = "xcelium_lic", value = 1 }]
+
+[tools.slang]
+modules = ["slang/0.9"]
 
 [tools.xterm]
 queue = "interactive"
 time = "8:00:00"
+
+[types.lint]
+tools = ["xrun", "slang"]   # pulled in, in this order, then the keys below
+cpu = 2
 ```
 
-Use named job types:
+### How config is layered
+
+The chain is fixed, least specific first:
+
+```
+hpc run CMD ...        defaults -> tools.<CMD> -> tools.<CMD>.options.<first match> -> command line
+hpc run -t T CMD ...   defaults -> tools.<each of types.T.tools> -> types.T -> command line
+```
+
+With `-t`, the tool inferred from the command is not consulted: the type is
+the whole flow. Scalars: the most specific layer wins. Tables (`env_vars`,
+`scheduler_args`, ...) merge by key.
+
+Lists (`modules`, `modules_path`, `modules_path_append`, `env_unset`,
+`resources`, `scheduler_args.<sched>`) **append** across layers with
+duplicates dropped; `resources` match by `name`, later value wins. To do
+anything else, use a verb table:
+
+```toml
+modules = { set = ["gcc/9"] }                                   # replace
+modules = { remove = ["python/3.11"], add = ["python/3.12"] }   # edit
+```
+
+In Python the same verbs are `Set([...])` and `Edit(remove=[...], add=[...])`.
+
+`scheduler_args` is the escape hatch for flags hpc-runner does not model,
+allowed on any layer and used only by the named scheduler:
+
+```toml
+[defaults.scheduler_args]
+sge = ["-binding", "linear:1"]
+```
+
+Use a named job type:
 
 ```bash
-hpc run -t gpu python train.py
+hpc run -t lint make lint
 ```
 
 ### SGE Configuration
@@ -215,6 +264,8 @@ the job are a job setting, `env_unset`, on `[defaults]`, a tool or a type.
 **Fully populated config example:**
 
 ```toml
+config_version = 1
+
 [defaults]
 cpu = 1
 mem = "4G"
@@ -244,8 +295,8 @@ cpu = 4
 mem = "16G"
 time = "4:00:00"
 queue = "short.q"
-modules = ["-", "python/3.11"]   # leading "-" replaces the list instead of merging
-modules = ["$XCELIUM_MODULE"]    # $VAR / ${VAR} expanded on the submit host; unset or
+modules = { set = ["python/3.11", "$PY_EXTRA_MODULE"] }   # replace the list
+                                 # $VAR / ${VAR} expanded on the submit host; unset or
                                  # empty is an error, never a silent bare "module load"
 resources = [
   { name = "tmpfs", value = "8G" }
@@ -317,6 +368,8 @@ Other commands:
   hpc monitor           Interactive TUI
   hpc config show       Show active configuration
   hpc config init       Create starter config
+  hpc config check      Validate configuration (exit 1 on any error)
+  hpc config resolve    Show a command's resolved job and each value's source
 ```
 
 ## Development

@@ -29,6 +29,7 @@ class TestButtonBar:
     @pytest.mark.asyncio
     async def test_right_arrow_moves_focus_forward(self):
         """Test that right arrow moves focus to next button."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 with ButtonBar(id="buttons"):
@@ -55,6 +56,7 @@ class TestButtonBar:
     @pytest.mark.asyncio
     async def test_left_arrow_moves_focus_backward(self):
         """Test that left arrow moves focus to previous button."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 with ButtonBar(id="buttons"):
@@ -80,6 +82,7 @@ class TestButtonBar:
     @pytest.mark.asyncio
     async def test_right_arrow_wraps_around(self):
         """Test that right arrow wraps from last to first button."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 with ButtonBar(id="buttons"):
@@ -104,6 +107,7 @@ class TestButtonBar:
     @pytest.mark.asyncio
     async def test_left_arrow_wraps_around(self):
         """Test that left arrow wraps from first to last button."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 with ButtonBar(id="buttons"):
@@ -128,6 +132,7 @@ class TestButtonBar:
     @pytest.mark.asyncio
     async def test_skips_disabled_buttons(self):
         """Test that arrow navigation skips disabled buttons."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 with ButtonBar(id="buttons"):
@@ -157,6 +162,7 @@ class TestDetailPanel:
     @pytest.mark.asyncio
     async def test_panel_renders(self):
         """Test that panel renders without error."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
@@ -169,6 +175,7 @@ class TestDetailPanel:
     @pytest.mark.asyncio
     async def test_no_selection_message_shown_initially(self):
         """Test that 'no selection' message is shown when no job selected."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
@@ -182,6 +189,7 @@ class TestDetailPanel:
     @pytest.mark.asyncio
     async def test_update_job_shows_details(self):
         """Test that update_job shows job details."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
@@ -204,6 +212,7 @@ class TestDetailPanel:
     @pytest.mark.asyncio
     async def test_update_job_none_shows_no_selection(self):
         """Test that update_job(None) shows no selection message."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
@@ -227,6 +236,7 @@ class TestDetailPanel:
     @pytest.mark.asyncio
     async def test_cancel_button_disabled_for_completed_job(self):
         """Test that cancel button is disabled for completed jobs."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
@@ -244,6 +254,7 @@ class TestDetailPanel:
     @pytest.mark.asyncio
     async def test_cancel_button_enabled_for_running_job(self):
         """Test that cancel button is enabled for running jobs."""
+
         class TestApp(App):
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
@@ -267,9 +278,7 @@ class TestDetailPanel:
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
 
-            def on_detail_panel_view_logs(
-                self, event: DetailPanel.ViewLogs
-            ) -> None:
+            def on_detail_panel_view_logs(self, event: DetailPanel.ViewLogs) -> None:
                 messages_received.append(event)
 
         app = TestApp()
@@ -299,9 +308,7 @@ class TestDetailPanel:
             def compose(self) -> ComposeResult:
                 yield DetailPanel(id="detail")
 
-            def on_detail_panel_cancel_job(
-                self, event: DetailPanel.CancelJob
-            ) -> None:
+            def on_detail_panel_cancel_job(self, event: DetailPanel.CancelJob) -> None:
                 messages_received.append(event)
 
         app = TestApp()

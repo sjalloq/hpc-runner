@@ -127,6 +127,17 @@ class SGEScheduler(BaseScheduler):
 
     name = "sge"
 
+    CONFIG_KEYS = {
+        "parallel_environment": str,
+        "memory_resource": str,
+        "time_resource": str,
+        "module_init_script": str,
+        "enforce_afterok": bool,
+        "purge_modules": bool,
+        "silent_modules": bool,
+        "expand_makeflags": bool,
+    }
+
     def __init__(self, config: HPCConfig) -> None:
         """Initialize SGE scheduler with config-driven settings."""
         super().__init__(config)

@@ -1,13 +1,18 @@
 """Config command - manage configuration."""
 
+import sys
 from pathlib import Path
 from typing import Any
 
 import rich_click as click
 from rich.console import Console
+from rich.markup import escape
 from rich.syntax import Syntax
+from rich.table import Table
 
 from hpc_runner.cli._context import Context, pass_context
+from hpc_runner.core.exceptions import ConfigError
+from hpc_runner.core.merge import Edit, Set
 
 console = Console()
 
@@ -85,6 +90,15 @@ def show(ctx: Context, raw: bool) -> None:
 
 def _format_toml_value(value: Any) -> str:
     """Format a value for TOML output."""
+    if isinstance(value, Set):
+        return f"{{ set = {_format_toml_value(list(value.items))} }}"
+    if isinstance(value, Edit):
+        parts = []
+        if value.remove:
+            parts.append(f"remove = {_format_toml_value(list(value.remove))}")
+        if value.add:
+            parts.append(f"add = {_format_toml_value(list(value.add))}")
+        return f"{{ {', '.join(parts)} }}"
     if isinstance(value, bool):
         return "true" if value else "false"
     elif isinstance(value, str):
@@ -111,7 +125,9 @@ def init(ctx: Context) -> None:
             return
 
     # Write default config
-    default_config = """# hpc-runner configuration
+    default_config = """config_version = 1
+
+# hpc-runner configuration
 
 [defaults]
 # Default job settings
@@ -128,14 +144,14 @@ modules = []
 parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
-merge_output = true
 
 # Tool-specific configurations
 # [tools.python]
 # modules = ["python/3.11"]
 
-# Job type configurations
+# Job type configurations: a type pulls in tools, then adds its own keys
 # [types.gpu]
+# tools = ["python"]
 # queue = "gpu"
 # resources = [{name = "gpu", value = 1}]
 """
@@ -171,3 +187,89 @@ def path(ctx: Context, show_all: bool) -> None:
             console.print(f"  {i}. {p}")
     else:
         console.print(str(config_files[0]))
+
+
+@config_cmd.command("check")
+@click.argument("path", required=False, type=click.Path(path_type=Path))
+@pass_context
+def check(ctx: Context, path: Path | None) -> None:
+    """Validate configuration and report every problem.
+
+    Checks PATH (with its extends chain), else --config, else the
+    discovered files. Exits 1 if anything is wrong.
+    """
+    from hpc_runner.core.config import check_config
+
+    target = path if path is not None else ctx.config_path
+    try:
+        config, errors = check_config(target)
+    except ConfigError as exc:
+        config, errors = None, exc.errors
+
+    if config is not None:
+        for warning in config.warnings:
+            click.echo(f"warning: {warning}", err=True)
+    for error in errors:
+        click.echo(f"error: {error}", err=True)
+    if errors:
+        sys.exit(1)
+    assert config is not None
+    count = len(config._source_paths)
+    click.echo(f"ok: {count} file{'s' if count != 1 else ''}")
+
+
+@config_cmd.command(
+    "resolve",
+    context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
+)
+@click.option("-t", "--type", "job_type", help="Job type from config")
+@click.argument("command", nargs=-1, required=True, type=click.UNPROCESSED)
+@pass_context
+def resolve_cmd(ctx: Context, job_type: str | None, command: tuple[str, ...]) -> None:
+    """Show the job COMMAND would get, and which layer set each value.
+
+    Builds the job from the command (and -t TYPE) alone, the way
+    ``hpc run`` would before any of its other options apply.
+    """
+    import dataclasses
+
+    from hpc_runner.core.host import Host
+    from hpc_runner.core.job import Job
+    from hpc_runner.core.resolve import resolve
+    from hpc_runner.core.spec import JobSpec
+
+    job = resolve(JobSpec(list(command), type=job_type), ctx.config, Host.capture())
+
+    table = Table("field", "value", "source")
+    for f in dataclasses.fields(Job):
+        if f.name == "provenance":
+            continue
+        source = job.provenance[f.name]
+        if isinstance(source, tuple):
+            if not source:
+                table.add_row(f.name, "", "")
+            for item, layer in source:
+                if f.name == "scheduler_args":
+                    sched, arg = item
+                    table.add_row(f"scheduler_args.{sched}", escape(arg), layer)
+                else:
+                    table.add_row(f.name, escape(_format_item(item)), layer)
+            continue
+        table.add_row(f.name, escape(_format_item(getattr(job, f.name))), source)
+    console.print(table)
+
+
+def _format_item(value: Any) -> str:
+    from hpc_runner.core.resources import Resource
+
+    if value is None:
+        return ""
+    if isinstance(value, Resource):
+        return f"{value.name}={value.value}"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, tuple):
+        return " ".join(str(v) for v in value)
+    if hasattr(value, "items"):
+        return ", ".join(f"{k}={v}" for k, v in value.items())
+    return str(value)

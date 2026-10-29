@@ -39,8 +39,9 @@ A job goes through three values, each with one job:
    "not specified". It reads no config and no environment.
 
 ``resolve(spec, config, host) -> Job``
-   The only place merge rules live. For every field the spec wins, then the
-   config layer, then the package default. ``config`` and ``host`` are
+   The only place merge rules live. Scalars: the spec wins, then the most
+   specific config layer, then the package default. Lists append across
+   layers (see :ref:`list-merging`); a spec list is one more layer. ``config`` and ``host`` are
    always explicit: ``host`` carries the submit-side facts (environment,
    working directory, user) so the result does not depend on hidden process
    state.
@@ -48,8 +49,9 @@ A job goes through three values, each with one job:
 ``Job``
    The resolved job: frozen, fully defaulted, ready for a scheduler to
    render. ``job.provenance`` records which layer supplied each value
-   (``"spec"``, ``"tools.<name>"``, ``"types.<name>"``, ``"defaults"``,
-   ``"package"`` or ``"host"``).
+   (``"spec"``, ``"tools.<name>"``, ``"tools.<name>.options.<key>"``,
+   ``"types.<name>"``, ``"defaults"``, ``"package"`` or ``"host"``). For a
+   list field it is a tuple of ``(item, layer)`` pairs, one per item.
 
 .. code-block:: python
 
@@ -78,7 +80,8 @@ runs ``bash -c 'echo hi there'``. A string command is used as written.
 the host, a path uses that venv, ``False`` uses none.
 
 Raw scheduler flags with no hpc-runner equivalent go in ``scheduler_args``,
-keyed by scheduler; only the active scheduler's list is used:
+keyed by scheduler. Each list is appended to config's ``scheduler_args``
+for that scheduler, and only the active scheduler's list is used:
 
 .. code-block:: python
 
@@ -162,11 +165,11 @@ Reconnect to a job by id, without the ``Job`` that created it (``job`` is
 Configuration-driven jobs
 -------------------------
 
-``resolve()`` merges ``[defaults]`` with a matched ``[tools.<name>]`` or
-``[types.<name>]`` section, then applies whatever the spec sets. The tool name
-is auto-detected from the command (first word, path stripped). Set ``type`` on
-the spec to look up a ``[types.*]`` entry instead (this skips tool
-auto-detection).
+``resolve()`` applies ``[defaults]``, then the matched ``[tools.<name>]``
+section, then the spec. The tool name is auto-detected from the command
+(first word, path stripped). Set ``type`` on the spec to use a
+``[types.*]`` entry instead: its listed ``tools`` then the type's own keys
+(this skips tool auto-detection). See :doc:`configuration` for the chain.
 
 If the tool has ``[tools.<name>.options]`` entries defined in the config, the
 **full command string** (not just the first word) is used to match
@@ -183,7 +186,7 @@ matching rules.
    # Auto-detects "python" from command -> looks up [tools.python]
    job = resolve(JobSpec("python train.py", cpu=8), config, host)
 
-   # Look up [types.gpu], merge with [defaults], override cpu
+   # [defaults], then the tools [types.gpu] lists, then [types.gpu]; override cpu
    job = resolve(JobSpec("python train.py", type="gpu", cpu=8), config, host)
 
    # No matching tool -- just [defaults]
@@ -193,8 +196,17 @@ matching rules.
    # arguments trigger option-specific overrides automatically:
    job = resolve(JobSpec("fusesoc run --tool slang core:v:n"), config, host)
 
-A list set on the spec (``modules``, ``modules_path``, ...) replaces the
-config's list.
+A list set on the spec (``modules``, ``modules_path``, ``resources``, ...)
+appends to the config's list, exactly like a config layer. Use ``Set`` to
+replace it or ``Edit`` to remove items:
+
+.. code-block:: python
+
+   from hpc_runner import Edit, JobSpec, Set
+
+   JobSpec("python train.py", modules=["cuda/12"])          # config's + cuda/12
+   JobSpec("python train.py", modules=Set(["python/3.12"]))  # only python/3.12
+   JobSpec("python train.py", modules=Edit(remove=["python/3.11"], add=["python/3.12"]))
 
 
 Job dependencies

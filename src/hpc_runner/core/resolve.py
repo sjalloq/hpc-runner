@@ -9,11 +9,13 @@ from types import MappingProxyType
 from typing import Any
 
 from hpc_runner.core.array import ArrayRange
-from hpc_runner.core.config import HPCConfig, _expand_env_vars, _merge
+from hpc_runner.core.config import HPCConfig, _expand_env_vars
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
 from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
-from hpc_runner.core.resources import ResourceSet
+from hpc_runner.core.merge import Edit, KeyFunc, Set, key_for, merge_list
+from hpc_runner.core.resources import Resource, ResourceSet
+from hpc_runner.core.schema import DICT_FIELDS, FIELD_VALIDATORS, LIST_FIELDS
 from hpc_runner.core.spec import JobSpec
 
 # Matches a ``$VAR`` or ``${VAR}`` reference left behind after expansion.
@@ -27,7 +29,7 @@ _PACKAGE_DEFAULTS: dict[str, Any] = {
     "interactive": False,
 }
 
-# Scalar fields: spec, else config, else package default (else None).
+# Scalar fields: the most specific layer that sets them, else package default.
 _SCALARS: tuple[str, ...] = (
     "cpu",
     "mem",
@@ -46,57 +48,69 @@ _SCALARS: tuple[str, ...] = (
     "interactive",
 )
 
+# A list being built, each item paired with the layer that contributed it.
+_Tracked = list[tuple[Any, str]]
+
 
 def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
     """Resolve *spec* against *config* and the submitting *host*.
 
-    For every field the spec's value wins if set, then the config layer
-    (``[types.<spec.type>]`` if a type is named, else ``[tools.<argv0>]``
-    and its matching option, each over ``[defaults]``), then the package
-    default. The returned :class:`Job` records which layer supplied each
-    value in ``provenance``.
+    The layers are :meth:`HPCConfig.layers_for` (``defaults``, then the
+    tool or type chain) followed by the spec itself. Scalars: the most
+    specific layer that sets one wins, else the package default. Lists
+    merge per D1 (:func:`~hpc_runner.core.merge.merge_list`); dicts merge
+    by key. The returned :class:`Job` records the source of every value in
+    ``provenance``.
 
     Raises:
-        ConfigError: A module entry references an undefined or empty
-            environment variable.
+        ConfigError: The spec names an unknown type, the type lists an
+            unknown tool, or a module entry references an undefined or
+            empty environment variable.
         NotSupportedError: An array job was requested interactively.
         ValueError: ``array`` is not a valid range.
     """
     command = spec.command if isinstance(spec.command, str) else shlex.join(spec.command)
+    layers = [*config.layers_for(spec), ("spec", _spec_layer(spec))]
 
-    if spec.type:
-        # task 3 (D2/D11) makes this an error: an unknown type name silently
-        # falls back to [defaults] only.
-        layers = config.type_layers(spec.type)
-    else:
-        layers = config.tool_layers(command)
-
-    # Merge exactly as config does, then attribute each key to the most
-    # specific layer that set it.
-    merged: dict[str, Any] = {}
+    scalars: dict[str, Any] = {}
     origin: dict[str, str] = {}
-    for layer_name, table in layers:
-        merged = _merge(merged, table)
-        for key in table:
-            origin[key] = layer_name
-    # Command always comes from the caller, never from config.
-    merged.pop("command", None)
+    dicts: dict[str, dict[str, Any]] = {f: {} for f in DICT_FIELDS}
+    lists: dict[str, _Tracked] = {f: [] for f in LIST_FIELDS}
+    sched_args: dict[str, _Tracked] = {}
 
-    provenance: dict[str, str] = {"command": "spec"}
+    for layer_name, table in layers:
+        for key, value in table.items():
+            if key not in FIELD_VALIDATORS or value is None:
+                continue  # e.g. "command" in a hand-built config: never from config
+            if key in DICT_FIELDS:
+                dicts[key].update(value)
+                origin[key] = layer_name
+            elif key in LIST_FIELDS:
+                lists[key] = _merge_tracked(lists[key], value, key_for(key), layer_name)
+            elif key == "scheduler_args":
+                # scheduler_args lists are argv, so the D1 verbs apply but
+                # not the dedupe: `-l a=1 -l b=2` must keep both `-l`.
+                for sched, args in value.items():
+                    sched_args[sched] = _merge_tracked(
+                        sched_args.get(sched, []), args, None, layer_name, dedupe=False
+                    )
+            else:
+                scalars[key] = value
+                origin[key] = layer_name
+
+    provenance: dict[str, str | tuple[tuple[Any, str], ...]] = {
+        "command": "spec",
+        "type": "spec",
+    }
 
     def pick(field: str) -> Any:
-        value = getattr(spec, field)
-        if value is not None:
-            provenance[field] = "spec"
-            return value
-        if merged.get(field) is not None:
+        if field in scalars:
             provenance[field] = origin[field]
-            return merged[field]
+            return scalars[field]
         provenance[field] = "package"
         return _PACKAGE_DEFAULTS.get(field)
 
     values: dict[str, Any] = {field: pick(field) for field in _SCALARS}
-    provenance["type"] = "spec"
 
     # Name: spec, config, else generated from the submitting user.
     name = pick("name")
@@ -104,7 +118,7 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         name = _generate_name(host.user, command)
         provenance["name"] = "host"
 
-    # venv: None = capture the host's, str = that venv, False/"" = none.
+    # venv: unset = capture the host's, str = that venv, False/"" = none.
     venv_value = pick("venv")
     venv: str | None
     if venv_value is None:
@@ -116,32 +130,41 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
     # Environment dicts: expand $VAR on the submit host, before the job
     # script's module purge can change anything. Undefined vars pass through.
     def env_dict(field: str) -> Mapping[str, str]:
-        raw = pick(field) or {}
-        return MappingProxyType({k: _expand_env_vars(str(v), host.env) for k, v in raw.items()})
+        provenance[field] = origin.get(field, "package")
+        return MappingProxyType(
+            {k: _expand_env_vars(str(v), host.env) for k, v in dicts[field].items()}
+        )
 
-    env_unset = tuple(pick("env_unset") or ())
+    def tracked(field: str, pairs: _Tracked) -> tuple[Any, ...]:
+        provenance[field] = tuple(pairs)
+        return tuple(item for item, _ in pairs)
 
-    # Module lists: a spec list replaces the config list outright.
-    # task 3 (D1) replaces this with the append rule.
+    # Module lists: $VAR expanded on the submit host; unresolved is an error.
     def module_list(field: str) -> tuple[str, ...]:
-        return tuple(_expand_module_list(pick(field), field, host.env))
+        pairs = lists[field]
+        expanded = _expand_module_list([item for item, _ in pairs], field, host.env)
+        return tracked(field, [(e, layer) for e, (_, layer) in zip(expanded, pairs, strict=True)])
 
-    # Resources: spec wins outright; config list-of-dicts -> ResourceSet.
-    resources = _to_resource_set(pick("resources"))
+    env_unset = tracked("env_unset", lists["env_unset"])
 
-    # Scheduler passthrough: spec only (config support is task 3).
+    resource_pairs = [
+        (Resource(item["name"], item["value"]), layer) for item, layer in lists["resources"]
+    ]
+    resources = ResourceSet(list(tracked("resources", resource_pairs)))
+
     scheduler_args = MappingProxyType(
-        {sched: tuple(args) for sched, args in (spec.scheduler_args or {}).items()}
+        {sched: tuple(arg for arg, _ in pairs) for sched, pairs in sched_args.items()}
     )
-    provenance["scheduler_args"] = "spec" if spec.scheduler_args else "package"
+    provenance["scheduler_args"] = tuple(
+        ((sched, arg), layer) for sched, pairs in sched_args.items() for arg, layer in pairs
+    )
 
-    # Dependencies come from the spec only: job ids exist only at run time,
-    # so a config layer has nothing meaningful to say about them.
+    # Dependencies and array come from the spec only: they are per
+    # invocation, so a config layer has nothing meaningful to say about them.
     dependencies = tuple(spec.dependencies)
     provenance["dependencies"] = "spec" if spec.dependencies else "package"
-
-    array_value = pick("array")
-    array = ArrayRange.parse(str(array_value)) if array_value is not None else None
+    array = ArrayRange.parse(str(spec.array)) if spec.array is not None else None
+    provenance["array"] = "spec" if spec.array is not None else "package"
 
     if array is not None and values["interactive"]:
         raise NotSupportedError("array jobs cannot be interactive")
@@ -167,23 +190,69 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
     )
 
 
+def _spec_layer(spec: JobSpec) -> dict[str, Any]:
+    """The spec as one more layer: every config-settable field it sets."""
+    layer: dict[str, Any] = {}
+    for field in FIELD_VALIDATORS:
+        value = getattr(spec, field)
+        if value is None:
+            continue
+        if field == "resources":
+            value = _resource_layer(value)
+        layer[field] = value
+    return layer
+
+
+def _resource_layer(value: Any) -> Any:
+    """Normalise a spec's resources (ResourceSet, Resources or dicts) to dicts."""
+
+    def item(entry: Any) -> dict[str, Any]:
+        if isinstance(entry, Resource):
+            return {"name": entry.name, "value": entry.value}
+        return {"name": entry["name"], "value": entry["value"]}
+
+    if isinstance(value, Set):
+        return Set([item(e) for e in value.items])
+    if isinstance(value, Edit):
+        return Edit(remove=[item(e) for e in value.remove], add=[item(e) for e in value.add])
+    return [item(e) for e in value]
+
+
+def _merge_tracked(
+    acc: _Tracked, value: Any, key: KeyFunc | None, layer: str, *, dedupe: bool = True
+) -> _Tracked:
+    """:func:`merge_list` over items paired with their contributing layer.
+
+    An item already present unchanged keeps its earlier layer; a new item,
+    a keyed item whose value changed, and every item of a ``Set`` take
+    *layer*.
+    """
+    merged = merge_list([item for item, _ in acc], value, key=key, dedupe=dedupe)
+    if isinstance(value, Set):
+        return [(item, layer) for item in merged]
+    if not dedupe:
+        # Without dedupe the surviving earlier items keep their order and
+        # everything after them is this layer's.
+        removed = value.remove if isinstance(value, Edit) else ()
+        survivors = [pair for pair in acc if pair[0] not in removed]
+        return survivors + [(item, layer) for item in merged[len(survivors) :]]
+    result: _Tracked = []
+    for item in merged:
+        for old_item, old_layer in acc:
+            if old_item == item:
+                result.append((item, old_layer))
+                break
+        else:
+            result.append((item, layer))
+    return result
+
+
 def _generate_name(user: str, command: str) -> str:
     """``<user>_<first command word>``, skipping ``VAR=value`` prefixes."""
     for part in command.split():
         if "=" not in part:
             return f"{user}_{part.split('/')[-1]}"
     return f"{user}_job"
-
-
-def _to_resource_set(value: Any) -> ResourceSet:
-    if value is None:
-        return ResourceSet()
-    if isinstance(value, ResourceSet):
-        return ResourceSet(list(value.resources))
-    resources = ResourceSet()
-    for entry in value:
-        resources.add(entry["name"], entry["value"])
-    return resources
 
 
 def _expand_module_list(
