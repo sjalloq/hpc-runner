@@ -88,6 +88,27 @@ class TestLocalScheduler:
 
         assert status == JobStatus.COMPLETED
 
+    def test_exit_113_is_skipped(self, temp_dir):
+        """113 is reserved (HPC_EXIT_DEP_FAILED) on every scheduler."""
+        scheduler = LocalScheduler(HPCConfig())
+        result = scheduler.submit(make_job("exit 113", workdir=str(temp_dir)))
+        assert result.wait(poll_interval=0.05) == JobStatus.SKIPPED
+        assert result.returncode == 113
+
+    def test_get_statuses_bulk(self, temp_dir):
+        scheduler = LocalScheduler(HPCConfig())
+        done = scheduler.submit(make_job("true", workdir=str(temp_dir)))
+        done.wait(poll_interval=0.05)
+        running = scheduler.submit(make_job("sleep 10", workdir=str(temp_dir)))
+        try:
+            assert scheduler.get_statuses([done.job_id, running.job_id, "nope"]) == {
+                done.job_id: JobStatus.COMPLETED,
+                running.job_id: JobStatus.RUNNING,
+                "nope": JobStatus.UNKNOWN,
+            }
+        finally:
+            scheduler.cancel(running.job_id)
+
     def test_cancel_job(self, temp_dir):
         """Test cancelling a job."""
         scheduler = LocalScheduler(HPCConfig())
@@ -258,6 +279,11 @@ class TestLocalRefusesWhatItCannotDo:
     def test_array_not_supported(self):
         job = make_job(array="1-3")
         with pytest.raises(NotSupportedError, match="array"):
+            LocalScheduler(HPCConfig()).submit(job)
+
+    def test_interactive_dependencies_message(self):
+        job = make_job(interactive=True, dependencies=[Dependency("1")])
+        with pytest.raises(NotSupportedError, match="interactive jobs cannot have dependencies"):
             LocalScheduler(HPCConfig()).submit(job)
 
     def test_dependencies_not_supported(self):

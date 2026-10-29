@@ -104,6 +104,30 @@ train_result = scheduler.submit(resolve(train, config, host))
 report = JobSpec("python report.py").after(train_result, type=DependencyType.AFTERANY)
 ```
 
+Each parent carries its own type: `afterok` (the default), `afterany`,
+`afternotok` or `after` (start-after). Depending on an array job's result
+waits for every task. On the command line, `--depend` takes Slurm's grammar
+and may be repeated; a bare ID means `afterok`:
+
+```bash
+hpc run --batch --depend afterok:123:124,afterany:125 -- ./merge.sh
+hpc run --batch --depend 123 --depend afternotok:124 -- ./cleanup.sh
+```
+
+On SGE, `-hold_jid` alone is afterany, so `afterok` and `afternotok` are
+emulated: every job writes its exit code to a sentinel file in a shared
+directory (one per task for an array job), and a guard at the top of the
+dependent checks each parent's code before the command runs
+(`[schedulers.sge] emulate_afterok`, on by default; with it off only
+`afterany` is accepted). A dependent whose dependency is not satisfied does
+not run: it exits with the reserved code 113 and reports
+`JobStatus.SKIPPED`, and its own dependents are skipped in turn. `after`
+cannot be expressed on SGE and raises `NotSupportedError`.
+
+`result.wait()` returns `UNKNOWN` instead of polling forever once the
+scheduler has been unable to report the job for `unknown_after` seconds
+(default 60).
+
 ### Pipelines
 
 ```python
@@ -288,6 +312,9 @@ time_resource = "h_rt"          # Time limit resource name (commonly "h_rt")
 # Module system ('module purge' always runs first)
 module_init_script = ""         # Path to module init script (auto-detected if empty)
 module_system = ""              # "modules" (exports MODULES_VERBOSITY=concise), "lmod" or ""
+
+# Dependencies ('-hold_jid' alone is afterany)
+emulate_afterok = true          # afterok/afternotok via exit sentinels; false: afterany only
 ```
 
 Output is merged (`-j y`) unless a job sets `stderr`. Variables to unset in
@@ -385,7 +412,7 @@ Options:
   --stdout TEXT         Stdout file path pattern
   --stderr TEXT         Separate stderr file (default: merged)
   --array TEXT          Array spec (e.g., 1-100, 1-100%5)
-  --depend TEXT         Job dependency: ID, or TYPE:ID[:ID...] (e.g. afterok:1:2)
+  --depend TEXT         Job dependency, repeatable: ID or TYPE:ID[:ID...][,TYPE:ID...]
   -b, --batch           Submit as a batch job (default: interactive via qrsh/srun)
   --local               Run locally (no scheduler)
   --dry-run             Show script without submitting

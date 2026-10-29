@@ -172,6 +172,7 @@ class TestJobTable:
             assert table._format_status(JobStatus.COMPLETED) == "COMPLETE"
             assert table._format_status(JobStatus.FAILED) == "FAILED"
             assert table._format_status(JobStatus.CANCELLED) == "CANCEL"
+            assert table._format_status(JobStatus.SKIPPED) == "SKIPPED"
 
     @pytest.mark.asyncio
     async def test_empty_queue_displayed_as_dash(self):

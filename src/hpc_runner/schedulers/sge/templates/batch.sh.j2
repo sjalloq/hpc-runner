@@ -11,21 +11,24 @@
 # Exit on error
 set -e
 
-{% set publish_rc = scheduler.enforce_afterok and scheduler.exit_dir %}
+{% set publish_rc = scheduler.emulate_afterok and scheduler.exit_dir %}
 {% if publish_rc %}
-# --- hpc-runner afterok: publish this job's exit code (NFS-safe) ---
+# --- hpc-runner: publish this job's exit code (NFS-safe) ---
 # SGE -hold_jid is afterany, so dependents read these sentinels to emulate
-# afterok. The EXIT trap fires on success, `set -e` failure, and the guard
-# below, so the exit code is always published. Write-then-rename is atomic
-# on NFS so a reader never sees a partial value.
+# afterok/afternotok. An array task publishes its own <JOB_ID>.<TASK>.rc.
+# SGE sets SGE_TASK_ID=undefined for a non-array job, so treat that as unset.
+# The EXIT trap fires on success, `set -e` failure, and the guard below, so
+# the exit code is always published. Write-then-rename is atomic on NFS so a
+# reader never sees a partial value.
 _hpc_exit_dir={{ scheduler.exit_dir | sh }}
+_hpc_task="${SGE_TASK_ID:-}"; [ "$_hpc_task" = undefined ] && _hpc_task=""; _hpc_rc_name="${JOB_ID}${_hpc_task:+.$_hpc_task}.rc"
 mkdir -p "$_hpc_exit_dir"
 {% endif %}
 _hpc_on_exit() {
     local _ec=$?
 {% if publish_rc %}
-    { printf '%s\n' "$_ec" > "$_hpc_exit_dir/.${JOB_ID}.rc.$$" \
-        && mv -f "$_hpc_exit_dir/.${JOB_ID}.rc.$$" "$_hpc_exit_dir/${JOB_ID}.rc" ; } 2>/dev/null || true
+    { printf '%s\n' "$_ec" > "$_hpc_exit_dir/.${_hpc_rc_name}.$$" \
+        && mv -f "$_hpc_exit_dir/.${_hpc_rc_name}.$$" "$_hpc_exit_dir/${_hpc_rc_name}" ; } 2>/dev/null || true
 {% endif %}
     if [ -n "${_hpc_modlog:-}" ]; then rm -f "$_hpc_modlog"; fi
     return "$_ec"
@@ -34,24 +37,65 @@ trap _hpc_on_exit EXIT
 
 {% include "_environment.sh.j2" %}
 
-{% if publish_rc and afterok_ids %}
-# --- hpc-runner afterok guard: abort unless all dependencies succeeded ---
+{% if publish_rc and guards %}
+# --- hpc-runner dependency guard: skip unless every dependency is satisfied ---
 # -hold_jid guarantees parents have exited (and flushed their sentinels), but
 # allow a short bounded wait for the NFS directory-entry cache to refresh.
-for _dep in {% for d in afterok_ids %}{{ d | sh }} {% endfor %}; do
-    _rc=""
-    for _try in $(seq 1 15); do
-        if [ -f "$_hpc_exit_dir/${_dep}.rc" ]; then
-            _rc="$(cat "$_hpc_exit_dir/${_dep}.rc" 2>/dev/null)"
+_hpc_dep_rc() {
+    local _rc="" _try
+    for _try in $(seq 1 {{ dep_wait_seconds }}); do
+        if [ -f "$_hpc_exit_dir/$1" ]; then
+            _rc="$(cat "$_hpc_exit_dir/$1" 2>/dev/null)"
             [ -n "$_rc" ] && break
         fi
         sleep 1
     done
-    if [ "$_rc" != "0" ]; then
-        echo "hpc-runner: afterok dependency ${_dep} did not succeed (rc='${_rc:-missing}'); aborting" >&2
-        exit 1
+    printf '%s' "$_rc"
+}
+_hpc_dep_skip() {
+    echo "hpc-runner: $2 dependency $1 not satisfied (rc='${3:-missing}'); skipping" >&2
+    exit {{ dep_failed_exit }}
+}
+# afterok needs rc 0; afternotok needs a non-zero rc. A missing sentinel
+# cannot prove the parent failed, so it fails both tests.
+_hpc_dep_ok() {
+    if [ "$1" = afterok ]; then
+        [ "$2" = "0" ]
+    else
+        [ -n "$2" ] && [ "$2" != "0" ]
     fi
+}
+{% if guards | selectattr("job_id") | list %}
+# A parent known only by id may be an array job: check <id>.rc, or, if that
+# is absent after the bounded wait, every <id>.*.rc that exists (at least one
+# is required). -hold_jid guarantees every task has exited and published, so
+# the glob is complete.
+_hpc_dep_check_id() {
+    local _rc _f _found=""
+    _rc="$(_hpc_dep_rc "$2.rc")"
+    if [ -n "$_rc" ]; then
+        _hpc_dep_ok "$1" "$_rc" || _hpc_dep_skip "$2.rc" "$1" "$_rc"
+        return 0
+    fi
+    for _f in "$_hpc_exit_dir/$2".*.rc; do
+        [ -f "$_f" ] || continue
+        _found=1
+        _rc="$(cat "$_f" 2>/dev/null)"
+        _hpc_dep_ok "$1" "$_rc" || _hpc_dep_skip "${_f##*/}" "$1" "$_rc"
+    done
+    [ -n "$_found" ] || _hpc_dep_skip "$2.rc" "$1" ""
+}
+{% endif %}
+{% for guard in guards %}
+{% if guard.job_id %}
+_hpc_dep_check_id {{ guard.type }} {{ guard.job_id | sh }}
+{% else %}
+for _s in {% for name in guard.sentinels %}{{ name | sh }} {% endfor %}; do
+    _rc="$(_hpc_dep_rc "$_s")"
+    _hpc_dep_ok {{ guard.type }} "$_rc" || _hpc_dep_skip "$_s" {{ guard.type }} "$_rc"
 done
+{% endif %}
+{% endfor %}
 
 {% endif %}
 # Execute command

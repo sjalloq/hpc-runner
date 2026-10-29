@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -16,6 +17,31 @@ if TYPE_CHECKING:
     from hpc_runner.schedulers.base import BaseScheduler
 
 
+HPC_EXIT_DEP_FAILED = 113
+"""Exit code of a job whose dependency guard found a dependency unsatisfied.
+
+On SGE, afterok and afternotok are emulated by a guard at the top of the
+dependent's script; when a parent's exit sentinel fails the test the guard
+exits with this code, and ``get_status`` reports :attr:`JobStatus.SKIPPED`
+("did not run because a dependency was not satisfied"). The code is
+non-zero, so the dependent's own dependents are skipped in turn.
+
+The code is reserved: a job command that exits 113 itself is also reported
+as SKIPPED, on every scheduler (the local scheduler included, for
+symmetry, although it rejects dependencies).
+
+Why 113: exit codes are 0-255; 1-2 are generic failures, 64-78 are
+``sysexits.h``, 126-127 are not-executable / not-found, 128+N is death by
+signal N, and 255 is the out-of-range catch-all. SGE gives two codes in the
+remaining band a meaning (verified against the SGE 8.1.9 man pages
+sge_shepherd.8 and submit.1): a job script exiting **99** is re-queued
+unless ``FORBID_RESCHEDULE`` is set, and one exiting **100** is put in
+*error state* unless ``FORBID_APPERROR`` is set; a ``-hold_jid`` dependent
+of a job that exited 100 stays held forever. 113 lies in the free band
+(about 79-125 less 99-100) and avoids all of that.
+"""
+
+
 class JobStatus(Enum):
     """Unified job status across schedulers."""
 
@@ -25,10 +51,83 @@ class JobStatus(Enum):
     FAILED = auto()  # Finished with error
     CANCELLED = auto()  # User cancelled
     TIMEOUT = auto()  # Hit time limit
+    SKIPPED = auto()  # Did not run because a dependency was not satisfied
     UNKNOWN = auto()  # Cannot determine
 
+    @property
+    def is_terminal(self) -> bool:
+        """Whether the job has finished and the status will not change."""
+        return self in _TERMINAL
 
-_TERMINAL = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT)
+
+_TERMINAL = frozenset(
+    {
+        JobStatus.COMPLETED,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+        JobStatus.TIMEOUT,
+        JobStatus.SKIPPED,
+    }
+)
+
+
+def status_from_exit_code(exit_code: int) -> JobStatus:
+    """The status of a finished job from its exit code.
+
+    0 is COMPLETED, :data:`HPC_EXIT_DEP_FAILED` is SKIPPED, anything else
+    FAILED.
+    """
+    if exit_code == 0:
+        return JobStatus.COMPLETED
+    if exit_code == HPC_EXIT_DEP_FAILED:
+        return JobStatus.SKIPPED
+    return JobStatus.FAILED
+
+
+def wait_for_statuses(
+    poll: Callable[[list[str]], Mapping[str, JobStatus]],
+    job_ids: Sequence[str],
+    *,
+    poll_interval: float,
+    timeout: float | None,
+    unknown_after: float,
+    label: str,
+) -> dict[str, JobStatus]:
+    """Poll until every id in *job_ids* is terminal; return their final statuses.
+
+    *poll* is called once per tick with the ids still outstanding (e.g. a
+    scheduler's ``get_statuses``). An id whose status has been UNKNOWN
+    continuously for *unknown_after* seconds is returned as UNKNOWN rather
+    than polled forever; a status that returns to PENDING or RUNNING resets
+    that clock.
+
+    Raises:
+        TimeoutError: *timeout* seconds elapsed with ids still outstanding.
+    """
+    final: dict[str, JobStatus] = {}
+    pending = list(dict.fromkeys(job_ids))
+    unknown_since: dict[str, float] = {}
+    start = time.monotonic()
+    while pending:
+        statuses = poll(pending)
+        now = time.monotonic()
+        for job_id in pending:
+            status = statuses.get(job_id, JobStatus.UNKNOWN)
+            if status.is_terminal:
+                final[job_id] = status
+            elif status is JobStatus.UNKNOWN:
+                since = unknown_since.setdefault(job_id, now)
+                if now - since >= unknown_after:
+                    final[job_id] = status
+            else:
+                unknown_since.pop(job_id, None)
+        pending = [job_id for job_id in pending if job_id not in final]
+        if not pending:
+            break
+        if timeout is not None and now - start >= timeout:
+            raise TimeoutError(f"{label} did not complete within {timeout}s")
+        time.sleep(poll_interval)
+    return final
 
 
 @dataclass
@@ -58,7 +157,7 @@ class JobResult:
     @property
     def is_complete(self) -> bool:
         """Check if job has finished (success or failure)."""
-        return self.status in _TERMINAL
+        return self.status.is_terminal
 
     @property
     def returncode(self) -> int | None:
@@ -69,35 +168,51 @@ class JobResult:
             return None
         return self.scheduler.get_exit_code(self.job_id)
 
-    def wait(self, poll_interval: float = 5.0, timeout: float | None = None) -> JobStatus:
-        """Block until job completes.
+    def wait(
+        self,
+        poll_interval: float = 5.0,
+        timeout: float | None = None,
+        unknown_after: float = 60.0,
+    ) -> JobStatus:
+        """Block until the job reaches a terminal status.
 
         An interactive run has already completed, so this returns at once.
 
         Args:
-            poll_interval: Seconds between status checks
-            timeout: Max seconds to wait (None = forever)
+            poll_interval: Seconds between status checks.
+            timeout: Max seconds to wait (None = forever).
+            unknown_after: Return UNKNOWN once the status has been UNKNOWN
+                continuously for this many seconds, instead of polling a job
+                the scheduler can no longer report on.
 
         Returns:
-            Final job status
+            The final status: terminal, or UNKNOWN (see *unknown_after*).
+
+        Raises:
+            TimeoutError: *timeout* elapsed first.
         """
         if self.job_id is None:
             return self.status
-        start = time.time()
-        while not self.is_complete:
-            if timeout is not None and (time.time() - start) >= timeout:
-                raise TimeoutError(f"Job {self.job_id} did not complete within {timeout}s")
-            time.sleep(poll_interval)
-        return self.status
+        job_id = self.job_id
+        return wait_for_statuses(
+            lambda ids: {job_id: self.status},
+            [job_id],
+            poll_interval=poll_interval,
+            timeout=timeout,
+            unknown_after=unknown_after,
+            label=f"Job {job_id}",
+        )[job_id]
 
     def result(self, poll_interval: float = 5.0, timeout: float | None = None) -> int | None:
         """Wait for the job, then return its exit code.
 
         ``concurrent.futures`` style: a job that did not finish COMPLETED
-        raises rather than returning a code the caller must check.
+        (FAILED, SKIPPED, CANCELLED, TIMEOUT, or UNKNOWN) raises rather than
+        returning a code the caller must check.
 
         Raises:
-            JobFailedError: The final status is not COMPLETED.
+            JobFailedError: The final status is not COMPLETED; the status is
+                carried on the exception.
             TimeoutError: *timeout* elapsed first.
         """
         status = self.wait(poll_interval=poll_interval, timeout=timeout)
@@ -159,37 +274,43 @@ class ArrayJobResult(JobResult):
         return f"{self._base_id()}.{index}"
 
     def task_status(self, index: int) -> JobStatus:
-        """Get status of specific array task."""
+        """The status of task *index* itself (not of the array as a whole)."""
         return self.scheduler.get_status(self.task_id(index))
 
-    # DECISION NEEDED: this returns per-task statuses, so it is not a drop-in
-    # for JobResult.wait() (-> JobStatus); should it aggregate instead?
+    def task_ids(self) -> list[str]:
+        """The job id of every task, in index order."""
+        return [self.task_id(index) for index in self.array.indices]
+
+    # Returns per-task statuses rather than one aggregate, so it is not a
+    # drop-in for JobResult.wait(); the pipeline lifecycle work (D16) may
+    # revisit this.
     def wait(  # type: ignore[override]
-        self, poll_interval: float = 5.0, timeout: float | None = None
+        self,
+        poll_interval: float = 5.0,
+        timeout: float | None = None,
+        unknown_after: float = 60.0,
     ) -> dict[int, JobStatus]:
-        """Wait for all array tasks to complete; returns each task's status."""
-        results: dict[int, JobStatus] = {}
-        pending = set(self.array.indices)
-        start = time.time()
+        """Wait for every task; returns each task's final status by index.
 
-        while pending:
-            for idx in list(pending):
-                status = self.task_status(idx)
-                if status in _TERMINAL:
-                    results[idx] = status
-                    pending.remove(idx)
-            if pending:
-                if timeout is not None and (time.time() - start) >= timeout:
-                    raise TimeoutError(
-                        f"Array job {self.job_id} did not complete within {timeout}s"
-                    )
-                time.sleep(poll_interval)
+        One ``get_statuses`` call per tick covers all outstanding tasks.
+        *timeout* and *unknown_after* are as for :meth:`JobResult.wait`.
 
-        return results
+        Raises:
+            TimeoutError: *timeout* elapsed first.
+        """
+        by_id = dict(zip(self.task_ids(), self.array.indices))
+        final = wait_for_statuses(
+            self.scheduler.get_statuses,
+            list(by_id),
+            poll_interval=poll_interval,
+            timeout=timeout,
+            unknown_after=unknown_after,
+            label=f"Array job {self.job_id}",
+        )
+        return {index: final[task_id] for task_id, index in by_id.items()}
 
     def result(self, poll_interval: float = 5.0, timeout: float | None = None) -> int | None:
         """Not defined for array jobs; use :meth:`wait` for per-task statuses."""
-        # DECISION NEEDED: what should result() mean for an array job?
         raise NotSupportedError("result() is not defined for array jobs; use wait()")
 
     def cancel(self) -> bool:

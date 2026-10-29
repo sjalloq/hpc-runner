@@ -57,7 +57,12 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
 @click.option("--stderr", help="Separate stderr file (default: merged)")
 @click.option("--stdout", "stdout", help="Stdout file path pattern")
 @click.option("--array", help="Array job specification (e.g., 1-100)")
-@click.option("--depend", help="Job dependency: ID, or TYPE:ID[:ID...] (e.g. afterok:123:124)")
+@click.option(
+    "--depend",
+    multiple=True,
+    help="Job dependency, repeatable: ID (afterok) or TYPE:ID[:ID...][,TYPE:ID...] "
+    "(e.g. afterok:123:124,afterany:125)",
+)
 @click.option(
     "-b",
     "--batch",
@@ -84,7 +89,7 @@ def run(
     stderr: str | None,
     stdout: str | None,
     array: str | None,
-    depend: str | None,
+    depend: tuple[str, ...],
     batch: bool,
     local: bool,
     dry_run: bool,
@@ -144,7 +149,7 @@ def run(
             ArrayRange.parse(array)
         except ValueError as exc:
             raise click.BadParameter(str(exc), param_hint="--array") from exc
-    dependencies = _parse_depend(depend) if depend else []
+    dependencies = _parse_depend(depend)
 
     # Get scheduler
     scheduler_name = "local" if local else ctx.scheduler
@@ -210,33 +215,22 @@ def run(
             console.print(f"Job completed with status: [bold]{final_status.name}[/bold]")
 
 
-def _parse_depend(text: str) -> list["Dependency"]:
-    """Parse ``--depend``: ``ID`` (afterok) or ``TYPE:ID[:ID...]``.
+def _parse_depend(values: tuple[str, ...]) -> list["Dependency"]:
+    """Parse every ``--depend`` value into one Dependency list.
 
     Raises:
-        click.UsageError: Anything else.
+        click.UsageError: A value is not in the grammar of
+            :func:`~hpc_runner.core.dependency.parse_dependency_string`.
     """
-    from hpc_runner.core.dependency import Dependency, DependencyType
+    from hpc_runner.core.dependency import parse_dependency_string
 
-    def bad(reason: str) -> click.UsageError:
-        return click.UsageError(
-            f"Invalid --depend {text!r}: {reason}. Expected ID or TYPE:ID[:ID...], "
-            f"TYPE one of {', '.join(t.value for t in DependencyType)}"
-        )
-
-    if not text or any(c.isspace() or c == "," for c in text):
-        raise bad("unexpected separator")
-    parts = text.split(":")
-    if len(parts) == 1:
-        return [Dependency(parts[0], DependencyType.AFTEROK)]
-    try:
-        dep_type = DependencyType(parts[0])
-    except ValueError:
-        raise bad(f"unknown dependency type {parts[0]!r}") from None
-    ids = parts[1:]
-    if not all(ids):
-        raise bad("empty job id")
-    return [Dependency(job_id, dep_type) for job_id in ids]
+    dependencies: list[Dependency] = []
+    for text in values:
+        try:
+            dependencies.extend(parse_dependency_string(text))
+        except ValueError as exc:
+            raise click.UsageError(f"Invalid --depend: {exc}") from None
+    return dependencies
 
 
 def _show_dry_run(job: "Job", scheduler: "BaseScheduler", *, verbose: bool = False) -> None:

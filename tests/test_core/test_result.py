@@ -7,7 +7,13 @@ import pytest
 
 from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.exceptions import JobFailedError, NotSupportedError
-from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
+from hpc_runner.core.result import (
+    HPC_EXIT_DEP_FAILED,
+    ArrayJobResult,
+    JobResult,
+    JobStatus,
+    status_from_exit_code,
+)
 
 
 def _result(status: JobStatus, exit_code: int | None) -> JobResult:
@@ -35,7 +41,84 @@ class TestResult:
         assert info.value.exit_code is None
 
 
+class TestStatus:
+    @pytest.mark.parametrize(
+        "status,terminal",
+        [
+            (JobStatus.PENDING, False),
+            (JobStatus.RUNNING, False),
+            (JobStatus.UNKNOWN, False),
+            (JobStatus.COMPLETED, True),
+            (JobStatus.FAILED, True),
+            (JobStatus.CANCELLED, True),
+            (JobStatus.TIMEOUT, True),
+            (JobStatus.SKIPPED, True),
+        ],
+    )
+    def test_is_terminal(self, status, terminal):
+        assert status.is_terminal is terminal
+
+    def test_status_from_exit_code(self):
+        assert status_from_exit_code(0) is JobStatus.COMPLETED
+        assert status_from_exit_code(1) is JobStatus.FAILED
+        assert status_from_exit_code(HPC_EXIT_DEP_FAILED) is JobStatus.SKIPPED
+        assert HPC_EXIT_DEP_FAILED == 113
+
+    def test_skipped_result_raises_with_status(self):
+        with pytest.raises(JobFailedError) as info:
+            _result(JobStatus.SKIPPED, 113).result(poll_interval=0)
+        assert info.value.status is JobStatus.SKIPPED
+        assert info.value.exit_code == 113
+
+
+class _Sequence:
+    """A scheduler whose get_status walks through *statuses*, then repeats the last."""
+
+    def __init__(self, statuses: list[JobStatus]):
+        self.statuses = statuses
+        self.calls = 0
+
+    def get_status(self, job_id: str) -> JobStatus:
+        status = self.statuses[min(self.calls, len(self.statuses) - 1)]
+        self.calls += 1
+        return status
+
+
 class TestWait:
+    def test_unknown_after_returns_unknown(self):
+        sched = _Sequence([JobStatus.UNKNOWN])
+        res = JobResult(scheduler=sched, job_id="1")  # type: ignore[arg-type]
+        assert res.wait(poll_interval=0.001, unknown_after=0.01) is JobStatus.UNKNOWN
+        assert sched.calls > 1
+
+    def test_unknown_clock_resets_on_running(self, monkeypatch):
+        """UNKNOWN, RUNNING, UNKNOWN...: only a continuous UNKNOWN run counts."""
+        import hpc_runner.core.result as result_module
+
+        clock = [0.0]
+
+        class FakeTime:
+            @staticmethod
+            def monotonic() -> float:
+                return clock[0]
+
+            @staticmethod
+            def sleep(seconds: float) -> None:
+                clock[0] += seconds
+
+        monkeypatch.setattr(result_module, "time", FakeTime)
+        sched = _Sequence([JobStatus.UNKNOWN, JobStatus.RUNNING, JobStatus.UNKNOWN])
+        res = JobResult(scheduler=sched, job_id="1")  # type: ignore[arg-type]
+        # t=0 UNKNOWN, t=1 RUNNING (reset), t=2,3,4 UNKNOWN: returns at t=4.
+        assert res.wait(poll_interval=1, unknown_after=2) is JobStatus.UNKNOWN
+        assert sched.calls == 5
+        assert clock[0] == 4
+
+    def test_unknown_then_terminal(self):
+        sched = _Sequence([JobStatus.UNKNOWN, JobStatus.UNKNOWN, JobStatus.FAILED])
+        res = JobResult(scheduler=sched, job_id="1")  # type: ignore[arg-type]
+        assert res.wait(poll_interval=0, unknown_after=60) is JobStatus.FAILED
+
     def test_timeout_zero_raises_immediately(self):
         res = _result(JobStatus.RUNNING, None)
         start = time.monotonic()
@@ -100,6 +183,7 @@ class TestHandleWithoutJob:
 class TestArrayJobResult:
     def _array(self, statuses: dict[str, JobStatus]) -> ArrayJobResult:
         scheduler = MagicMock()
+        scheduler.get_statuses.side_effect = lambda ids: {i: statuses[i] for i in ids}
         scheduler.get_status.side_effect = lambda job_id: statuses[job_id]
         return ArrayJobResult(scheduler=scheduler, job_id="7", array=ArrayRange(1, 3))
 
@@ -123,6 +207,27 @@ class TestArrayJobResult:
         res = self._array({f"7.{i}": JobStatus.RUNNING for i in (1, 2, 3)})
         with pytest.raises(TimeoutError):
             res.wait(poll_interval=0, timeout=0)
+
+    def test_wait_one_bulk_query_per_tick(self):
+        res = self._array({f"7.{i}": JobStatus.COMPLETED for i in (1, 2, 3)})
+        res.wait(poll_interval=0)
+        res.scheduler.get_statuses.assert_called_once_with(["7.1", "7.2", "7.3"])
+        res.scheduler.get_status.assert_not_called()
+
+    def test_wait_unknown_after(self):
+        res = self._array(
+            {"7.1": JobStatus.COMPLETED, "7.2": JobStatus.UNKNOWN, "7.3": JobStatus.SKIPPED}
+        )
+        assert res.wait(poll_interval=0, unknown_after=0) == {
+            1: JobStatus.COMPLETED,
+            2: JobStatus.UNKNOWN,
+            3: JobStatus.SKIPPED,
+        }
+
+    def test_task_status_is_per_task(self):
+        res = self._array({"7.1": JobStatus.COMPLETED, "7.2": JobStatus.RUNNING})
+        assert res.task_status(1) is JobStatus.COMPLETED
+        assert res.task_status(2) is JobStatus.RUNNING
 
     def test_cancel_uses_base_id(self):
         res = self._array({})

@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from hpc_runner.core.dependency import Dependency, DependencyType
+from hpc_runner.core.dependency import DependencyType, dependency_on
 from hpc_runner.core.exceptions import (
     DependencyCycleError,
     DuplicateStepError,
@@ -18,6 +18,7 @@ from hpc_runner.core.exceptions import (
 )
 from hpc_runner.core.host import Host
 from hpc_runner.core.resolve import resolve
+from hpc_runner.core.result import ArrayJobResult, JobStatus, wait_for_statuses
 from hpc_runner.core.spec import JobSpec
 
 if TYPE_CHECKING:
@@ -173,13 +174,14 @@ class Pipeline:
             # Inject dependencies into a copy of the spec; resolve now.
             dependencies = list(pjob.spec.dependencies)
             for parent in pjob.depends_on:
-                parent_id = results[parent.name].job_id
-                if parent_id is None:
+                parent_result = results[parent.name]
+                if parent_result.job_id is None:
                     raise PipelineError(
                         f"step '{parent.name}' ran interactively and has no job id "
                         f"for '{pjob.name}' to depend on"
                     )
-                dependencies.append(Dependency(parent_id, pjob.dependency_type))
+                # An array parent records its tasks for the per-task guard.
+                dependencies.append(dependency_on(parent_result, pjob.dependency_type))
             spec = dataclasses.replace(
                 pjob.spec, dependencies=dependencies, name=f"{self.name}_{pjob.name}"
             )
@@ -221,8 +223,18 @@ class Pipeline:
 
         return result
 
-    def wait(self, poll_interval: float = 5.0) -> dict[str, JobResult]:
+    def wait(
+        self,
+        poll_interval: float = 5.0,
+        timeout: float | None = None,
+        unknown_after: float = 60.0,
+    ) -> dict[str, JobResult]:
         """Wait for all submitted jobs to complete.
+
+        Each tick makes one ``get_statuses`` call per scheduler for every
+        outstanding job (each task of an array step). *timeout* and
+        *unknown_after* are as for :meth:`JobResult.wait`: a job UNKNOWN for
+        *unknown_after* seconds stops being waited for.
 
         Returns:
             Dict mapping job names to results
@@ -230,6 +242,7 @@ class Pipeline:
         Raises:
             NotSubmittedError: If no jobs have been submitted.
             NotSubmittedError: If some jobs were never submitted (partial failure).
+            TimeoutError: *timeout* elapsed first.
         """
         submitted = {pj.name: pj.result for pj in self.jobs if pj.result is not None}
 
@@ -243,10 +256,31 @@ class Pipeline:
                 "Call submit() again to retry."
             )
 
-        for pjob in self.jobs:
-            if pjob.result:
-                pjob.result.wait(poll_interval=poll_interval)
+        schedulers: dict[str, BaseScheduler] = {}
+        for result in submitted.values():
+            ids = result.task_ids() if isinstance(result, ArrayJobResult) else [result.job_id]
+            for job_id in ids:
+                if job_id is not None:  # None: an interactive run, already finished
+                    schedulers[job_id] = result.scheduler
 
+        def poll(job_ids: list[str]) -> dict[str, JobStatus]:
+            by_scheduler: dict[int, tuple[BaseScheduler, list[str]]] = {}
+            for job_id in job_ids:
+                scheduler = schedulers[job_id]
+                by_scheduler.setdefault(id(scheduler), (scheduler, []))[1].append(job_id)
+            statuses: dict[str, JobStatus] = {}
+            for scheduler, ids in by_scheduler.values():
+                statuses.update(scheduler.get_statuses(ids))
+            return statuses
+
+        wait_for_statuses(
+            poll,
+            list(schedulers),
+            poll_interval=poll_interval,
+            timeout=timeout,
+            unknown_after=unknown_after,
+            label=f"Pipeline {self.name}",
+        )
         return submitted
 
     def get_job(self, name: str) -> PipelineJob | None:

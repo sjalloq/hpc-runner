@@ -466,3 +466,66 @@ class TestPipelineInteractiveParent:
         scheduler.submit.return_value = MagicMock(job_id=None)
         with pytest.raises(PipelineError, match="no job id"):
             p.submit(scheduler=scheduler)
+
+
+class TestPipelineDependenciesAndWait:
+    def test_array_parent_dependency_records_tasks(self):
+        from hpc_runner.core.result import ArrayJobResult, JobResult
+
+        p = _pipeline()
+        p.add(JobSpec("sim", array="1-3"), name="sims")
+        p.add("merge", name="merge", depends_on=["sims"])
+        scheduler = MagicMock()
+
+        def submit(job):
+            if job.array is not None:
+                return ArrayJobResult(scheduler=scheduler, job_id="10", job=job, array=job.array)
+            return JobResult(scheduler=scheduler, job_id="11", job=job)
+
+        scheduler.submit.side_effect = submit
+        p.submit(scheduler=scheduler)
+        merge_job = scheduler.submit.call_args_list[1].args[0]
+        assert merge_job.dependencies == (Dependency("10", DependencyType.AFTEROK, (1, 2, 3)),)
+
+    def test_wait_one_get_statuses_per_tick(self):
+        from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
+
+        p = _pipeline()
+        p.add(JobSpec("sim", array="1-2"), name="sims")
+        p.add("merge", name="merge", depends_on=["sims"])
+        scheduler = MagicMock()
+        ticks = iter(
+            [
+                {"10.1": JobStatus.RUNNING, "10.2": JobStatus.COMPLETED, "11": JobStatus.PENDING},
+                {"10.1": JobStatus.COMPLETED, "11": JobStatus.COMPLETED},
+            ]
+        )
+        scheduler.get_statuses.side_effect = lambda ids: next(ticks)
+
+        def submit(job):
+            if job.array is not None:
+                return ArrayJobResult(scheduler=scheduler, job_id="10", job=job, array=job.array)
+            return JobResult(scheduler=scheduler, job_id="11", job=job)
+
+        scheduler.submit.side_effect = submit
+        p.submit(scheduler=scheduler)
+        p.wait(poll_interval=0)
+        calls = [c.args[0] for c in scheduler.get_statuses.call_args_list]
+        assert calls == [["10.1", "10.2", "11"], ["10.1", "11"]]
+        scheduler.get_status.assert_not_called()
+
+    def test_wait_timeout_and_unknown_after(self):
+        from hpc_runner.core.result import JobResult, JobStatus
+
+        p = _pipeline()
+        p.add("a", name="a")
+        scheduler = MagicMock()
+        scheduler.submit.side_effect = lambda job: JobResult(scheduler, "1", job)
+        p.submit(scheduler=scheduler)
+
+        scheduler.get_statuses.side_effect = lambda ids: {"1": JobStatus.RUNNING}
+        with pytest.raises(TimeoutError):
+            p.wait(poll_interval=0, timeout=0)
+
+        scheduler.get_statuses.side_effect = lambda ids: {"1": JobStatus.UNKNOWN}
+        assert p.wait(poll_interval=0, unknown_after=0) == p.results

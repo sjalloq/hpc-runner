@@ -981,10 +981,10 @@ class TestSchedulerSections:
         path = _write(
             tmp_path,
             'config_version = 1\n[schedulers.sge]\nparallel_environment = "mpi"\n'
-            "enforce_afterok = false\n",
+            "emulate_afterok = false\n",
         )
         config = load_config(path)
-        assert config.schedulers["sge"] == {"parallel_environment": "mpi", "enforce_afterok": False}
+        assert config.schedulers["sge"] == {"parallel_environment": "mpi", "emulate_afterok": False}
 
     def test_unknown_key_rejected(self, tmp_path):
         path = _write(tmp_path, "config_version = 1\n[schedulers.sge]\nmerge_output = true\n")
@@ -1017,7 +1017,7 @@ class TestSchedulerSections:
         assert len(load_config(path).warnings) == 1
 
     def test_backend_declares_keys(self):
-        assert scheduler_config_keys("sge")["enforce_afterok"] is bool
+        assert scheduler_config_keys("sge")["emulate_afterok"] is bool
         assert scheduler_config_keys("nope") is None
 
 

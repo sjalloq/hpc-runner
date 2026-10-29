@@ -10,7 +10,7 @@ import shlex
 # scheduler CLI, so there is no argv to log or scheduler error to convert.
 import subprocess
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,8 +21,8 @@ from hpc_runner.core.exceptions import (
     NotSupportedError,
 )
 from hpc_runner.core.job_info import JobInfo
-from hpc_runner.core.result import JobResult, JobStatus
-from hpc_runner.schedulers.base import BaseScheduler
+from hpc_runner.core.result import JobResult, JobStatus, status_from_exit_code
+from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
 from hpc_runner.templates import render_template
 
 if TYPE_CHECKING:
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 def _check_supported(job: Job) -> None:
     """Refuse what the local scheduler cannot honour rather than degrade."""
+    refuse_interactive_dependencies(job)
     if job.array is not None:
         raise NotSupportedError("the local scheduler does not support array jobs")
     if job.dependencies:
@@ -159,27 +160,30 @@ class LocalScheduler(BaseScheduler):
             return True
         return False
 
-    def get_status(self, job_id: str) -> JobStatus:
-        """Get job status."""
+    def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
+        """Statuses from this process's in-memory job tables (no subprocess).
+
+        An exit code of ``HPC_EXIT_DEP_FAILED`` (113) is SKIPPED, as on
+        SGE; the local scheduler has no dependencies, so only a command that
+        exits 113 itself reaches it.
+        """
+        return {job_id: self._status(job_id) for job_id in job_ids}
+
+    def _status(self, job_id: str) -> JobStatus:
         if job_id in self._exit_codes:
-            if self._exit_codes[job_id] == 0:
-                return JobStatus.COMPLETED
-            return JobStatus.FAILED
+            return status_from_exit_code(self._exit_codes[job_id])
 
         if job_id not in self._processes:
             return JobStatus.UNKNOWN
 
-        proc = self._processes[job_id]
-        poll = proc.poll()
-
+        poll = self._processes[job_id].poll()
         if poll is None:
             return JobStatus.RUNNING
 
         # Process completed
         self._exit_codes[job_id] = poll
         self._cleanup_process(job_id)
-
-        return JobStatus.COMPLETED if poll == 0 else JobStatus.FAILED
+        return status_from_exit_code(poll)
 
     def _cleanup_process(self, job_id: str) -> None:
         """Clean up process resources."""
@@ -296,11 +300,7 @@ class LocalScheduler(BaseScheduler):
         if job_id in self._processes:
             proc = self._processes[job_id]
             poll = proc.poll()
-            status = (
-                JobStatus.RUNNING
-                if poll is None
-                else (JobStatus.COMPLETED if poll == 0 else JobStatus.FAILED)
-            )
+            status = JobStatus.RUNNING if poll is None else status_from_exit_code(poll)
             job_info = JobInfo(
                 job_id=job_id,
                 name=job_id,
@@ -319,7 +319,7 @@ class LocalScheduler(BaseScheduler):
                 job_id=job_id,
                 name=job_id,
                 user=current_user,
-                status=JobStatus.COMPLETED if exit_code == 0 else JobStatus.FAILED,
+                status=status_from_exit_code(exit_code),
                 queue="local",
                 exit_code=exit_code,
                 stdout_path=self._output_paths.get(job_id, {}).get("stdout"),

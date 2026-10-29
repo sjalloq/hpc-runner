@@ -18,6 +18,9 @@ env_passthrough = []       # With inherit_env = false: submit-host variables to 
 parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
+# Emulate afterok/afternotok with exit-code sentinels in a shared directory
+# (SGE -hold_jid alone is afterany). false: only afterany dependencies work.
+emulate_afterok = true
 
 # Module handling ('module purge' always runs first)
 module_init_script = ""     # Site-specific module init (empty = auto-detect)

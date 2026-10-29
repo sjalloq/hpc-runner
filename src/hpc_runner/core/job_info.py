@@ -61,12 +61,7 @@ class JobInfo:
     @property
     def is_complete(self) -> bool:
         """Check if job has finished (success or failure)."""
-        return self.status in (
-            JobStatus.COMPLETED,
-            JobStatus.FAILED,
-            JobStatus.CANCELLED,
-            JobStatus.TIMEOUT,
-        )
+        return self.status.is_terminal
 
     @property
     def runtime_display(self) -> str:

@@ -116,13 +116,77 @@ See :ref:`variable-expansion` and the Environment section of the
 configuration guide.
 
 
+Dependencies
+------------
+
+Every dependency renders one ``#$ -hold_jid <id>,<id>,...`` line. SGE's
+hold is *afterany*: it releases the dependent once every parent has exited,
+whether it succeeded or not. hpc-runner emulates the other kinds:
+
+- ``afterany``: the hold alone.
+- ``afterok``: a guard at the top of the dependent's script requires each
+  afterok parent's exit sentinel (below) to hold ``0``.
+- ``afternotok``: the same guard with the test inverted: each afternotok
+  parent's sentinel must hold a non-zero code. A missing sentinel cannot
+  prove the parent failed, so it fails the test too.
+- ``after`` (start-after): ``-hold_jid`` cannot express it, so ``submit()``
+  and ``preview()`` raise ``NotSupportedError``. Use ``afterany``.
+
+Each parent is guarded with its own type, so ``afterok:1,afternotok:2`` is
+one hold and two guards. A parent that is an array job (a dependency built
+from its ``ArrayJobResult``) is checked task by task: the guard reads every
+task's sentinel and all must pass. Elementwise array-to-array dependencies
+(``-hold_jid_ad``) are not used; an array dependent waits for the whole
+parent array. A parent known only by its id (``--depend`` on the command
+line) may be an array job: the guard checks ``<id>.rc`` and, if that is
+absent after the bounded wait, every ``<id>.*.rc`` that exists (at least one
+is required), applying the parent's test to each. ``-hold_jid`` guarantees
+every task has exited and published first, so that set is complete.
+
+An interactive job (``qrsh``) cannot honour dependencies, so one with any
+raises ``NotSupportedError`` ("interactive jobs cannot have dependencies;
+use --batch"); the local scheduler does the same.
+
+The guard allows up to 15 s per sentinel for the NFS directory cache to show
+the parent's file. When a dependency is not satisfied the dependent does not
+run its command: it exits with the reserved code **113**
+(``hpc_runner.core.result.HPC_EXIT_DEP_FAILED``) and ``get_status`` reports
+``JobStatus.SKIPPED``. Because 113 is non-zero, its own afterok dependents
+are skipped in turn. 113 is reserved: a command that itself exits 113 is
+also reported as SKIPPED. The code avoids SGE's special exits: 99 re-queues
+the job (unless ``FORBID_RESCHEDULE``), and 100 puts it in error state
+(unless ``FORBID_APPERROR``), which leaves a ``-hold_jid`` dependent held
+forever.
+
+Emulation is on by default and controlled by:
+
+.. code-block:: toml
+
+   [schedulers.sge]
+   emulate_afterok = true
+
+With ``emulate_afterok = false`` no sentinels are written and only
+``afterany`` dependencies are accepted; ``afterok`` and ``afternotok`` raise
+``NotSupportedError`` rather than silently becoming afterany.
+
+
 Exit sentinels and job status
 -----------------------------
 
-With ``enforce_afterok`` enabled (the default), every batch job writes its
-exit code to ``<exit_dir>/<JOB_ID>.rc``, where ``exit_dir`` is
-``$HPC_EXIT_DIR`` or ``~/.cache/hpc-runner/exit``. These files implement
-afterok dependencies and also serve as the status fallback: if ``qstat`` no
+With ``emulate_afterok`` enabled (the default), every batch job writes its
+exit code to ``<exit_dir>/<JOB_ID>.rc`` (``<JOB_ID>.<TASK>.rc`` for each
+task of an array job), where ``exit_dir`` is ``$HPC_EXIT_DIR`` or
+``~/.cache/hpc-runner/exit`` on the shared home. These files implement the
+dependency guard and also serve as the status fallback: if ``qstat`` no
 longer knows a job and ``qacct`` cannot report it (accounting disabled or
-delayed), hpc-runner reads the sentinel to report COMPLETED or FAILED and the
-exit code instead of UNKNOWN. Sentinels older than seven days are removed.
+delayed), hpc-runner reads the sentinel to report COMPLETED, FAILED or
+SKIPPED and the exit code instead of UNKNOWN. Sentinels older than seven
+days are removed.
+
+Status queries are batched: ``get_statuses(ids)`` runs one
+``qstat -xml -u '*'`` for all ids (each array task reports its own state),
+then ``qacct`` (``qacct -j <id> -t <task>`` for a task) and the sentinel
+only for ids no longer active. A ``qacct`` record with ``failed`` 37
+(qmaster enforced ``h_rt``, ``h_cpu`` or ``h_vmem``) is reported as
+``TIMEOUT``; a limit enforced by the execution daemon is recorded as a
+signal death (``exit_status`` 137) and reported as ``FAILED``.

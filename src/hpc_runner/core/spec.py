@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from hpc_runner.core.dependency import Dependency, DependencyType
+from hpc_runner.core.dependency import Dependency, DependencyType, dependency_on
 from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resources import ResourceSet
 
@@ -84,10 +84,11 @@ class JobSpec:
         """Depend on *results* with dependency *type*; returns self for chaining.
 
         Each call appends, so ``spec.after(a).after(b, type=AFTERANY)`` keeps
-        ``a`` afterok and makes ``b`` afterany.
+        ``a`` afterok and makes ``b`` afterany. An array job's result records
+        its task indices, so the dependent checks every task.
+
+        Raises:
+            ValueError: A result is a finished interactive run (no job id).
         """
-        for result in results:
-            if result.job_id is None:
-                raise ValueError("cannot depend on an interactive run: it has no job id")
-            self.dependencies.append(Dependency(result.job_id, type))
+        self.dependencies.extend(dependency_on(result, type) for result in results)
         return self

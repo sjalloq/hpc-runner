@@ -387,96 +387,233 @@ class TestSGEParserXML:
         assert job["start_time"] == 1704110460
 
 
-class TestSGEAfterok:
-    """afterok emulation via exit-code sentinel files.
+def _guard_section(script: str) -> str:
+    """The dependency-guard part of a rendered script ('' if none)."""
+    start = script.find("# --- hpc-runner dependency guard")
+    if start < 0:
+        return ""
+    return script[start : script.index("# Execute command", start)]
+
+
+class TestSGEDependencies:
+    """D8: one -hold_jid, per-parent guards emulating afterok/afternotok.
 
     SGE's ``-hold_jid`` is afterany (it releases dependents even when the
-    parent fails), so each job publishes its exit code to a sentinel and
-    afterok dependents verify their parents succeeded before running.
+    parent fails), so each job publishes its exit code to a sentinel and a
+    guard in the dependent tests each parent's code with that parent's type.
     """
 
-    def test_afterok_emits_publish_and_guard(self, monkeypatch, tmp_path):
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler(HPCConfig())
-        job = make_job("run_sim", name="sim", dependencies=[Dependency("111"), Dependency("222")])
+        monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
+        monkeypatch.setattr(SGEScheduler, "DEP_WAIT_SECONDS", 1)
+        return SGEScheduler(HPCConfig())
 
-        script = scheduler.preview(job)
-
-        # Publisher (every job) and guard (afterok only) both present.
-        assert "afterok: publish" in script
-        assert "afterok guard" in script
-        # Guard iterates over the actual dependency job IDs.
-        assert "for _dep in 111 222 " in script
-        assert str(tmp_path) in script
-
-    def test_afterany_publishes_but_no_guard(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler(HPCConfig())
-        job = make_job(
-            "run_sim", name="sim", dependencies=[Dependency("111", DependencyType.AFTERANY)]
-        )
-
-        script = scheduler.preview(job)
-
-        assert "afterok: publish" in script  # still publishes its own rc
-        assert "afterok guard" not in script  # but does not gate on parents
-
-    def test_no_dependencies_has_no_guard(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler(HPCConfig())
-        script = scheduler.preview(make_job("echo hi", name="solo"))
-
-        assert "afterok: publish" in script
-        assert "afterok guard" not in script
-
-    def test_enforce_afterok_disabled(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler(HPCConfig())
-        scheduler.enforce_afterok = False
-        scheduler.exit_dir = ""
-        job = make_job("run_sim", name="sim", dependencies=[Dependency("111")])
-
-        script = scheduler.preview(job)
-
-        assert "afterok: publish" not in script
-        assert "afterok guard" not in script
-        assert "#$ -hold_jid 111" in script  # plain hold_jid still applied
+    def test_bare_id_renders_glob_fallback(self, scheduler):
+        guard = _guard_section(scheduler.preview(make_job(dependencies=[Dependency("50")])))
+        assert "_hpc_dep_check_id afterok 50\n" in guard
+        assert 'for _f in "$_hpc_exit_dir/$2".*.rc; do' in guard
 
     @pytest.mark.parametrize(
-        "parent_rc,expect_ran,expect_exit",
-        [(0, True, 0), (2, False, 1)],
+        "dep_type,task_rcs,expect_ran",
+        [
+            (DependencyType.AFTEROK, ["0", "0", "0"], True),
+            (DependencyType.AFTEROK, ["0", "3", "0"], False),
+            (DependencyType.AFTERNOTOK, ["1", "2", "3"], True),
+            (DependencyType.AFTERNOTOK, ["1", "0", "3"], False),
+        ],
     )
-    def test_guard_runtime_behaviour(
-        self, monkeypatch, tmp_path, parent_rc, expect_ran, expect_exit
+    def test_bare_id_array_parent_globs_task_sentinels(
+        self, scheduler, tmp_path, dep_type, task_rcs, expect_ran
     ):
-        """End-to-end: render the script and run it under bash.
+        """No <id>.rc: every <id>.<n>.rc found must pass the parent's test."""
+        for n, rc in enumerate(task_rcs, start=1):
+            (tmp_path / f"50.{n}.rc").write_text(f"{rc}\n")
+        job = make_job("echo RAN", dependencies=[Dependency("50", dep_type)])
+        result = self._run(scheduler.preview(job), tmp_path, {"JOB_ID": "60"})
+        assert result.returncode == (0 if expect_ran else 113), result.stderr
+        assert ("RAN" in result.stdout) is expect_ran
 
-        A passing parent lets the sim run; a failing parent aborts it before
-        the command executes. Either way the job publishes its own sentinel.
-        """
+    def test_bare_id_with_no_sentinel_at_all_skips(self, scheduler, tmp_path):
+        job = make_job("echo RAN", dependencies=[Dependency("50")])
+        result = self._run(scheduler.preview(job), tmp_path, {"JOB_ID": "60"})
+        assert result.returncode == 113
+        assert "50.rc" in result.stderr
+
+    def test_interactive_with_dependencies_refused(self, scheduler, tmp_path):
+        from hpc_runner.core.exceptions import NotSupportedError
+
+        job = make_job("xterm", interactive=True, dependencies=[Dependency("1")])
+        with pytest.raises(NotSupportedError, match="interactive jobs cannot have dependencies"):
+            scheduler.preview(job)
+        with patch_seam(lambda argv: (0, "", "")) as seam:
+            with pytest.raises(NotSupportedError):
+                scheduler.submit(job)
+        seam.assert_not_called()
+        assert list((tmp_path / "scripts").glob("*.sh")) == []
+
+    def test_mixed_types_one_hold_per_parent_guards(self, scheduler):
+        job = make_job(
+            dependencies=[
+                Dependency("1", DependencyType.AFTEROK),
+                Dependency("2", DependencyType.AFTERANY),
+                Dependency("3", DependencyType.AFTERNOTOK),
+            ]
+        )
+        script = scheduler.preview(job)
+        assert "#$ -hold_jid 1,2,3\n" in script
+        guard = _guard_section(script)
+        assert "_hpc_dep_check_id afterok 1\n" in guard
+        assert "_hpc_dep_check_id afternotok 3\n" in guard
+        assert guard.index("check_id afterok 1") < guard.index("check_id afternotok 3")
+        assert " 2\n" not in guard
+
+    def test_duplicate_parent_held_once(self, scheduler):
+        job = make_job(
+            dependencies=[Dependency("1"), Dependency("1", DependencyType.AFTERANY)],
+        )
+        assert "#$ -hold_jid 1\n" in scheduler.preview(job)
+
+    def test_array_parent_lists_every_task_sentinel(self, scheduler):
+        job = make_job(dependencies=[Dependency("7", DependencyType.AFTEROK, (1, 3, 5))])
+        script = scheduler.preview(job)
+        assert "#$ -hold_jid 7\n" in script
+        guard = _guard_section(script)
+        assert "for _s in 7.1.rc 7.3.rc 7.5.rc ; do" in guard
+        assert '_hpc_dep_ok afterok "$_rc" || _hpc_dep_skip "$_s" afterok' in guard
+        # Task list known: no glob fallback.
+        assert "_hpc_dep_check_id" not in guard
+
+    def test_afterany_only_holds_without_guard(self, scheduler):
+        job = make_job(dependencies=[Dependency("1", DependencyType.AFTERANY)])
+        script = scheduler.preview(job)
+        assert "#$ -hold_jid 1\n" in script
+        assert "hpc-runner: publish" in script  # still publishes its own rc
+        assert _guard_section(script) == ""
+
+    def test_no_dependencies_has_no_guard(self, scheduler):
+        script = scheduler.preview(make_job("echo hi"))
+        assert "hpc-runner: publish" in script
+        assert "#$ -hold_jid" not in script
+        assert _guard_section(script) == ""
+
+    def test_guard_exit_code_from_context(self, scheduler):
+        from hpc_runner.core.result import HPC_EXIT_DEP_FAILED
+
+        script = scheduler.preview(make_job(dependencies=[Dependency("1")]))
+        assert f"exit {HPC_EXIT_DEP_FAILED}\n" in _guard_section(script)
+
+    @pytest.mark.parametrize(
+        "deps", [[Dependency("1")], [Dependency("2", (DependencyType.AFTERNOTOK))]]
+    )
+    def test_script_parses(self, scheduler, tmp_path, deps):
+        import subprocess
+
+        path = tmp_path / "s.sh"
+        path.write_text(scheduler.preview(make_job(dependencies=deps)))
+        subprocess.run(["bash", "-n", str(path)], check=True)
+
+    def test_after_not_supported(self, scheduler, mock_sge_commands):
+        from hpc_runner.core.exceptions import NotSupportedError
+
+        job = make_job(dependencies=[Dependency("1", DependencyType.AFTER)])
+        with pytest.raises(NotSupportedError, match="start-after"):
+            scheduler.preview(job)
+        with pytest.raises(NotSupportedError):
+            scheduler.submit(job)
+        assert not any(c.args[0][0] == "qsub" for c in mock_sge_commands.call_args_list)
+
+    @pytest.mark.parametrize("dep_type", [DependencyType.AFTEROK, DependencyType.AFTERNOTOK])
+    def test_guarded_types_need_emulation(self, monkeypatch, tmp_path, dep_type):
+        from hpc_runner.core.exceptions import NotSupportedError
+
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler(HPCConfig(schedulers={"sge": {"emulate_afterok": False}}))
+        assert scheduler.exit_dir == ""
+        with pytest.raises(NotSupportedError, match="emulate_afterok"):
+            scheduler.preview(make_job(dependencies=[Dependency("1", dep_type)]))
+
+    def test_afterany_without_emulation(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler(HPCConfig(schedulers={"sge": {"emulate_afterok": False}}))
+        script = scheduler.preview(
+            make_job(dependencies=[Dependency("1", DependencyType.AFTERANY)])
+        )
+        assert "#$ -hold_jid 1\n" in script
+        assert "hpc-runner: publish" not in script
+        assert _guard_section(script) == ""
+
+    @staticmethod
+    def _run(script: str, tmp_path, env: dict[str, str]):
         import os
         import subprocess
 
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler(HPCConfig())
-        job = make_job("echo SIM-RAN", name="sim", dependencies=[Dependency("111")])
-        script = scheduler.preview(job)
-
-        script_file = tmp_path / "sim.sh"
+        script_file = tmp_path / "job.sh"
         script_file.write_text(script)
-        (tmp_path / "111.rc").write_text(f"{parent_rc}\n")
-
-        result = subprocess.run(
+        return subprocess.run(
             ["bash", str(script_file)],
             capture_output=True,
             text=True,
-            env={**os.environ, "JOB_ID": "999"},
+            env={**os.environ, **env},
         )
 
-        assert result.returncode == expect_exit
+    @pytest.mark.parametrize(
+        "task_env,name",
+        [({"SGE_TASK_ID": "undefined"}, "1.rc"), ({"SGE_TASK_ID": "7"}, "1.7.rc"), ({}, "1.rc")],
+    )
+    def test_sentinel_name(self, scheduler, tmp_path, task_env, name):
+        result = self._run(
+            scheduler.preview(make_job("true")), tmp_path, {"JOB_ID": "1", **task_env}
+        )
+        assert result.returncode == 0, result.stderr
+        assert (tmp_path / name).read_text().strip() == "0"
+        assert sorted(p.name for p in tmp_path.glob("*.rc")) == [name]
+
+    @pytest.mark.parametrize(
+        "dep_type,parent_rcs,expect_ran",
+        [
+            (DependencyType.AFTEROK, ["0"], True),
+            (DependencyType.AFTEROK, ["2"], False),
+            (DependencyType.AFTERNOTOK, ["2"], True),
+            (DependencyType.AFTERNOTOK, ["0"], False),
+        ],
+    )
+    def test_guard_runtime_behaviour(self, scheduler, tmp_path, dep_type, parent_rcs, expect_ran):
+        """End-to-end: render the script and run it under bash.
+
+        A satisfied dependency lets the command run; an unsatisfied one
+        skips it with exit 113. Either way the job publishes its own code.
+        """
+        (tmp_path / "111.rc").write_text(f"{parent_rcs[0]}\n")
+        job = make_job("echo SIM-RAN", dependencies=[Dependency("111", dep_type)])
+        result = self._run(scheduler.preview(job), tmp_path, {"JOB_ID": "999"})
+
+        expect_exit = 0 if expect_ran else 113
+        assert result.returncode == expect_exit, result.stderr
         assert ("SIM-RAN" in result.stdout) is expect_ran
-        # The job always publishes its own exit code for its dependents.
         assert (tmp_path / "999.rc").read_text().strip() == str(expect_exit)
+        if not expect_ran:
+            assert "111.rc" in result.stderr
+
+    @pytest.mark.parametrize(
+        "dep_type,task_rcs,expect_ran",
+        [
+            (DependencyType.AFTEROK, {1: "0", 2: "0"}, True),
+            (DependencyType.AFTEROK, {1: "0", 2: "1"}, False),
+            (DependencyType.AFTERNOTOK, {1: "1", 2: "1"}, True),
+            (DependencyType.AFTERNOTOK, {1: "1", 2: "0"}, False),
+        ],
+    )
+    def test_array_parent_every_task_must_pass(
+        self, scheduler, tmp_path, dep_type, task_rcs, expect_ran
+    ):
+        for task, rc in task_rcs.items():
+            (tmp_path / f"50.{task}.rc").write_text(rc)
+        job = make_job("echo RAN", dependencies=[Dependency("50", dep_type, (1, 2))])
+        result = self._run(scheduler.preview(job), tmp_path, {"JOB_ID": "60"})
+        assert result.returncode == (0 if expect_ran else 113), result.stderr
+        assert ("RAN" in result.stdout) is expect_ran
 
 
 class TestSGEExitSentinelFallback:
@@ -525,16 +662,20 @@ class TestSGEExitSentinelFallback:
             assert scheduler.get_status("123") == JobStatus.FAILED
             assert scheduler.get_exit_code("123") == 3
 
-    def test_array_task_falls_back_to_base_id(self, scheduler, tmp_path):
+    def test_array_task_reads_only_its_own_sentinel(self, scheduler, tmp_path):
         (tmp_path / "123.rc").write_text("0\n")
         with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123.4") == JobStatus.COMPLETED
-            assert scheduler.get_exit_code("123.4") == 0
-
-    def test_task_specific_sentinel_preferred(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("0\n")
+            assert scheduler.get_status("123.4") == JobStatus.UNKNOWN
         (tmp_path / "123.4.rc").write_text("5\n")
-        assert scheduler._read_exit_sentinel("123.4") == 5
+        with patch_seam(self._fake_run()):
+            assert scheduler.get_status("123.4") == JobStatus.FAILED
+            assert scheduler.get_exit_code("123.4") == 5
+
+    def test_sentinel_113_is_skipped(self, scheduler, tmp_path):
+        (tmp_path / "123.rc").write_text("113\n")
+        with patch_seam(self._fake_run()):
+            assert scheduler.get_status("123") == JobStatus.SKIPPED
+            assert scheduler.get_exit_code("123") == 113
 
     def test_no_sentinel_unknown(self, scheduler):
         with patch_seam(self._fake_run()):
@@ -547,9 +688,9 @@ class TestSGEExitSentinelFallback:
             assert scheduler.get_status("123") == JobStatus.UNKNOWN
             assert scheduler.get_exit_code("123") is None
 
-    def test_enforce_afterok_off_ignores_sentinel(self, scheduler, tmp_path):
+    def test_emulate_afterok_off_ignores_sentinel(self, scheduler, tmp_path):
         (tmp_path / "123.rc").write_text("0\n")
-        scheduler.enforce_afterok = False
+        scheduler.emulate_afterok = False
         scheduler.exit_dir = ""
         with patch_seam(self._fake_run()):
             assert scheduler.get_status("123") == JobStatus.UNKNOWN
@@ -568,6 +709,152 @@ class TestSGEExitSentinelFallback:
         with patch_seam(self._fake_run(qacct, 0)):
             assert scheduler.get_status("123") == JobStatus.FAILED
             assert scheduler.get_exit_code("123") == 2
+
+
+ARRAY_QSTAT_XML = """<?xml version='1.0'?>
+<job_info>
+  <queue_info>
+    <job_list state="running">
+      <JB_job_number>500</JB_job_number>
+      <state>r</state>
+      <tasks>2</tasks>
+    </job_list>
+    <job_list state="running">
+      <JB_job_number>600</JB_job_number>
+      <state>r</state>
+    </job_list>
+  </queue_info>
+  <job_info>
+    <job_list state="pending">
+      <JB_job_number>500</JB_job_number>
+      <state>qw</state>
+      <tasks>4-6:1</tasks>
+    </job_list>
+    <job_list state="pending">
+      <JB_job_number>700</JB_job_number>
+      <state>hqw</state>
+    </job_list>
+  </job_info>
+</job_info>
+"""
+
+
+class TestSGEStatuses:
+    """Batched get_statuses: one qstat per call; qacct/sentinel per finished id."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        return SGEScheduler(HPCConfig())
+
+    @staticmethod
+    def _respond(qacct: dict[str, str] | None = None):
+        qacct = qacct or {}
+
+        def respond(cmd):
+            if cmd[0] == "qstat":
+                assert cmd == ["qstat", "-xml", "-u", "*"]
+                return 0, ARRAY_QSTAT_XML, ""
+            if cmd[0] == "qacct":
+                key = " ".join(cmd[2:])
+                if key in qacct:
+                    return 0, qacct[key], ""
+                return 1, "", "error: job id not found\n"
+            raise AssertionError(cmd)
+
+        return respond
+
+    def test_one_qstat_for_many_ids(self, scheduler):
+        ids = ["600", "700", "500.2", "500.5"]
+        with patch_seam(self._respond()) as seam:
+            statuses = scheduler.get_statuses(ids)
+        assert statuses == {
+            "600": JobStatus.RUNNING,
+            "700": JobStatus.PENDING,
+            "500.2": JobStatus.RUNNING,
+            "500.5": JobStatus.PENDING,
+        }
+        assert [c.args[0][0] for c in seam.call_args_list] == ["qstat"]
+
+    def test_finished_task_from_qacct_per_task(self, scheduler):
+        qacct = {"500 -t 1": "jobnumber 500\nfailed 0\nexit_status 3\n"}
+        with patch_seam(self._respond(qacct)) as seam:
+            statuses = scheduler.get_statuses(["500.1", "500.4"])
+        assert statuses == {"500.1": JobStatus.FAILED, "500.4": JobStatus.PENDING}
+        argvs = [c.args[0] for c in seam.call_args_list]
+        assert argvs == [["qstat", "-xml", "-u", "*"], ["qacct", "-j", "500", "-t", "1"]]
+
+    def test_base_id_of_array_prefers_running_task(self, scheduler):
+        with patch_seam(self._respond()):
+            assert scheduler.get_status("500") == JobStatus.RUNNING
+
+    def test_task_status_from_array_result(self, scheduler):
+        from hpc_runner.core.array import ArrayRange
+        from hpc_runner.core.result import ArrayJobResult
+
+        res = ArrayJobResult(scheduler=scheduler, job_id="500", array=ArrayRange(1, 6))
+        with patch_seam(self._respond()):
+            assert res.task_status(2) == JobStatus.RUNNING
+            assert res.task_status(6) == JobStatus.PENDING
+            assert res.task_status(1) == JobStatus.UNKNOWN
+
+    def test_qacct_113_is_skipped(self, scheduler):
+        qacct = {"800": "jobnumber 800\nfailed 0\nexit_status 113\n"}
+        with patch_seam(self._respond(qacct)):
+            assert scheduler.get_status("800") == JobStatus.SKIPPED
+            assert scheduler.get_exit_code("800") == 113
+
+    def test_qacct_failed_37_is_timeout(self, scheduler):
+        qacct = {
+            "800": "jobnumber 800\n"
+            "failed       37  : qmaster enforced h_rt, h_cpu, or h_vmem limit\n"
+            "exit_status  0\n"
+        }
+        with patch_seam(self._respond(qacct)):
+            assert scheduler.get_status("800") == JobStatus.TIMEOUT
+
+    def test_execd_h_rt_kill_stays_failed(self, scheduler):
+        qacct = {"800": "jobnumber 800\nfailed 100 : assumedly after job\nexit_status 137\n"}
+        with patch_seam(self._respond(qacct)):
+            assert scheduler.get_status("800") == JobStatus.FAILED
+
+
+class TestSGEParserStates:
+    def test_task_states(self):
+        from hpc_runner.schedulers.sge.parser import parse_qstat_xml_states
+
+        assert parse_qstat_xml_states(ARRAY_QSTAT_XML) == {
+            "500.2": "r",
+            "600": "r",
+            "500.4": "qw",
+            "500.5": "qw",
+            "500.6": "qw",
+            "700": "hqw",
+        }
+
+    def test_task_list_forms(self):
+        from hpc_runner.schedulers.sge.parser import _expand_task_list
+
+        assert _expand_task_list("3") == [3]
+        assert _expand_task_list("1-7:3") == [1, 4, 7]
+        assert _expand_task_list("1,5-6") == [1, 5, 6]
+        assert _expand_task_list("junk") == []
+
+    def test_bad_xml(self):
+        from hpc_runner.schedulers.sge.parser import parse_qstat_xml_states
+
+        assert parse_qstat_xml_states("<not xml") == {}
+
+    def test_qacct_to_job_info_skipped_and_timeout(self):
+        from hpc_runner.schedulers.sge.parser import qacct_to_job_info
+
+        skipped = qacct_to_job_info({"jobnumber": "1", "failed": "0", "exit_status": "113"})
+        assert skipped.status == JobStatus.SKIPPED
+        assert skipped.exit_code == 113
+        timeout = qacct_to_job_info(
+            {"jobnumber": "2", "failed": "37  : qmaster", "exit_status": "0"}
+        )
+        assert timeout.status == JobStatus.TIMEOUT
 
 
 class TestSGESubmissionContract:
@@ -615,7 +902,8 @@ class TestSGESubmissionContract:
         )
         script = scheduler.preview(job)
         assert "#$ -hold_jid 1,2" in script
-        assert "for _dep in 1 ; do" in script
+        assert "_hpc_dep_check_id afterok 1\n" in script
+        assert "_hpc_dep_check_id afterany" not in script
 
     def test_array_job(self, scheduler, mock_sge_commands):
         from hpc_runner.core.result import ArrayJobResult

@@ -7,6 +7,7 @@ import os
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -15,13 +16,20 @@ from hpc_runner.core.dependency import DependencyType
 from hpc_runner.core.exceptions import (
     AccountingNotAvailable,
     JobNotFoundError,
+    NotSupportedError,
     SchedulerCommandError,
     SchedulerUnavailableError,
     SubmissionError,
 )
 from hpc_runner.core.job_info import JobInfo
-from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
-from hpc_runner.schedulers.base import BaseScheduler
+from hpc_runner.core.result import (
+    HPC_EXIT_DEP_FAILED,
+    ArrayJobResult,
+    JobResult,
+    JobStatus,
+    status_from_exit_code,
+)
+from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
 from hpc_runner.schedulers.sge.args import (
     SGEArrayArg,
     SGECpuArg,
@@ -42,9 +50,10 @@ from hpc_runner.schedulers.sge.args import (
 from hpc_runner.schedulers.sge.parser import (
     parse_qacct_output,
     parse_qacct_records,
-    parse_qstat_plain,
     parse_qstat_xml,
+    parse_qstat_xml_states,
     parse_qsub_output,
+    qacct_status,
     qacct_to_job_info,
     state_to_status,
 )
@@ -55,6 +64,9 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from hpc_runner.core.config import HPCConfig
     from hpc_runner.core.job import Job
+
+# Dependency types the script guard emulates from the parents' exit sentinels.
+_GUARDED = frozenset({DependencyType.AFTEROK, DependencyType.AFTERNOTOK})
 
 # Script path shown by preview(); never written or deleted.
 _PREVIEW_SCRIPT_PATH = "<script>"
@@ -79,12 +91,13 @@ def get_script_dir() -> Path:
 
 
 def get_exit_dir(sweep_ttl_days: float = 7.0) -> Path:
-    """Get directory for afterok exit-code sentinel files.
+    """Get directory for exit-code sentinel files.
 
-    Each job publishes ``<exit_dir>/<JOB_ID>.rc`` containing its exit code,
-    so that afterok dependents can verify their parents succeeded — SGE's
+    Each job publishes ``<exit_dir>/<JOB_ID>.rc`` (``<JOB_ID>.<TASK>.rc``
+    for an array task) containing its exit code, so that afterok and
+    afternotok dependents can test how their parents finished — SGE's
     ``-hold_jid`` is afterany (it releases dependents on parent failure too),
-    so we emulate afterok in the job script.
+    so we emulate both in the job script.
 
     Uses ``HPC_EXIT_DIR`` if set, otherwise ``~/.cache/hpc-runner/exit/``
     (sibling of the script dir, on the shared/NFS home as required so the
@@ -133,7 +146,7 @@ class SGEScheduler(BaseScheduler):
         "time_resource": str,
         "module_init_script": str,
         "module_system": str,
-        "enforce_afterok": bool,
+        "emulate_afterok": bool,
     }
 
     HPC_VARS = {
@@ -147,6 +160,10 @@ class SGEScheduler(BaseScheduler):
     # SGE expands -o/-e paths itself, where the task id is $TASK_ID.
     HPC_PATH_VARS = {"task_id": "$TASK_ID"}
 
+    # Seconds the dependency guard waits for a parent's sentinel to appear
+    # (the NFS directory-entry cache), per sentinel it cannot yet see.
+    DEP_WAIT_SECONDS: int = 15
+
     def __init__(self, config: HPCConfig) -> None:
         """Initialize SGE scheduler with config-driven settings."""
         super().__init__(config)
@@ -157,12 +174,13 @@ class SGEScheduler(BaseScheduler):
         self.mem_resource = sge_config.get("memory_resource", "mem_free")
         self.time_resource = sge_config.get("time_resource", "h_rt")
 
-        # afterok emulation: SGE -hold_jid is afterany, so each job publishes
-        # its exit code to a sentinel file and afterok dependents verify their
-        # parents succeeded before running. Disable via [schedulers.sge]
-        # enforce_afterok = false to fall back to plain -hold_jid behaviour.
-        self.enforce_afterok = sge_config.get("enforce_afterok", True)
-        self.exit_dir = str(get_exit_dir()) if self.enforce_afterok else ""
+        # afterok/afternotok emulation: SGE -hold_jid is afterany, so each
+        # job publishes its exit code to a sentinel file and a guard in the
+        # dependent tests its parents' codes before running. With
+        # [schedulers.sge] emulate_afterok = false, only afterany is
+        # supported (the others raise NotSupportedError).
+        self.emulate_afterok: bool = sge_config.get("emulate_afterok", True)
+        self.exit_dir = str(get_exit_dir()) if self.emulate_afterok else ""
 
         # Build the argument renderer registry
         # Maps Job attribute names -> SGE argument renderer instances
@@ -199,25 +217,70 @@ class SGEScheduler(BaseScheduler):
 
         Rendered as with ``keep_script=True`` (no self-delete line), so it
         is byte-for-byte what ``submit(job, keep_script=True)`` writes.
+
+        Raises:
+            NotSupportedError: A dependency SGE cannot honour (see
+                :meth:`_check_dependencies`).
         """
+        self._check_dependencies(job)
         if job.interactive:
             return self._render_interactive(
                 job, _PREVIEW_SCRIPT_PATH, keep_script=True, verbose=verbose
             )
         return self._render_batch(job, _PREVIEW_SCRIPT_PATH, keep_script=True, verbose=verbose)
 
+    def _check_dependencies(self, job: Job) -> None:
+        """Refuse a dependency SGE cannot honour rather than degrade it.
+
+        Raises:
+            NotSupportedError: An interactive job with dependencies (qrsh
+                cannot honour them); an ``after`` (start-after) dependency,
+                which ``-hold_jid`` cannot express; or an afterok/afternotok
+                dependency with ``emulate_afterok`` off.
+        """
+        refuse_interactive_dependencies(job)
+        for dep in job.dependencies:
+            if dep.type is DependencyType.AFTER:
+                raise NotSupportedError("SGE cannot express 'after' (start-after); use afterany")
+            if dep.type in _GUARDED and not self.emulate_afterok:
+                raise NotSupportedError(
+                    f"SGE cannot express '{dep.type}' without emulation; set "
+                    "[schedulers.sge] emulate_afterok = true or use afterany"
+                )
+
+    @staticmethod
+    def _dependency_guards(job: Job) -> list[dict[str, object]]:
+        """One guard per afterok/afternotok parent.
+
+        An array parent (``tasks`` known) lists every task's sentinel; all
+        must pass. A parent with ``tasks`` None (e.g. a bare id from the
+        CLI, which may be an array) carries its ``job_id`` instead, and the
+        script checks ``<id>.rc`` or, failing that, every ``<id>.*.rc``.
+        """
+        guards: list[dict[str, object]] = []
+        for dep in job.dependencies:
+            if dep.type not in _GUARDED:
+                continue
+            if dep.tasks is None:
+                guards.append({"type": dep.type.value, "job_id": dep.job_id, "sentinels": None})
+            else:
+                sentinels = [f"{dep.job_id}.{task}.rc" for task in dep.tasks]
+                guards.append({"type": dep.type.value, "job_id": None, "sentinels": sentinels})
+        return guards
+
     def _render_batch(
         self, job: Job, script_path: str, keep_script: bool, verbose: bool = False
     ) -> str:
         """Render the qsub script: every option is a ``#$`` directive."""
-        afterok_ids = [d.job_id for d in job.dependencies if d.type is DependencyType.AFTEROK]
         return render_template(
             "sge/templates/batch.sh.j2",
             job=job,
             scheduler=self,
             environment=self.environment_context(job, verbose=verbose),
             directives=self._build_directives(job),
-            afterok_ids=afterok_ids,
+            guards=self._dependency_guards(job),
+            dep_failed_exit=HPC_EXIT_DEP_FAILED,
+            dep_wait_seconds=self.DEP_WAIT_SECONDS,
             script_path=script_path,
             keep_script=keep_script,
         )
@@ -256,9 +319,11 @@ class SGEScheduler(BaseScheduler):
             if d := self._array_arg.to_directive(job.array.range_str):
                 directives.append(d)
 
-        # 4. Dependencies (-hold_jid is afterany; afterok is guarded in the script)
+        # 4. Dependencies: one -hold_jid for every parent (it is afterany and
+        #    guarantees the parents have exited); afterok/afternotok are
+        #    guarded in the script. 'after' was refused by _check_dependencies.
         if job.dependencies:
-            hold = ",".join(dep.job_id for dep in job.dependencies)
+            hold = ",".join(dict.fromkeys(dep.job_id for dep in job.dependencies))
             if d := self._hold_arg.to_directive(hold):
                 directives.append(d)
 
@@ -288,7 +353,12 @@ class SGEScheduler(BaseScheduler):
                          Useful for debugging.
             verbose: If True, module commands in the script print their
                 output rather than only on failure.
+
+        Raises:
+            NotSupportedError: A dependency SGE cannot honour; nothing is
+                written or submitted.
         """
+        self._check_dependencies(job)
         if job.interactive:
             return self._submit_interactive(job, keep_script=keep_script, verbose=verbose)
         return self._submit_batch(job, keep_script=keep_script, verbose=verbose)
@@ -424,73 +494,101 @@ class SGEScheduler(BaseScheduler):
     def _read_exit_sentinel(self, job_id: str) -> int | None:
         """Read the exit code a job published to its exit sentinel.
 
-        Looks for ``<exit_dir>/<job_id>.rc`` and, failing that, the base id
-        (``123.4`` -> ``123.rc``) since array tasks share ``$JOB_ID``.
+        The sentinel is ``<exit_dir>/<job_id>.rc``; an array task id
+        (``123.4``) reads its own ``123.4.rc``.
 
         Returns:
             The exit code, or None if sentinels are disabled
-            (``enforce_afterok`` off), the file is missing or unreadable,
+            (``emulate_afterok`` off), the file is missing or unreadable,
             or its content is not an integer.
         """
         if not self.exit_dir:
             return None
-        exit_dir = Path(self.exit_dir)
-        base_id = job_id.split(".")[0]
-        for name in dict.fromkeys((job_id, base_id)):
-            try:
-                text = (exit_dir / f"{name}.rc").read_text()
-            except OSError:
-                continue
-            try:
-                return int(text.strip())
-            except ValueError:
-                return None
-        return None
+        try:
+            text = (Path(self.exit_dir) / f"{job_id}.rc").read_text()
+        except OSError:
+            return None
+        try:
+            return int(text.strip())
+        except ValueError:
+            return None
 
-    def get_status(self, job_id: str) -> JobStatus:
-        """Get job status via qstat, then qacct, then the exit sentinel.
+    def _active_states(self) -> dict[str, str]:
+        """State code of every active job and array task, from one ``qstat -xml``.
 
-        Precedence is qstat (active jobs) > qacct (accounting) > exit
-        sentinel.  The sentinel is the fallback when accounting is
-        unavailable, e.g. qacct no longer returns finished jobs.
+        Some sites' qstat exits non-zero when there are no jobs, so a
+        non-zero exit is "nothing active".
         """
-        # Try qstat first (running/pending jobs).  Non-zero means "not in
-        # the queue", the normal path for a finished job.
-        result = self._run(["qstat", "-j", job_id], check=False)
-        if result.returncode == 0:
-            result2 = self._run(["qstat"], check=False)
-            if result2.returncode == 0:
-                jobs = parse_qstat_plain(result2.stdout)
-                base_id = job_id.split(".")[0]
-                if base_id in jobs:
-                    return state_to_status(jobs[base_id].get("state", ""))
-            return JobStatus.RUNNING
+        result = self._run(["qstat", "-xml", "-u", "*"], check=False)
+        if result.returncode != 0:
+            return {}
+        return parse_qstat_xml_states(result.stdout)
 
-        # Check qacct for completed jobs (non-zero: no accounting record)
-        result = self._run(["qacct", "-j", job_id], check=False)
-        if result.returncode == 0:
-            info = parse_qacct_output(result.stdout)
-            if "exit_status" in info:
-                if info.get("exit_status") == "0":
-                    return JobStatus.COMPLETED
-                return JobStatus.FAILED
+    def _qacct(self, job_id: str) -> dict[str, str] | None:
+        """The parsed qacct record for *job_id* (``-t`` for a task), or None."""
+        base, _, task = job_id.partition(".")
+        argv = ["qacct", "-j", base] + (["-t", task] if task else [])
+        result = self._run(argv, check=False)
+        if result.returncode != 0:
+            return None
+        return parse_qacct_output(result.stdout)
 
-        # Fall back to the exit sentinel when accounting has nothing.
-        rc = self._read_exit_sentinel(job_id)
-        if rc is None:
-            return JobStatus.UNKNOWN
-        return JobStatus.COMPLETED if rc == 0 else JobStatus.FAILED
+    def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
+        """Statuses from one ``qstat -xml``, then qacct and the exit sentinel.
+
+        Precedence is qstat (active jobs and tasks) > qacct (accounting) >
+        exit sentinel. An id not active is looked up one by one (qacct has
+        no bulk-by-id form); the sentinel is the fallback when accounting
+        has no record. An exit code of ``HPC_EXIT_DEP_FAILED`` (113) is
+        SKIPPED; a qacct ``failed`` 37 is TIMEOUT.
+
+        An array task id (``123.4``) reports that task's own state. A base
+        id of an array reports the most advanced state of its active tasks.
+        """
+        active = self._active_states()
+        statuses: dict[str, JobStatus] = {}
+        for job_id in job_ids:
+            state = self._active_state(active, job_id)
+            if state is not None:
+                statuses[job_id] = state_to_status(state)
+                continue
+            record = self._qacct(job_id)
+            status = qacct_status(record) if record is not None else None
+            if status is None:
+                rc = self._read_exit_sentinel(job_id)
+                status = status_from_exit_code(rc) if rc is not None else JobStatus.UNKNOWN
+            statuses[job_id] = status
+        return statuses
+
+    @staticmethod
+    def _active_state(active: dict[str, str], job_id: str) -> str | None:
+        """*job_id*'s state in *active* (see :meth:`_active_states`), or None.
+
+        A task id with no task entry falls back to its base id's entry (an
+        entry without a task list); a base id with only task entries takes
+        a running task's state if there is one.
+        """
+        if job_id in active:
+            return active[job_id]
+        base, _, task = job_id.partition(".")
+        if task:
+            return active.get(base)
+        task_states = [state for key, state in active.items() if key.startswith(f"{job_id}.")]
+        if not task_states:
+            return None
+        running = [s for s in task_states if state_to_status(s) is JobStatus.RUNNING]
+        return (running or task_states)[0]
 
     def get_exit_code(self, job_id: str) -> int | None:
         """Get exit code from qacct, falling back to the exit sentinel.
 
         The sentinel is used when accounting is unavailable, e.g. qacct no
-        longer returns finished jobs.
+        longer returns finished jobs. A guard-skipped job returns 113
+        (``HPC_EXIT_DEP_FAILED``).
         """
-        result = self._run(["qacct", "-j", job_id], check=False)
-        if result.returncode == 0:
-            info = parse_qacct_output(result.stdout)
-            exit_status = info.get("exit_status")
+        record = self._qacct(job_id)
+        if record is not None:
+            exit_status = record.get("exit_status")
             if exit_status is not None:
                 try:
                     return int(exit_status)

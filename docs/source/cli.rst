@@ -43,7 +43,8 @@ Options:
 - ``--stdout TEXT`` (stdout file path pattern)
 - ``--stderr TEXT`` (separate stderr file; default: merged)
 - ``--array TEXT`` (e.g. ``1-100``)
-- ``--depend TEXT`` (``ID``, or ``TYPE:ID[:ID...]``, e.g. ``afterok:123:124``)
+- ``--depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
+  e.g. ``afterok:123:124,afterany:125``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
 - ``--local`` (run as local subprocess)
 - ``--dry-run`` (print the mode and the rendered script, don’t submit)

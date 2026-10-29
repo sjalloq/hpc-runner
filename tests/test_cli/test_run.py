@@ -638,23 +638,18 @@ class TestDepend:
     def runner(self):
         return CliRunner()
 
-    def test_parse_type_and_ids(self):
+    def test_repeated_values_are_one_list(self):
         from hpc_runner.cli.run import _parse_depend
         from hpc_runner.core.dependency import Dependency, DependencyType
 
-        assert _parse_depend("afterok:1:2") == [
+        assert _parse_depend(("afterok:1:2", "afterany:3")) == [
             Dependency("1", DependencyType.AFTEROK),
             Dependency("2", DependencyType.AFTEROK),
+            Dependency("3", DependencyType.AFTERANY),
         ]
-        assert _parse_depend("afterany:7") == [Dependency("7", DependencyType.AFTERANY)]
+        assert _parse_depend(()) == []
 
-    def test_bare_id_is_afterok(self):
-        from hpc_runner.cli.run import _parse_depend
-        from hpc_runner.core.dependency import Dependency, DependencyType
-
-        assert _parse_depend("123") == [Dependency("123", DependencyType.AFTEROK)]
-
-    @pytest.mark.parametrize("text", ["bogus:1", "afterok:", "afterok:1,2", "1 2", "afterok::1"])
+    @pytest.mark.parametrize("text", ["bogus:1", "afterok:", "1 2", "afterok::1", "afterok"])
     def test_bad_depend_is_usage_error(self, runner, text):
         result = runner.invoke(
             cli, ["--scheduler", "local", "run", "--dry-run", "--batch", "--depend", text, "echo"]
@@ -662,8 +657,16 @@ class TestDepend:
         assert result.exit_code == 2, result.output
         assert "Invalid --depend" in result.output
 
-    def test_afterok_from_cli_is_guarded(self, runner, sge_dirs):
-        """B6: the CLI afterok goes through the same guard as the API."""
+    def test_unknown_type_lists_valid_ones(self, runner):
+        result = runner.invoke(
+            cli, ["--scheduler", "local", "run", "--dry-run", "--depend", "afterbogus:1", "echo"]
+        )
+        assert result.exit_code == 2
+        for name in ("afterok", "afterany", "after", "afternotok"):
+            assert name in result.output
+
+    def test_depend_repeatable_end_to_end(self, runner, sge_dirs):
+        """--depend afterok:1:2 --depend afterany:3: one hold, guards for 1 and 2 only."""
         result = runner.invoke(
             cli,
             [
@@ -674,12 +677,45 @@ class TestDepend:
                 "--batch",
                 "--depend",
                 "afterok:1:2",
+                "--depend",
+                "afterany:3",
                 "echo",
             ],
         )
         assert result.exit_code == 0, result.output
-        assert "#$ -hold_jid 1,2" in result.output
-        assert "for _dep in 1 2" in result.output
+        assert "#$ -hold_jid 1,2,3" in result.output
+        import re
+
+        guarded = re.findall(r"_hpc_dep_check_id (\w+) (\S+)\s", result.output)
+        assert guarded == [("afterok", "1"), ("afterok", "2")]
+
+    def test_after_is_refused_on_sge(self, runner, sge_dirs):
+        result = runner.invoke(
+            cli,
+            ["--scheduler", "sge", "run", "--dry-run", "--batch", "--depend", "after:1", "echo"],
+        )
+        from hpc_runner.core.exceptions import NotSupportedError
+
+        assert isinstance(result.exception, NotSupportedError)
+        assert "start-after" in str(result.exception)
+
+    def test_interactive_with_dependency_is_one_line_error(self, monkeypatch, sge_dirs):
+        """Without --batch, a dependency cannot be honoured: refuse, exit 1."""
+        import sys
+
+        from hpc_runner.cli import main as cli_main
+
+        monkeypatch.setattr(
+            sys, "argv", ["hpc", "--scheduler", "sge", "run", "--depend", "afterok:1", "cmd"]
+        )
+        runner = CliRunner()
+        with runner.isolation() as (out, err, _):
+            with pytest.raises(SystemExit) as info:
+                cli_main.main()
+        assert info.value.code == 1
+        assert err.getvalue().decode() == (
+            "error: interactive jobs cannot have dependencies; use --batch\n"
+        )
 
     def test_bad_array_is_usage_error(self, runner):
         result = runner.invoke(

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from hpc_runner.core.job_info import JobInfo
-from hpc_runner.core.result import JobStatus
+from hpc_runner.core.result import JobStatus, status_from_exit_code
 
 
 def parse_qstat_xml(xml_output: str) -> dict[str, Any]:
@@ -36,6 +36,48 @@ def parse_qstat_xml(xml_output: str) -> dict[str, Any]:
         pass
 
     return jobs
+
+
+def parse_qstat_xml_states(xml_output: str) -> dict[str, str]:
+    """Map every job and array task in ``qstat -xml`` output to its state code.
+
+    A non-array job is keyed by its id. An array job's entries carry a
+    ``tasks`` element (one task index when running, a range such as
+    ``5-10:1`` or a list ``1,3`` when pending); each task is keyed
+    ``<id>.<index>``. :func:`parse_qstat_xml` keeps one entry per id, which
+    is enough for listing but not for per-task status.
+    """
+    states: dict[str, str] = {}
+    try:
+        root = ET.fromstring(xml_output)
+    except ET.ParseError:
+        return states
+    _strip_namespaces(root)
+    for elem in root.iter("job_list"):
+        job_id = elem.findtext("JB_job_number")
+        state = elem.findtext("state") or ""
+        if not job_id:
+            continue
+        tasks = elem.findtext("tasks")
+        if tasks:
+            for index in _expand_task_list(tasks):
+                states[f"{job_id}.{index}"] = state
+        else:
+            states[job_id] = state
+    return states
+
+
+def _expand_task_list(text: str) -> list[int]:
+    """Expand an SGE task list (``4``, ``5-10:1``, ``1,3,7-9:2``) to indices."""
+    indices: list[int] = []
+    for part in text.split(","):
+        match = re.fullmatch(r"\s*(\d+)(?:-(\d+)(?::(\d+))?)?\s*", part)
+        if match is None:
+            continue
+        start, end, step = match.groups()
+        last = int(end) if end is not None else int(start)
+        indices.extend(range(int(start), last + 1, int(step) if step else 1))
+    return indices
 
 
 def _parse_job_element(elem: ET.Element) -> dict[str, Any] | None:
@@ -232,6 +274,41 @@ def parse_qacct_output(output: str) -> dict[str, Any]:
     return info
 
 
+# qacct ``failed`` code for "qmaster enforced h_rt, h_cpu, or h_vmem limit"
+# (accounting.5 / sge_status.5, SGE 8.1.9).
+QACCT_FAILED_LIMIT = 37
+
+
+def qacct_status(record: dict[str, Any]) -> JobStatus | None:
+    """The status of a finished job from its parsed qacct record.
+
+    ``failed`` 37 (qmaster enforced a time or memory limit) is TIMEOUT.
+    Otherwise ``exit_status`` decides via
+    :func:`~hpc_runner.core.result.status_from_exit_code` (113 is SKIPPED).
+    An execd ``h_rt`` kill is recorded as ``failed 100`` with
+    ``exit_status 137``, indistinguishable from any other signal death, so
+    it stays FAILED.
+
+    Returns:
+        The status, or None if the record has no usable exit status.
+    """
+    failed = _leading_int(record.get("failed"))
+    if failed == QACCT_FAILED_LIMIT:
+        return JobStatus.TIMEOUT
+    exit_code = _leading_int(record.get("exit_status"))
+    if exit_code is None:
+        return None
+    return status_from_exit_code(exit_code)
+
+
+def _leading_int(value: object) -> int | None:
+    """The integer at the start of a qacct value (``"37  : qmaster ..."`` -> 37)."""
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"\s*(\d+)", value)
+    return int(match.group(1)) if match else None
+
+
 def state_to_status(state: str) -> JobStatus:
     """Convert SGE state code to JobStatus.
 
@@ -344,7 +421,8 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     * ``jobnumber`` -> ``job_id``
     * ``jobname`` -> ``name``
     * ``owner`` -> ``user``
-    * ``exit_status`` -> ``exit_code`` / ``status``
+    * ``exit_status`` -> ``exit_code``; with ``failed``, ``status`` (see
+      :func:`qacct_status`)
     * ``qname`` -> ``queue``
     * ``hostname`` -> ``node``
     * ``slots`` -> ``cpu``
@@ -353,16 +431,8 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     * ``start_time`` -> ``start_time``
     * ``end_time`` -> ``end_time``
     """
-    exit_status_str = record.get("exit_status", "")
-    try:
-        exit_code = int(exit_status_str)
-    except (ValueError, TypeError):
-        exit_code = None
-
-    if exit_code is not None:
-        status = JobStatus.COMPLETED if exit_code == 0 else JobStatus.FAILED
-    else:
-        status = JobStatus.UNKNOWN
+    exit_code = _leading_int(record.get("exit_status"))
+    status = qacct_status(record) or JobStatus.UNKNOWN
 
     # CPU slots
     cpu: int | None = None

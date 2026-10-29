@@ -12,7 +12,7 @@ from types import EllipsisType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from hpc_runner.core.descriptors import SchedulerArg
-from hpc_runner.core.exceptions import ConfigError
+from hpc_runner.core.exceptions import ConfigError, NotSupportedError
 from hpc_runner.core.job import RENDER_ORDER
 from hpc_runner.schedulers import _subprocess
 from hpc_runner.templates import ShellWord
@@ -35,6 +35,16 @@ _SHELL_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
 MODULE_SYSTEMS = ("modules", "lmod", "")
 
 RenderContext = Literal["script", "path"]
+
+
+def refuse_interactive_dependencies(job: Job) -> None:
+    """Refuse an interactive job with dependencies rather than ignore them.
+
+    Raises:
+        NotSupportedError: *job* is interactive and has dependencies.
+    """
+    if job.interactive and job.dependencies:
+        raise NotSupportedError("interactive jobs cannot have dependencies; use --batch")
 
 
 class BaseScheduler(ABC):
@@ -261,8 +271,16 @@ class BaseScheduler(ABC):
         """Cancel a job."""
 
     @abstractmethod
+    def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
+        """The status of each job in *job_ids*, from one bulk query.
+
+        Ids may be array task ids (``<base>.<index>``); each reports its own
+        task's state. Every id in *job_ids* is a key of the result.
+        """
+
     def get_status(self, job_id: str) -> JobStatus:
-        """Get job status."""
+        """The status of one job (see :meth:`get_statuses`)."""
+        return self.get_statuses([job_id])[job_id]
 
     @abstractmethod
     def get_exit_code(self, job_id: str) -> int | None:

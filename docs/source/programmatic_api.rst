@@ -114,8 +114,9 @@ name auto-detects; with no ``config`` it calls ``load_config()`` afresh.
 Every scheduler has the same contract:
 ``submit(job, *, keep_script=False, verbose=False)``,
 ``preview(job, *, verbose=False)`` (``verbose`` shows module command output
-in the job instead of only on failure), ``cancel(job_id)``, ``get_status(job_id)``,
-``get_exit_code(job_id)`` and ``result(job_id)``.
+in the job instead of only on failure), ``cancel(job_id)``,
+``get_statuses(job_ids)`` (one bulk query, a dict of id to status),
+``get_status(job_id)``, ``get_exit_code(job_id)`` and ``result(job_id)``.
 
 Interactive or batch
 ^^^^^^^^^^^^^^^^^^^^
@@ -149,8 +150,22 @@ Monitoring jobs
    else:
        print("failed:", result.read_stderr(tail=50))
 
+``wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` blocks until
+the job reaches a terminal status (``COMPLETED``, ``FAILED``, ``CANCELLED``,
+``TIMEOUT`` or ``SKIPPED``; ``JobStatus.is_terminal``). If the scheduler
+reports ``UNKNOWN`` continuously for ``unknown_after`` seconds (for example
+the job has aged out of accounting), ``wait()`` returns ``UNKNOWN`` rather
+than polling forever; ``timeout`` raises ``TimeoutError``.
+``ArrayJobResult.wait()`` takes the same arguments, returns each task's
+status by index, and polls all tasks with one ``get_statuses`` call per
+tick; ``task_status(n)`` is that task's own status.
+
+``SKIPPED`` means the job did not run because a dependency was not
+satisfied (see below).
+
 Or wait and get the exit code in one call; a job that does not finish
-``COMPLETED`` raises ``JobFailedError``:
+``COMPLETED`` (including ``SKIPPED``) raises ``JobFailedError``, which
+carries the status:
 
 .. code-block:: python
 
@@ -233,8 +248,21 @@ call appends, with its own type (``AFTEROK`` by default):
    spec.after(other_result, type=DependencyType.AFTERANY)
    r2 = scheduler.submit(resolve(spec, config, host))
 
-On SGE, ``-hold_jid`` is afterany; afterok is emulated by an exit-code guard
-in the dependent's script.
+The types are ``AFTEROK``, ``AFTERANY``, ``AFTERNOTOK`` and ``AFTER``
+(start-after). Depending on an ``ArrayJobResult`` records the array's task
+indices, so the dependent waits on every task. ``parse_dependency_string``
+(in ``hpc_runner.core.dependency``) turns the command line's
+``TYPE:ID[:ID...][,TYPE:ID...]`` grammar (a bare ``ID`` is afterok) into the
+same ``Dependency`` list.
+
+On SGE, ``-hold_jid`` is afterany; afterok and afternotok are emulated by an
+exit-code guard in the dependent's script (``[schedulers.sge]
+emulate_afterok``), and ``AFTER`` raises ``NotSupportedError``. A dependent
+whose dependency is not satisfied exits with the reserved code 113 and
+reports ``JobStatus.SKIPPED``; ``returncode`` is 113. See :doc:`sge`.
+
+``Pipeline.wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` polls
+every step with one ``get_statuses`` call per tick.
 
 
 Pipelines (multi-step workflows)

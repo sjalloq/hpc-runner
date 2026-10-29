@@ -284,3 +284,9 @@ class TestWatch:
             result = runner.invoke(cli, ["status", "--watch"])
         assert result.exit_code == 0
         assert "not yet implemented" in result.output
+
+
+def test_skipped_has_a_style():
+    from hpc_runner.cli.status import _status_style
+
+    assert _status_style("SKIPPED") == "[magenta]SKIPPED[/magenta]"

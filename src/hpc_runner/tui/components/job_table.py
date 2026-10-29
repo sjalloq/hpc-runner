@@ -217,6 +217,7 @@ class JobTable(DataTable[str]):
             JobStatus.FAILED: "FAILED",
             JobStatus.CANCELLED: "CANCEL",
             JobStatus.TIMEOUT: "TIMEOUT",
+            JobStatus.SKIPPED: "SKIPPED",
             JobStatus.UNKNOWN: "UNKNOWN",
         }
         return status_map.get(status, str(status.name))
