@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,7 @@ class HPCConfig:
             Defaults merged with the matching type entry, or just
             defaults if *job_type* is not found.
         """
-        return self._get_job_config(job_type, namespace="types")
+        return _merge_layers(self.type_layers(job_type))
 
     def get_tool_config(self, command: str) -> dict[str, Any]:
         """Get configuration matching a command.
@@ -53,11 +54,25 @@ class HPCConfig:
         Extracts tool name from command, looks up base config, then checks
         for option-specific overrides by matching against command arguments.
         """
-        parts = command.split()
-        tool = Path(parts[0]).name
+        return _merge_layers(self.tool_layers(command))
 
-        # Start with defaults merged with base tool config.
-        config = self._get_job_config(tool, namespace="tools")
+    def type_layers(self, job_type: str) -> list[tuple[str, dict[str, Any]]]:
+        """The config layers for *job_type*, least specific first.
+
+        Each entry is ``(layer name, table)``: ``("defaults", ...)`` then
+        ``("types.<name>", ...)`` if that type exists.
+        """
+        return self._job_layers(job_type, namespace="types")
+
+    def tool_layers(self, command: str) -> list[tuple[str, dict[str, Any]]]:
+        """The config layers for *command*, least specific first.
+
+        ``defaults``, then ``tools.<tool>`` (the command's first word, path
+        stripped), then the first matching ``tools.<tool>.options.<key>``.
+        """
+        parts = command.split()
+        tool = Path(parts[0]).name if parts else ""
+        layers = self._job_layers(tool, namespace="tools")
 
         # Check for option specialisation.
         tool_section = self.tools.get(tool, {})
@@ -67,33 +82,20 @@ class HPCConfig:
             for option_key, option_config in options.items():
                 key_tokens = _normalise_tokens(option_key)
                 if _match_contiguous(cmd_tokens, key_tokens):
-                    config = _merge(config, option_config)
+                    layers.append((f"tools.{tool}.options.{option_key}", dict(option_config)))
                     break  # First match wins
 
-        return config
+        return layers
 
-    def _get_job_config(self, name: str, *, namespace: str = "tools") -> dict[str, Any]:
-        """Get merged configuration for a tool or type.
-
-        Args:
-            name: Tool or type name to look up.
-            namespace: Which config section to search — ``"tools"`` (default)
-                       or ``"types"``.
-
-        Returns:
-            Defaults merged with the matching tool/type entry, or just
-            defaults if *name* is not found in the requested namespace.
-        """
-        config = self.defaults.copy()
-
+    def _job_layers(self, name: str, *, namespace: str) -> list[tuple[str, dict[str, Any]]]:
+        layers: list[tuple[str, dict[str, Any]]] = [("defaults", dict(self.defaults))]
         section = self.types if namespace == "types" else self.tools
         if name in section:
             # Shallow copy to avoid mutating the original.
-            tool_config = section[name].copy()
-            tool_config.pop("options", None)  # Handled separately by get_tool_config
-            config = _merge(config, tool_config)
-
-        return config
+            entry = dict(section[name])
+            entry.pop("options", None)  # Handled separately by tool_layers
+            layers.append((f"{namespace}.{name}", entry))
+        return layers
 
     def get_scheduler_config(self, scheduler: str) -> dict[str, Any]:
         """Get scheduler-specific configuration."""
@@ -133,6 +135,14 @@ def _match_contiguous(haystack: list[str], needle: list[str]) -> bool:
     return False
 
 
+def _merge_layers(layers: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
+    """Merge config layers in order, later layers taking precedence."""
+    merged: dict[str, Any] = {}
+    for _, table in layers:
+        merged = _merge(merged, table)
+    return merged
+
+
 def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Deep merge with override taking precedence."""
     result = base.copy()
@@ -156,23 +166,25 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _expand_env_vars(path_str: str) -> str:
+def _expand_env_vars(path_str: str, env: Mapping[str, str] | None = None) -> str:
     """Expand environment variables in a path string.
 
-    Supports ${VAR} and $VAR syntax.
+    Supports ${VAR} and $VAR syntax. Variables are looked up in *env*
+    (default ``os.environ``); undefined ones are left as written.
     """
+    lookup: Mapping[str, str] = os.environ if env is None else env
 
     # Handle ${VAR} syntax
     def replace_braced(match: re.Match[str]) -> str:
         var_name = match.group(1)
-        return os.environ.get(var_name, match.group(0))
+        return lookup.get(var_name, match.group(0))
 
     result = re.sub(r"\$\{([^}]+)\}", replace_braced, path_str)
 
     # Handle $VAR syntax (word characters only)
     def replace_simple(match: re.Match[str]) -> str:
         var_name = match.group(1)
-        return os.environ.get(var_name, match.group(0))
+        return lookup.get(var_name, match.group(0))
 
     result = re.sub(r"\$([A-Za-z_][A-Za-z0-9_]*)", replace_simple, result)
 
@@ -363,22 +375,3 @@ def load_config(path: Path | str | None = None) -> HPCConfig:
     config._source_paths = config_files
 
     return config
-
-
-# Global config cache
-_cached_config: HPCConfig | None = None
-
-
-def get_config() -> HPCConfig:
-    """Get the global configuration (cached)."""
-    global _cached_config
-    if _cached_config is None:
-        _cached_config = load_config()
-    return _cached_config
-
-
-def reload_config(path: Path | str | None = None) -> HPCConfig:
-    """Reload configuration (clears cache)."""
-    global _cached_config
-    _cached_config = load_config(path)
-    return _cached_config

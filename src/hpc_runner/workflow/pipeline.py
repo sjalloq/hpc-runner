@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from hpc_runner.core.dependency import Dependency, DependencyType
 from hpc_runner.core.exceptions import (
     DependencyCycleError,
     DuplicateStepError,
@@ -14,19 +16,21 @@ from hpc_runner.core.exceptions import (
     PipelineError,
     UnknownStepError,
 )
-from hpc_runner.core.job import Job
-from hpc_runner.workflow.dependency import DependencyType
+from hpc_runner.core.host import Host
+from hpc_runner.core.resolve import resolve
+from hpc_runner.core.spec import JobSpec
 
 if TYPE_CHECKING:
+    from hpc_runner.core.config import HPCConfig
     from hpc_runner.core.result import JobResult
     from hpc_runner.schedulers.base import BaseScheduler
 
 
 @dataclass
 class PipelineJob:
-    """A job within a pipeline."""
+    """A job within a pipeline: the spec, resolved only at submit time."""
 
-    job: Job
+    spec: JobSpec
     name: str
     depends_on: list[PipelineJob] = field(default_factory=list)
     dependency_type: DependencyType = field(default=DependencyType.AFTEROK)
@@ -38,8 +42,8 @@ class Pipeline:
 
     Can be used as a context manager for automatic submission::
 
-        with Pipeline("build-test") as p:
-            build = p.add("make build", name="build", cpu=4)
+        with Pipeline("build-test", config=config) as p:
+            build = p.add(JobSpec("make build", cpu=4), name="build")
             test = p.add("make test", name="test", depends_on=["build"])
             package = p.add("make package", name="package", depends_on=["test"])
 
@@ -50,36 +54,44 @@ class Pipeline:
 
     Or used without a context manager for explicit control::
 
-        p = Pipeline("build-test")
-        p.add("make build", name="build", cpu=4)
+        p = Pipeline("build-test", config=config)
+        p.add(JobSpec("make build", cpu=4), name="build")
         results = p.submit(scheduler=my_scheduler)
+
+    Each step's spec is resolved against *config* and *host* (default:
+    ``Host.capture()`` at submit time) when the pipeline is submitted.
     """
 
-    def __init__(self, name: str = "pipeline", scheduler: BaseScheduler | None = None) -> None:
+    def __init__(
+        self,
+        name: str = "pipeline",
+        *,
+        config: HPCConfig,
+        scheduler: BaseScheduler | None = None,
+        host: Host | None = None,
+    ) -> None:
         self.name = name
+        self.config = config
         self.jobs: list[PipelineJob] = []
         self._name_map: dict[str, PipelineJob] = {}
         self._scheduler = scheduler
+        self._host = host
 
     def add(
         self,
-        command: str,
+        spec_or_command: JobSpec | str,
         name: str | None = None,
         depends_on: list[str | PipelineJob] | None = None,
         *,
-        job_type: str | None = None,
         dependency_type: DependencyType = DependencyType.AFTEROK,
-        **job_kwargs: Any,
     ) -> PipelineJob:
         """Add a job to the pipeline.
 
         Args:
-            command: Command to execute
-            name: Job name (auto-generated if None)
-            depends_on: List of job names or PipelineJob objects
-            job_type: Job type for config lookup (e.g., "gpu")
+            spec_or_command: The step's JobSpec, or a command string
+            name: Step name (auto-generated if None)
+            depends_on: List of step names or PipelineJob objects
             dependency_type: How this job depends on its parents
-            **job_kwargs: Additional Job parameter overrides
         """
         if name is None:
             name = f"step_{len(self.jobs) + 1}"
@@ -87,8 +99,7 @@ class Pipeline:
         if name in self._name_map:
             raise DuplicateStepError(f"Job name '{name}' already exists in pipeline")
 
-        job = Job(command, job_type=job_type, **job_kwargs)
-        job.name = f"{self.name}_{name}"
+        spec = JobSpec(spec_or_command) if isinstance(spec_or_command, str) else spec_or_command
 
         dependencies: list[PipelineJob] = []
         if depends_on:
@@ -101,7 +112,7 @@ class Pipeline:
                     dependencies.append(dep)
 
         pipeline_job = PipelineJob(
-            job=job,
+            spec=spec,
             name=name,
             depends_on=dependencies,
             dependency_type=dependency_type,
@@ -148,7 +159,8 @@ class Pipeline:
         if scheduler is None:
             scheduler = self._scheduler
         if scheduler is None:
-            scheduler = get_scheduler()
+            scheduler = get_scheduler(config=self.config)
+        host = self._host if self._host is not None else Host.capture()
 
         results: dict[str, JobResult] = {}
 
@@ -158,14 +170,23 @@ class Pipeline:
                 results[pjob.name] = pjob.result
                 continue
 
-            # Set up dependencies
-            if pjob.depends_on:
-                dep_results = [results[d.name] for d in pjob.depends_on]
-                pjob.job.dependencies = dep_results
-                pjob.job.dependency_type = str(pjob.dependency_type)
+            # Inject dependencies into a copy of the spec; resolve now.
+            dependencies = list(pjob.spec.dependencies)
+            for parent in pjob.depends_on:
+                parent_id = results[parent.name].job_id
+                if parent_id is None:
+                    raise PipelineError(
+                        f"step '{parent.name}' ran interactively and has no job id "
+                        f"for '{pjob.name}' to depend on"
+                    )
+                dependencies.append(Dependency(parent_id, pjob.dependency_type))
+            spec = dataclasses.replace(
+                pjob.spec, dependencies=dependencies, name=f"{self.name}_{pjob.name}"
+            )
+            job = resolve(spec, self.config, host)
 
             # Submit
-            result = scheduler.submit(pjob.job)
+            result = scheduler.submit(job)
             pjob.result = result
             results[pjob.name] = result
 

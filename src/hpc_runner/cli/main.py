@@ -84,11 +84,9 @@ def cli(ctx: Context, config: Path | None, scheduler: str | None, verbose: bool)
     ctx.verbose = verbose
     _configure_logging(verbose)
 
-    # Ensure the config cache reflects CLI selection / CWD discovery.
-    # Without this, --config would only affect `hpc config ...` commands.
-    from hpc_runner.core.config import reload_config
+    from hpc_runner.core.config import load_config
 
-    reload_config(config)
+    ctx.config = load_config(config)
 
 
 cli.add_command(run)

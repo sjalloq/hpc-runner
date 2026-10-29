@@ -55,53 +55,66 @@ hpc run -q gpu.q -l gpu=1 -- python train.py
 
 ### Python API
 
-```python
-from hpc_runner import Job
+A `JobSpec` holds what you asked for; `resolve()` applies config and returns
+a frozen `Job`; a scheduler submits it and returns a `JobResult` handle.
 
-# Create and submit a job
-job = Job(
-    command="python train.py",
-    cpu=4,
-    mem="16G",
-    time="4:00:00",
-    queue="gpu",
-)
-result = job.submit()
+```python
+from hpc_runner import Host, JobSpec, get_scheduler, load_config, resolve
+
+config = load_config()
+scheduler = get_scheduler(config=config)
+
+spec = JobSpec("python train.py", cpu=4, mem="16G", time="4:00:00", queue="gpu")
+job = resolve(spec, config, Host.capture())
+result = scheduler.submit(job)
 
 # Wait for completion
 status = result.wait()
 print(f"Exit code: {result.returncode}")
+```
 
-# Read output
-print(result.read_stdout())
+Jobs submitted from the API are batch unless `interactive=True` is set on the
+spec (or by the tool/type config). An interactive run has already finished
+when `submit()` returns: its `JobResult` has `job_id=None` and an `exit_code`.
+
+Reconnect to a job by id, without the original `Job`:
+
+```python
+result = scheduler.result("12345")
+print(result.status)
 ```
 
 ### Job Dependencies
 
 ```python
-from hpc_runner import Job
+from hpc_runner import DependencyType, Host, JobSpec, get_scheduler, load_config, resolve
+
+config = load_config()
+scheduler = get_scheduler(config=config)
+host = Host.capture()
 
 # First job
-preprocess = Job(command="python preprocess.py", cpu=8, mem="32G")
-result1 = preprocess.submit()
+prep = scheduler.submit(resolve(JobSpec("python preprocess.py", cpu=8, mem="32G"), config, host))
 
-# Second job runs after first succeeds
-train = Job(command="python train.py", cpu=4, mem="48G", queue="gpu")
-train.after(result1, type="afterok")
-result2 = train.submit()
+# Second job runs after the first succeeds (afterok is the default)
+train = JobSpec("python train.py", cpu=4, mem="48G", queue="gpu").after(prep)
+train_result = scheduler.submit(resolve(train, config, host))
+
+# Each after() call appends, with its own type
+report = JobSpec("python report.py").after(train_result, type=DependencyType.AFTERANY)
 ```
 
 ### Pipelines
 
 ```python
-from hpc_runner import Pipeline
+from hpc_runner import JobSpec, Pipeline, load_config
 
-with Pipeline("ml_workflow") as p:
-    p.add("python preprocess.py", name="preprocess", cpu=8)
-    p.add("python train.py", name="train", depends_on=["preprocess"], queue="gpu")
+with Pipeline("ml_workflow", config=load_config()) as p:
+    p.add(JobSpec("python preprocess.py", cpu=8), name="preprocess")
+    p.add(JobSpec("python train.py", queue="gpu"), name="train", depends_on=["preprocess"])
     p.add("python evaluate.py", name="evaluate", depends_on=["train"])
 
-# Auto-submitted when the with-block exits.
+# Auto-submitted when the with-block exits; each step's spec is resolved then.
 # Results are accessible on the pipeline object.
 for name, result in p.results.items():
     print(name, result.job_id, result.status)
@@ -152,7 +165,7 @@ purge_modules = true
 queue = "gpu"
 resources = [{name = "gpu", value = 1}]
 
-[types.interactive]
+[tools.xterm]
 queue = "interactive"
 time = "8:00:00"
 ```
@@ -187,9 +200,6 @@ parallel_environment = "smp"    # PE name for CPU slots (some sites use "mpi", "
 memory_resource = "mem_free"    # Memory resource name (common alternatives: "h_vmem", "virtual_free")
 time_resource = "h_rt"          # Time limit resource name (commonly "h_rt")
 
-# Output handling
-merge_output = true             # Merge stderr into stdout (-j y)
-
 # Module system
 purge_modules = true            # Run 'module purge' before loading job modules
 silent_modules = false          # Suppress module command output (-s flag)
@@ -197,15 +207,15 @@ module_init_script = ""         # Path to module init script (auto-detected if e
 
 # Environment
 expand_makeflags = true         # Expand $NSLOTS in MAKEFLAGS for parallel make
-unset_vars = []                 # Environment variables to unset in jobs
-                                # e.g. ["https_proxy", "http_proxy"]
 ```
+
+Output is merged (`-j y`) unless a job sets `stderr`. Variables to unset in
+the job are a job setting, `env_unset`, on `[defaults]`, a tool or a type.
 
 **Fully populated config example:**
 
 ```toml
 [defaults]
-scheduler = "auto"
 cpu = 1
 mem = "4G"
 time = "1:00:00"
@@ -219,16 +229,15 @@ modules_path_append = ["$HOME/modulefiles"]   # module use --append <path>, sear
 resources = [
   { name = "scratch", value = "20G" }
 ]
+env_unset = ["https_proxy", "http_proxy"]   # unset in the job script
 
 [schedulers.sge]
 parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
-merge_output = true
 purge_modules = true
 silent_modules = false
 expand_makeflags = true
-unset_vars = ["https_proxy", "http_proxy"]
 
 [tools.python]
 cpu = 4
@@ -242,7 +251,7 @@ resources = [
   { name = "tmpfs", value = "8G" }
 ]
 
-[types.interactive]
+[tools.xterm]
 queue = "interactive.q"
 time = "8:00:00"
 cpu = 2
@@ -291,11 +300,10 @@ Options:
   --ntasks INTEGER      Number of tasks (MPI jobs)
   --directory PATH      Working directory
   -t, --type TEXT       Job type from config
-  --extra-module TEXT   Extra module to load on top of config (repeatable)
   --stdout TEXT         Stdout file path pattern
   --stderr TEXT         Separate stderr file (default: merged)
   --array TEXT          Array spec (e.g., 1-100, 1-100%5)
-  --depend TEXT         Job dependencies
+  --depend TEXT         Job dependency: ID, or TYPE:ID[:ID...] (e.g. afterok:1:2)
   -b, --batch           Submit as a batch job (default: interactive via qrsh/srun)
   --local               Run locally (no scheduler)
   --dry-run             Show script without submitting

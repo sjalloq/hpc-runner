@@ -50,6 +50,13 @@ module load {{ mod }}{% if scheduler.silent_modules %} -s{% endif %}
 source {{ job.venv }}/bin/activate
 {% endif %}
 
+{% if job.env_unset %}
+# Unset environment variables
+{% for var in job.env_unset %}
+unset {{ var }}
+{% endfor %}
+{% endif %}
+
 {% if job.env_prepend %}
 # Prepend to environment variables
 {% for key, value in job.env_prepend.items() %}

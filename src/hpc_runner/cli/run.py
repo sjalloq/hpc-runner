@@ -8,8 +8,10 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from hpc_runner.cli._context import Context, pass_context
+from hpc_runner.core.result import ArrayJobResult, JobStatus
 
 if TYPE_CHECKING:
+    from hpc_runner.core.dependency import Dependency
     from hpc_runner.core.job import Job
     from hpc_runner.schedulers.base import BaseScheduler
 
@@ -51,13 +53,10 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
 @click.option("--ntasks", type=int, help="Number of tasks (MPI jobs)")
 @click.option("--directory", type=click.Path(exists=True), help="Working directory")
 @click.option("-t", "--type", "job_type", help="Job type from config")
-@click.option(
-    "--extra-module", "extra_modules", multiple=True, help="Extra modules to append to config"
-)
 @click.option("--stderr", help="Separate stderr file (default: merged)")
 @click.option("--stdout", "stdout", help="Stdout file path pattern")
 @click.option("--array", help="Array job specification (e.g., 1-100)")
-@click.option("--depend", help="Job dependency specification")
+@click.option("--depend", help="Job dependency: ID, or TYPE:ID[:ID...] (e.g. afterok:123:124)")
 @click.option(
     "-b",
     "--batch",
@@ -81,7 +80,6 @@ def run(
     ntasks: int | None,
     directory: str | None,
     job_type: str | None,
-    extra_modules: tuple[str, ...],
     stderr: str | None,
     stdout: str | None,
     array: str | None,
@@ -113,20 +111,21 @@ def run(
 
     Without ``--``, everything after hpc-runner options is the command.
     """
-    import shlex
-
-    from hpc_runner.core.job import Job
+    from hpc_runner.core.array import ArrayRange
+    from hpc_runner.core.host import Host
+    from hpc_runner.core.resolve import resolve
+    from hpc_runner.core.spec import JobSpec
     from hpc_runner.schedulers import get_scheduler
 
     # Split on '--': everything before is scheduler passthrough,
     # everything after is the command.  No '--' means all command.
-    scheduler_args, command_parts = _parse_args(args)
+    passthrough, command_parts = _parse_args(args)
 
     # Click forwards every option it does not know (ignore_unknown_options), so
     # a mistyped hpc-runner option would otherwise reach the scheduler, or be
     # submitted as the start of the command. Long options are always ours;
     # single-dash flags belong to the scheduler and must precede `--`.
-    unknown_long = [a for a in scheduler_args if a.startswith("--")]
+    unknown_long = [a for a in passthrough if a.startswith("--")]
     if unknown_long:
         raise click.UsageError(
             f"No such option: {unknown_long[0]} (long options are hpc-runner's own; "
@@ -139,18 +138,22 @@ def run(
             f"No such option: {command_parts[0]}. Scheduler flags must come before '--', "
             "e.g. hpc run -q batch.q -- make sim"
         )
-
-    # Use shlex.join to preserve quoting for args with spaces/special chars
-    cmd_str = shlex.join(command_parts)
+    if array is not None:
+        try:
+            ArrayRange.parse(array)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--array") from exc
+    dependencies = _parse_depend(depend) if depend else []
 
     # Get scheduler
     scheduler_name = "local" if local else ctx.scheduler
-    scheduler = get_scheduler(scheduler_name)
+    scheduler = get_scheduler(scheduler_name, config=ctx.config)
 
-    # Create job — Job() auto-consults TOML config hierarchy
-    job = Job(
-        command=cmd_str,
-        job_type=job_type,
+    # Array jobs can only be batch; everything else is interactive unless
+    # --batch was given.
+    spec = JobSpec(
+        command_parts,  # joined with shlex.join, preserving quoting
+        type=job_type,
         name=job_name,
         cpu=cpu,
         mem=mem,
@@ -159,65 +162,97 @@ def run(
         nodes=nodes,
         tasks=ntasks,
         workdir=directory,
-        extra_modules=list(extra_modules) if extra_modules else None,
         stderr=stderr,
         stdout=stdout,
-        dependency=depend,
-        raw_args=scheduler_args or None,
+        array=array,
+        dependencies=dependencies,
+        scheduler_args={scheduler.name: passthrough} if passthrough else None,
+        interactive=not batch and not array,
     )
-
-    # Array jobs can only be batch; everything else is interactive unless
-    # --batch was given.
-    interactive = not batch and not array
-
-    # Handle array jobs
-    if array:
-        _handle_array_job(job, array, scheduler, dry_run, ctx.verbose)
-        return
+    job = resolve(spec, ctx.config, Host.capture())
 
     if dry_run:
-        _show_dry_run(job, scheduler, interactive=interactive)
+        _show_dry_run(job, scheduler)
         return
 
     # Submit the job
-    result = scheduler.submit(job, interactive=interactive, keep_script=keep_script)
+    result = scheduler.submit(job, keep_script=keep_script)
 
-    if interactive:
-        if result.returncode == 0:
+    if job.interactive:
+        if result.exit_code == 0:
             console.print("[green]Job completed successfully[/green]")
         else:
-            console.print(f"[red]Job failed with exit code: {result.returncode}[/red]")
+            console.print(f"[red]Job failed with exit code: {result.exit_code}[/red]")
+        return
+
+    if isinstance(result, ArrayJobResult):
+        console.print(f"Submitted array job [bold cyan]{result.job_id}[/bold cyan]")
+        console.print(f"  Tasks: {result.array.count} ({result.array.range_str})")
     else:
         console.print(f"Submitted job [bold cyan]{result.job_id}[/bold cyan]")
 
-        if ctx.verbose:
-            console.print(f"  Scheduler: {scheduler.name}")
-            console.print(f"  Job name: {job.name}")
-            console.print(f"  Command: {job.command}")
-            if job.raw_args:
-                console.print(f"  Passthrough args: {' '.join(job.raw_args)}")
+    if ctx.verbose:
+        console.print(f"  Scheduler: {scheduler.name}")
+        console.print(f"  Job name: {job.name}")
+        console.print(f"  Command: {job.command}")
+        if passthrough:
+            console.print(f"  Passthrough args: {' '.join(passthrough)}")
 
-        if wait:
-            console.print("[dim]Waiting for job completion...[/dim]")
+    if wait:
+        console.print("[dim]Waiting for job completion...[/dim]")
+        if isinstance(result, ArrayJobResult):
+            task_statuses = result.wait()
+            failed = sum(1 for st in task_statuses.values() if st is not JobStatus.COMPLETED)
+            console.print(f"Array job completed: {len(task_statuses) - failed} ok, {failed} not ok")
+        else:
             final_status = result.wait()
             console.print(f"Job completed with status: [bold]{final_status.name}[/bold]")
 
 
-def _show_dry_run(
-    job: "Job",
-    scheduler: "BaseScheduler",
-    interactive: bool = False,
-) -> None:
+def _parse_depend(text: str) -> list["Dependency"]:
+    """Parse ``--depend``: ``ID`` (afterok) or ``TYPE:ID[:ID...]``.
+
+    Raises:
+        click.UsageError: Anything else.
+    """
+    from hpc_runner.core.dependency import Dependency, DependencyType
+
+    def bad(reason: str) -> click.UsageError:
+        return click.UsageError(
+            f"Invalid --depend {text!r}: {reason}. Expected ID or TYPE:ID[:ID...], "
+            f"TYPE one of {', '.join(t.value for t in DependencyType)}"
+        )
+
+    if not text or any(c.isspace() or c == "," for c in text):
+        raise bad("unexpected separator")
+    parts = text.split(":")
+    if len(parts) == 1:
+        return [Dependency(parts[0], DependencyType.AFTEROK)]
+    try:
+        dep_type = DependencyType(parts[0])
+    except ValueError:
+        raise bad(f"unknown dependency type {parts[0]!r}") from None
+    ids = parts[1:]
+    if not all(ids):
+        raise bad("empty job id")
+    return [Dependency(job_id, dep_type) for job_id in ids]
+
+
+def _show_dry_run(job: "Job", scheduler: "BaseScheduler") -> None:
     """Display what would be submitted."""
-    mode = "interactive" if interactive else "batch"
+    script = scheduler.preview(job)  # raises before printing if unsupported
+    mode = "interactive" if job.interactive else "batch"
     lines = [
         f"[bold]Scheduler:[/bold] {scheduler.name}",
         f"[bold]Mode:[/bold] {mode}",
         f"[bold]Job name:[/bold] {job.name}",
         f"[bold]Command:[/bold] {job.command}",
     ]
-    if job.raw_args:
-        lines.append(f"[bold]Scheduler passthrough:[/bold] {' '.join(job.raw_args)}")
+    if job.array is not None:
+        lines.append(f"[bold]Array job:[/bold] {job.array.range_str} ({job.array.count} tasks)")
+    passthrough = job.scheduler_args.get(scheduler.name, ())
+    if passthrough:
+        lines.append(f"[bold]Scheduler passthrough:[/bold] {' '.join(passthrough)}")
     console.print(
         Panel.fit(
             "\n".join(lines),
@@ -227,47 +262,5 @@ def _show_dry_run(
     )
 
     console.print("\n[bold]Generated script:[/bold]")
-    if interactive:
-        script = scheduler.generate_interactive_script(job, "/tmp/example_script.sh")
-    else:
-        script = scheduler.generate_script(job)
     syntax = Syntax(script, "bash", theme="monokai", line_numbers=True)
     console.print(syntax)
-
-
-def _handle_array_job(
-    job: "Job",
-    array_spec: str,
-    scheduler: "BaseScheduler",
-    dry_run: bool,
-    verbose: bool,
-) -> None:
-    """Handle array job submission."""
-    from hpc_runner.core.job_array import JobArray
-
-    # Parse array spec (e.g., "1-100", "1-100:10", "1-100%5")
-    # Basic parsing - could be enhanced
-    parts = array_spec.replace("%", ":").split(":")
-    range_parts = parts[0].split("-")
-
-    start = int(range_parts[0])
-    end = int(range_parts[1]) if len(range_parts) > 1 else start
-    step = int(parts[1]) if len(parts) > 1 else 1
-    max_concurrent = int(parts[2]) if len(parts) > 2 else None
-
-    array_job = JobArray(
-        job=job,
-        start=start,
-        end=end,
-        step=step,
-        max_concurrent=max_concurrent,
-    )
-
-    if dry_run:
-        console.print(f"[bold]Array job:[/bold] {array_job.range_str} ({array_job.count} tasks)")
-        _show_dry_run(job, scheduler)
-        return
-
-    result = array_job.submit(scheduler)
-    console.print(f"Submitted array job [bold cyan]{result.base_job_id}[/bold cyan]")
-    console.print(f"  Tasks: {array_job.count} ({array_job.range_str})")

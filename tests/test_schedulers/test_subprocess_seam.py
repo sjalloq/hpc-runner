@@ -13,12 +13,11 @@ from hpc_runner.core.exceptions import (
     SchedulerUnavailableError,
     SubmissionError,
 )
-from hpc_runner.core.job import Job
-from hpc_runner.core.job_array import JobArray
+from hpc_runner.core.config import HPCConfig
 from hpc_runner.schedulers import get_scheduler
 from hpc_runner.schedulers._subprocess import run_command
 from hpc_runner.schedulers.sge import SGEScheduler
-from tests.fakes import patch_seam
+from tests.fakes import make_job, patch_seam
 
 PY = sys.executable
 
@@ -69,7 +68,7 @@ class TestRunCommand:
 def sge(monkeypatch, tmp_path):
     monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
     monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
-    return SGEScheduler()
+    return SGEScheduler(HPCConfig())
 
 
 class TestSGEErrors:
@@ -78,7 +77,7 @@ class TestSGEErrors:
     def test_qsub_rejection_is_submission_error(self, sge):
         with patch_seam(lambda argv: (1, "", QSUB_REJECT)):
             with pytest.raises(SubmissionError) as info:
-                sge.submit(Job(command="echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j"))
         exc = info.value
         assert str(exc).startswith("Unable to run job: Job was rejected")
         assert exc.stderr == QSUB_REJECT
@@ -88,14 +87,14 @@ class TestSGEErrors:
     def test_unparseable_qsub_output(self, sge):
         with patch_seam(lambda argv: (0, "something odd\n", "")):
             with pytest.raises(SubmissionError, match="could not parse job id") as info:
-                sge.submit(Job(command="echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j"))
         assert info.value.script is not None
 
     def test_array_qsub_rejection(self, sge):
-        array = JobArray(job=Job(command="echo hi", name="j"), start=1, end=3)
+        job = make_job("echo hi", name="j", array="1-3")
         with patch_seam(lambda argv: (1, "", QSUB_REJECT)):
             with pytest.raises(SubmissionError) as info:
-                sge.submit_array(array)
+                sge.submit(job)
         assert info.value.script is not None
 
     def test_missing_qsub(self, sge):
@@ -104,7 +103,7 @@ class TestSGEErrors:
 
         with patch_seam(respond):
             with pytest.raises(SchedulerUnavailableError):
-                sge.submit(Job(command="echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j"))
 
     def test_qsub_timeout(self, sge):
         def respond(argv):
@@ -112,7 +111,7 @@ class TestSGEErrors:
 
         with patch_seam(respond):
             with pytest.raises(SchedulerTimeoutError):
-                sge.submit(Job(command="echo hi", name="j"))
+                sge.submit(make_job("echo hi", name="j"))
 
     def test_query_commands_get_default_timeout(self, sge):
         with patch_seam(lambda argv: (0, "", "")) as mock:
@@ -159,4 +158,4 @@ class TestSGEErrors:
 
 def test_unknown_scheduler_is_config_error():
     with pytest.raises(ConfigError, match="unknown scheduler 'nope'; available: .*sge"):
-        get_scheduler("nope")
+        get_scheduler("nope", config=HPCConfig())

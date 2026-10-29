@@ -20,68 +20,114 @@ Quick start
 
 .. code-block:: python
 
-   from hpc_runner import Job
+   from hpc_runner import Host, JobSpec, get_scheduler, load_config, resolve
 
-   job = Job(command="python my_script.py", cpu=4, mem="8G", time="1:00:00")
-   result = job.submit()          # auto-detect scheduler
-   final = result.wait()          # block until complete
-   print(final, result.returncode)
+   config = load_config()
+   scheduler = get_scheduler(config=config)
+   job = resolve(JobSpec("python train.py", cpu=4, mem="16G"), config, Host.capture())
+   result = scheduler.submit(job)
+   print(result.wait(), result.returncode)
 
 
-Creating jobs
--------------
+The three stages
+----------------
 
-``Job`` is the core unit of work. It’s a scheduler-agnostic data container; a
-scheduler implementation is responsible for translating fields into submission
-flags/directives.
+A job goes through three values, each with one job:
+
+``JobSpec``
+   Exactly what you asked for. A plain, mutable dataclass; ``None`` means
+   "not specified". It reads no config and no environment.
+
+``resolve(spec, config, host) -> Job``
+   The only place merge rules live. For every field the spec wins, then the
+   config layer, then the package default. ``config`` and ``host`` are
+   always explicit: ``host`` carries the submit-side facts (environment,
+   working directory, user) so the result does not depend on hidden process
+   state.
+
+``Job``
+   The resolved job: frozen, fully defaulted, ready for a scheduler to
+   render. ``job.provenance`` records which layer supplied each value
+   (``"spec"``, ``"tools.<name>"``, ``"types.<name>"``, ``"defaults"``,
+   ``"package"`` or ``"host"``).
 
 .. code-block:: python
 
-   from hpc_runner import Job
+   from hpc_runner import Host, JobSpec, load_config, resolve
 
-   job = Job(
-       command="python train.py",
+   spec = JobSpec(
+       "python train.py",
        name="training_job",
        cpu=4,
        mem="16G",
        time="4:00:00",
        queue="gpu.q",
+       project="ml",
        modules=["python/3.11", "cuda/12.0"],
        workdir="/path/to/project",
        stdout="train.out",
-       stderr=None,   # None means “merge stderr into stdout” for most schedulers
+       stderr=None,   # None means "merge stderr into stdout"
    )
+   job = resolve(spec, load_config(), Host.capture())
+   print(job.cpu, job.provenance["cpu"])   # 4 spec
+
+A list command is shell-quoted: ``JobSpec(["bash", "-c", "echo hi there"])``
+runs ``bash -c 'echo hi there'``. A string command is used as written.
+
+``venv`` has three states: ``None`` (default) captures ``$VIRTUAL_ENV`` from
+the host, a path uses that venv, ``False`` uses none.
+
+Raw scheduler flags with no hpc-runner equivalent go in ``scheduler_args``,
+keyed by scheduler; only the active scheduler's list is used:
+
+.. code-block:: python
+
+   JobSpec("python train.py", scheduler_args={"sge": ["-l", "gpu=2"]})
 
 
 Submitting jobs
 ---------------
 
-Submit to an auto-detected scheduler:
-
-.. code-block:: python
-
-   result = job.submit()
-
-Or explicitly select a scheduler:
+Schedulers take their configuration explicitly. ``get_scheduler()`` with no
+name auto-detects; with no ``config`` it calls ``load_config()`` afresh.
 
 .. code-block:: python
 
    from hpc_runner import get_scheduler
 
-   scheduler = get_scheduler("sge")
+   scheduler = get_scheduler("sge", config=config)
    result = scheduler.submit(job)
+
+   # The script submit() would write, for review or tests:
+   print(scheduler.preview(job))
+
+Every scheduler has the same contract: ``submit(job, *, keep_script=False)``,
+``preview(job)``, ``cancel(job_id)``, ``get_status(job_id)``,
+``get_exit_code(job_id)`` and ``result(job_id)``.
+
+Interactive or batch
+^^^^^^^^^^^^^^^^^^^^
+
+``interactive`` is a job attribute. From the API it defaults to ``False``
+(batch: submit and return); a tool or type may set ``interactive = true`` in
+config, and the spec wins over config. An interactive job runs attached
+(``qrsh`` on SGE) and ``submit()`` returns once it has finished, with a
+``JobResult`` whose ``job_id`` is ``None`` and whose ``exit_code`` is set.
+
+.. code-block:: python
+
+   result = scheduler.submit(resolve(JobSpec("make sim", interactive=True), config, host))
+   print(result.exit_code)
 
 
 Monitoring jobs
 ---------------
 
-``Job.submit()`` returns a ``JobResult`` which can be polled or waited on.
+``submit()`` returns a ``JobResult`` handle which can be polled or waited on.
 
 .. code-block:: python
 
-   from hpc_runner import Job, JobStatus
-
-   result = Job("python train.py").submit()
+   from hpc_runner import JobStatus
 
    while not result.is_complete:
        print(result.job_id, result.status)
@@ -104,16 +150,23 @@ Cancel a job:
 
    result.cancel()
 
+Reconnect to a job by id, without the ``Job`` that created it (``job`` is
+``None`` on the handle):
+
+.. code-block:: python
+
+   result = scheduler.result("12345")
+   print(result.status)
+
 
 Configuration-driven jobs
 -------------------------
 
-``Job()`` is config-aware by default.  It auto-consults the TOML config
-hierarchy, merging ``[defaults]`` with a matched ``[tools.<name>]`` or
-``[types.<name>]`` section, then applies any explicit keyword arguments you
-pass.  The tool name is auto-detected from the command (first word, path
-stripped).  Use the ``job_type`` keyword to look up a ``[types.*]`` entry
-instead (this skips tool auto-detection).
+``resolve()`` merges ``[defaults]`` with a matched ``[tools.<name>]`` or
+``[types.<name>]`` section, then applies whatever the spec sets. The tool name
+is auto-detected from the command (first word, path stripped). Set ``type`` on
+the spec to look up a ``[types.*]`` entry instead (this skips tool
+auto-detection).
 
 If the tool has ``[tools.<name>.options]`` entries defined in the config, the
 **full command string** (not just the first word) is used to match
@@ -122,56 +175,64 @@ matching rules.
 
 .. code-block:: python
 
-   from hpc_runner import Job, reload_config
+   from hpc_runner import Host, JobSpec, load_config, resolve
 
-   # Explicitly load a config file for this process (optional)
-   reload_config("./hpc-runner.toml")
+   config = load_config("./hpc-runner.toml")
+   host = Host.capture()
 
-   # Auto-detects "python" from command → looks up [tools.python]
-   job = Job("python train.py", cpu=8)
+   # Auto-detects "python" from command -> looks up [tools.python]
+   job = resolve(JobSpec("python train.py", cpu=8), config, host)
 
    # Look up [types.gpu], merge with [defaults], override cpu
-   job = Job("python train.py", job_type="gpu", cpu=8)
+   job = resolve(JobSpec("python train.py", type="gpu", cpu=8), config, host)
 
-   # No matching tool — just [defaults]
-   job = Job("echo hello")
+   # No matching tool -- just [defaults]
+   job = resolve(JobSpec("echo hello"), config, host)
 
    # With [tools.fusesoc.options."--tool slang"] in config, the command
    # arguments trigger option-specific overrides automatically:
-   job = Job("fusesoc run --tool slang core:v:n")
+   job = resolve(JobSpec("fusesoc run --tool slang core:v:n"), config, host)
 
-   result = job.submit()
+A list set on the spec (``modules``, ``modules_path``, ...) replaces the
+config's list.
 
 
 Job dependencies
 ----------------
 
-At the low level, you can chain jobs by attaching a dependency to a new job:
+``JobSpec.after()`` records a dependency on a submitted job's result. Each
+call appends, with its own type (``AFTEROK`` by default):
 
 .. code-block:: python
 
-   from hpc_runner import Job
+   from hpc_runner import DependencyType, JobSpec
 
-   r1 = Job("python preprocess.py", name="pre").submit()
-   j2 = Job("python train.py", name="train")
-   j2.dependencies = [r1]     # programmatic dependency
-   j2.dependency_type = "afterok"
-   r2 = j2.submit()
+   r1 = scheduler.submit(resolve(JobSpec("python preprocess.py", name="pre"), config, host))
+   spec = JobSpec("python train.py", name="train").after(r1)
+   spec.after(other_result, type=DependencyType.AFTERANY)
+   r2 = scheduler.submit(resolve(spec, config, host))
+
+On SGE, ``-hold_jid`` is afterany; afterok is emulated by an exit-code guard
+in the dependent's script.
 
 
 Pipelines (multi-step workflows)
 --------------------------------
 
 For larger workflows, use ``Pipeline`` to define steps and dependencies by
-name.  When used as a context manager, the pipeline auto-submits on exit and
-results are available via the ``results`` property.
+name. Each step is a ``JobSpec`` (or a command string), resolved against the
+pipeline's ``config`` when the pipeline is submitted. When used as a context
+manager, the pipeline auto-submits on exit and results are available via the
+``results`` property.
 
 .. code-block:: python
 
-   from hpc_runner import Pipeline
+   from hpc_runner import JobSpec, Pipeline, load_config
 
-   with Pipeline("ml") as p:
-       p.add("python preprocess.py", name="preprocess", cpu=8, mem="32G")
+   config = load_config()
+
+   with Pipeline("ml", config=config) as p:
+       p.add(JobSpec("python preprocess.py", cpu=8, mem="32G"), name="preprocess")
        p.add("python train.py", name="train", depends_on=["preprocess"])
        p.add("python evaluate.py", name="evaluate", depends_on=["train"])
 
@@ -186,39 +247,41 @@ Without a context manager, call ``submit()`` explicitly:
 
 .. code-block:: python
 
-   p = Pipeline("ml")
+   p = Pipeline("ml", config=config)
    p.add("make build", name="build")
    p.add("make test", name="test", depends_on=["build"])
 
    results = p.submit()          # must call manually
    p.wait()
 
+Each step's job name is ``<pipeline>_<step>``. The host defaults to
+``Host.capture()`` at submit time; pass ``host=`` to fix it.
+
 Config-aware pipeline jobs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``Pipeline.add()`` creates jobs through ``Job()``, so every step picks up
-``[defaults]`` automatically and the tool is auto-detected from the command.
-Use the ``job_type`` keyword to pull in ``[types.*]`` config instead:
+Every step picks up ``[defaults]`` and the tool auto-detected from its
+command. Set ``type`` on the spec to pull in ``[types.*]`` config instead:
 
 .. code-block:: python
 
-   with Pipeline("ml") as p:
-       # Auto-detects "python" → picks up [tools.python] config
+   with Pipeline("ml", config=config) as p:
+       # Auto-detects "python" -> picks up [tools.python] config
        p.add("python preprocess.py", name="preprocess")
 
        # Picks up [types.gpu] config (queue, resources, etc.)
-       p.add("python train.py", name="train",
-             depends_on=["preprocess"], job_type="gpu")
+       p.add(JobSpec("python train.py", type="gpu"), name="train",
+             depends_on=["preprocess"])
 
-       # Only [defaults] — no matching tool or type
+       # Only [defaults] -- no matching tool or type
        p.add("echo done", name="notify", depends_on=["train"])
 
-Keyword arguments override whatever comes from config:
+Spec fields override whatever comes from config:
 
 .. code-block:: python
 
    # [types.gpu] sets cpu=8, but we want 16 for this step
-   p.add("python big_train.py", name="train", job_type="gpu", cpu=16)
+   p.add(JobSpec("python big_train.py", type="gpu", cpu=16), name="train")
 
 Per-job dependency types
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -230,7 +293,7 @@ succeed).  You can set a different dependency type per step:
 
    from hpc_runner import DependencyType, Pipeline
 
-   with Pipeline("robust") as p:
+   with Pipeline("robust", config=config) as p:
        p.add("python train.py", name="train")
 
        # Only runs if train succeeds
@@ -255,16 +318,16 @@ construction:
 
    from hpc_runner import Pipeline, get_scheduler
 
-   sge = get_scheduler("sge")
+   sge = get_scheduler("sge", config=config)
 
-   with Pipeline("build", scheduler=sge) as p:
+   with Pipeline("build", config=config, scheduler=sge) as p:
        p.add("make build", name="build")
 
 Or pass it to ``submit()`` directly:
 
 .. code-block:: python
 
-   p = Pipeline("build")
+   p = Pipeline("build", config=config)
    p.add("make build", name="build")
    p.submit(scheduler=sge)
 
@@ -279,7 +342,7 @@ remaining jobs:
 
    from hpc_runner import SchedulerError
 
-   p = Pipeline("etl")
+   p = Pipeline("etl", config=config)
    p.add("python extract.py", name="extract")
    p.add("python transform.py", name="transform", depends_on=["extract"])
    p.add("python load.py", name="load", depends_on=["transform"])
@@ -287,25 +350,27 @@ remaining jobs:
    try:
        p.submit()
    except SchedulerError:
-       # extract submitted, transform failed — fix the issue, then:
+       # extract submitted, transform failed -- fix the issue, then:
        p.submit()   # skips extract, retries transform and load
 
 
 Array jobs
 ----------
 
-Use ``JobArray`` when you want a scheduler array job (SGE: ``qsub -t``):
+Set ``array`` on the spec for a scheduler array job (SGE: ``qsub -t``). The
+range is ``START-END[:STEP][%MAX_CONCURRENT]``. Array jobs are always batch;
+``submit()`` returns an ``ArrayJobResult`` whose ``job_id`` is the base id:
 
 .. code-block:: python
 
-   from hpc_runner import Job, JobArray
+   spec = JobSpec("python work.py", name="work", cpu=2, time="0:30:00", array="1-100%10")
+   array_result = scheduler.submit(resolve(spec, config, host))
 
-   base = Job("python work.py", name="work", cpu=2, time="0:30:00")
-   array = JobArray(job=base, start=1, end=100, max_concurrent=10)
-   array_result = array.submit()
-
-   statuses = array_result.wait()
+   statuses = array_result.wait()          # {task index: JobStatus}
    print("completed:", sum(1 for s in statuses.values() if s.name == "COMPLETED"))
+
+The local scheduler supports neither arrays nor dependencies and raises
+``NotSupportedError`` rather than running something different.
 
 
 Errors
@@ -336,10 +401,10 @@ else is a bug. All classes are importable from ``hpc_runner``.
 
 .. code-block:: python
 
-   from hpc_runner import Job, SubmissionError
+   from hpc_runner import SubmissionError
 
    try:
-       Job("python train.py", queue="gpu.q").submit()
+       scheduler.submit(resolve(JobSpec("python train.py", queue="gpu.q"), config, host))
    except SubmissionError as e:
        print("rejected:", e)        # first line of the scheduler's stderr
        print(e.stderr)              # full stderr

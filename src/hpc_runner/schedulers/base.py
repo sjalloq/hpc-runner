@@ -10,15 +10,16 @@ from types import EllipsisType
 from typing import TYPE_CHECKING, Any
 
 from hpc_runner.core.descriptors import SchedulerArg
+from hpc_runner.core.job import RENDER_ORDER
 from hpc_runner.schedulers import _subprocess
 
 if TYPE_CHECKING:
     import subprocess
 
+    from hpc_runner.core.config import HPCConfig
     from hpc_runner.core.job import Job
-    from hpc_runner.core.job_array import JobArray
     from hpc_runner.core.job_info import JobInfo
-    from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
+    from hpc_runner.core.result import JobResult, JobStatus
 
 
 class BaseScheduler(ABC):
@@ -26,15 +27,13 @@ class BaseScheduler(ABC):
 
     Subclasses must:
     1. Define `name` class attribute
-    2. Populate `ARG_RENDERERS` dict mapping Job attribute names to SchedulerArg instances
-    3. Implement abstract methods for job submission and management
+    2. Populate `ARG_RENDERERS` mapping Job attribute names to SchedulerArg instances
+    3. Implement the abstract methods below
 
-    The rendering protocol:
-    - `render_directives(job)` - Returns list of script directives
-    - `render_args(job)` - Returns list of command-line arguments
-
-    Both methods iterate over job.iter_attributes() and use ARG_RENDERERS
-    to convert values to scheduler-specific syntax.
+    The contract is one shape for every scheduler: ``submit(job)`` reads
+    ``job.interactive`` and ``job.array`` itself; ``preview(job)`` returns the
+    script ``submit`` would write. ``render_directives(job)`` walks
+    ``RENDER_ORDER`` and uses ``ARG_RENDERERS`` to produce script directives.
     """
 
     name: str = ""
@@ -44,6 +43,9 @@ class BaseScheduler(ABC):
 
     # Default timeout (seconds) for query and submit commands.
     COMMAND_TIMEOUT: float = 60.0
+
+    def __init__(self, config: HPCConfig) -> None:
+        self.config = config
 
     # =========================================================================
     # Subprocess seam
@@ -78,68 +80,68 @@ class BaseScheduler(ABC):
     def render_directives(self, job: Job) -> list[str]:
         """Render job attributes as script directives.
 
-        Iterates over job's renderable attributes and uses ARG_RENDERERS
-        to convert each to the appropriate directive format.
-
-        Args:
-            job: The job to render
+        Walks ``RENDER_ORDER``, skipping unset (None) attributes, and uses
+        ARG_RENDERERS to convert each to the scheduler's directive format.
+        A renderer returns None for a value it does not render (e.g. False
+        for ``use_cwd``/``inherit_env``, an explicit opt-out).
 
         Returns:
             List of directive strings (e.g., ['#$ -N jobname', '#$ -pe smp 4'])
         """
         directives: list[str] = []
-
-        for attr_name, value in job.iter_attributes():
+        for attr_name in RENDER_ORDER:
+            value = getattr(job, attr_name)
+            if value is None:
+                continue
             renderer = self.ARG_RENDERERS.get(attr_name)
             if renderer is None:
                 continue
-
             directive = renderer.to_directive(value)
             if directive is not None:
                 directives.append(directive)
-
         return directives
 
-    def render_args(self, job: Job) -> list[str]:
-        """Render job attributes as command-line arguments.
+    def _render_interactive_args(self, job: Job) -> list[str]:
+        """Render job attributes as interactive command-line arguments.
 
-        Iterates over job's renderable attributes and uses ARG_RENDERERS
-        to convert each to command-line argument format.
-
-        Args:
-            job: The job to render
-
-        Returns:
-            List of argument strings (e.g., ['-N', 'jobname', '-pe', 'smp', '4'])
+        Like :meth:`render_directives` but produces argv for the scheduler's
+        interactive command, skipping renderers declared
+        ``interactive_ok=False``.
         """
         args: list[str] = []
-
-        for attr_name, value in job.iter_attributes():
-            renderer = self.ARG_RENDERERS.get(attr_name)
-            if renderer is None:
+        for attr_name in RENDER_ORDER:
+            value = getattr(job, attr_name)
+            if value is None:
                 continue
-
+            renderer = self.ARG_RENDERERS.get(attr_name)
+            if renderer is None or not renderer.interactive_ok:
+                continue
             args.extend(renderer.to_args(value))
-
         return args
+
+    def _passthrough_args(self, job: Job) -> tuple[str, ...]:
+        """The job's raw scheduler arguments for this scheduler."""
+        return job.scheduler_args.get(self.name, ())
 
     # =========================================================================
     # Abstract Methods - Subclasses must implement
     # =========================================================================
 
     @abstractmethod
-    def submit(self, job: Job, interactive: bool = False, keep_script: bool = False) -> JobResult:
-        """Submit a job to the scheduler.
+    def submit(self, job: Job, *, keep_script: bool = False) -> JobResult:
+        """Submit a job.
+
+        Runs it attached (and returns once it has finished) when
+        ``job.interactive``; returns an ``ArrayJobResult`` when ``job.array``.
 
         Args:
-            job: Job to submit.
-            interactive: If True, run interactively.
-            keep_script: If True, don't delete job script after submission.
+            job: Resolved job to submit.
+            keep_script: If True, don't delete the job script after submission.
         """
 
     @abstractmethod
-    def submit_array(self, array: JobArray) -> ArrayJobResult:
-        """Submit an array job."""
+    def preview(self, job: Job) -> str:
+        """Return the script that :meth:`submit` would write for *job*."""
 
     @abstractmethod
     def cancel(self, job_id: str) -> bool:
@@ -153,37 +155,15 @@ class BaseScheduler(ABC):
     def get_exit_code(self, job_id: str) -> int | None:
         """Get job exit code."""
 
-    @abstractmethod
-    def generate_script(self, job: Job, array_range: str | None = None) -> str:
-        """Generate submission script."""
+    def result(self, job_id: str) -> JobResult:
+        """A handle on an existing job, without the in-memory ``Job``."""
+        from hpc_runner.core.result import JobResult
 
-    @abstractmethod
-    def build_submit_command(self, job: Job) -> list[str]:
-        """Build submission command line."""
-
-    @abstractmethod
-    def build_interactive_command(self, job: Job) -> list[str]:
-        """Build interactive execution command."""
+        return JobResult(scheduler=self, job_id=job_id)
 
     # =========================================================================
     # Optional Methods - Override if scheduler supports these
     # =========================================================================
-
-    def generate_interactive_script(self, job: Job, script_path: str) -> str:
-        """Generate wrapper script for interactive jobs.
-
-        By default, falls back to the standard batch script.
-        Override in subclasses that need a different template for
-        interactive sessions (e.g. SGE uses qrsh with no #$ directives).
-
-        Args:
-            job: Job to generate script for.
-            script_path: Path where the script will be written.
-
-        Returns:
-            Script content as a string.
-        """
-        return self.generate_script(job)
 
     def get_output_path(self, job_id: str, stream: str) -> Path | None:
         """Get path to output file.
@@ -196,10 +176,6 @@ class BaseScheduler(ABC):
             Path to output file, or None if not determinable.
         """
         return None
-
-    def get_scheduler_args(self, job: Job) -> list[str]:
-        """Get scheduler-specific raw args from job."""
-        return getattr(job, f"{self.name}_args", [])
 
     def list_active_jobs(
         self,

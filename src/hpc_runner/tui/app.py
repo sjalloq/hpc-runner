@@ -19,6 +19,7 @@ from textual.reactive import reactive
 from textual.theme import Theme
 from textual.widgets import DataTable, Header, Static, TabbedContent, TabPane
 
+from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.schedulers import get_scheduler
 from hpc_runner.tui.components import (
@@ -75,10 +76,11 @@ class HpcMonitorApp(App[None]):
     user_filter: reactive[str] = reactive("me")
     auto_refresh_enabled: reactive[bool] = reactive(True)
 
-    def __init__(self, refresh_interval: int = 10) -> None:
+    def __init__(self, config: HPCConfig, refresh_interval: int = 10) -> None:
         """Initialize the HPC Monitor app.
 
         Args:
+            config: Configuration the scheduler is built from.
             refresh_interval: Seconds between auto-refresh cycles.
         """
         super().__init__()
@@ -87,7 +89,7 @@ class HpcMonitorApp(App[None]):
         self._hostname = socket.gethostname().split(".")[0]  # Short hostname
 
         # Initialize scheduler and job provider
-        self._scheduler = get_scheduler()
+        self._scheduler = get_scheduler(config=config)
         self._job_provider = JobProvider(self._scheduler)
 
         # Store full job list for client-side filtering

@@ -75,7 +75,8 @@ hpc --scheduler sge run --batch --cpu 4 --mem 8G python script.py
 
 ### Core Abstractions (`src/hpc_runner/core/`)
 
-- **Job** - Central job model with command, resources (cpu/mem/time), modules, dependencies
+- **JobSpec** - What the caller asked for (`None` = unspecified); **resolve(spec, config, host)** is the only place merge rules live and returns a frozen **Job**
+- **Host** - Submit-side facts (env, cwd, user) injected into `resolve`
 - **JobResult/ArrayJobResult** - Returned from submission, provides status polling and output access
 - **JobStatus** - Unified enum: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, TIMEOUT, UNKNOWN
 - **ResourceSet** - Collection of named resources (gpu, licenses, etc.)
@@ -83,7 +84,7 @@ hpc --scheduler sge run --batch --cpu 4 --mem 8G python script.py
 
 ### Scheduler System (`src/hpc_runner/schedulers/`)
 
-- **BaseScheduler** - ABC defining submit(), cancel(), get_status(), generate_script()
+- **BaseScheduler** - ABC defining submit(job), preview(job), cancel(), get_status(), get_exit_code(), result(job_id)
 - **SGEScheduler** - Sun Grid Engine (qsub/qstat/qdel). All SGE-specific settings (PE name, resource names) are configurable via `[schedulers.sge]` config section
 - **LocalScheduler** - Runs jobs as local subprocesses (for testing without cluster)
 - **detection.py** - Auto-detects scheduler: HPC_SCHEDULER env > SGE_ROOT > sbatch > PBS > local fallback
@@ -99,7 +100,7 @@ Uses `rich-click` for styled output. One entry point, **`hpc`** (group), with su
 
 **Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, extra-module) stay.
 
-**Scheduler passthrough on `hpc run`**: Use `--` to pass raw scheduler arguments. Everything before `--` is scheduler passthrough (set on `job.raw_args`), everything after is the command. Without `--`, all args are the command (no heuristic).
+**Scheduler passthrough on `hpc run`**: Use `--` to pass raw scheduler arguments. Everything before `--` is scheduler passthrough (set on `JobSpec.scheduler_args[<active scheduler>]`), everything after is the command. Without `--`, all args are the command (no heuristic).
 ```bash
 hpc run echo hello                              # no passthrough
 hpc run -q batch.q -l gpu=2 -- python train.py  # passthrough

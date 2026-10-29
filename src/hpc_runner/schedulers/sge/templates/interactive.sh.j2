@@ -48,9 +48,9 @@ module load {{ mod }}{% if scheduler.silent_modules %} -s{% endif %}
 source {{ job.venv }}/bin/activate
 {% endif %}
 
-{% if scheduler.unset_vars %}
+{% if job.env_unset %}
 # Unset environment variables
-{% for var in scheduler.unset_vars %}
+{% for var in job.env_unset %}
 unset {{ var }}
 {% endfor %}
 {% endif %}

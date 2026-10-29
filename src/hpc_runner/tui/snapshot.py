@@ -47,7 +47,9 @@ async def capture_and_review() -> bool:
     from textual.containers import HorizontalGroup
     from textual.widgets import Header, Tab, TabbedContent
 
-    app = HpcMonitorApp()
+    from hpc_runner.core.config import load_config
+
+    app = HpcMonitorApp(load_config())
     all_passed = True
 
     async with app.run_test(size=(80, 24)) as pilot:

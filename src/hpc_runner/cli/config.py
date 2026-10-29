@@ -23,12 +23,9 @@ def config_cmd() -> None:
 @pass_context
 def show(ctx: Context, raw: bool) -> None:
     """Show current configuration."""
-    from hpc_runner.core.config import HPC_CONFIG_ENV_VAR, load_config
+    from hpc_runner.core.config import HPC_CONFIG_ENV_VAR
 
-    if ctx.config_path:
-        config = load_config(ctx.config_path)
-    else:
-        config = load_config()
+    config = ctx.config
 
     if not config._source_paths:
         console.print("[yellow]No configuration file found[/yellow]")

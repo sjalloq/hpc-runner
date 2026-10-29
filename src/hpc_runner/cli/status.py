@@ -97,7 +97,7 @@ def status(
 
     from hpc_runner.schedulers import get_scheduler
 
-    scheduler = get_scheduler(ctx.scheduler)
+    scheduler = get_scheduler(ctx.scheduler, config=ctx.config)
 
     if job_id:
         _show_single_job(scheduler, job_id, verbose=verbose, use_json=use_json)

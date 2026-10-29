@@ -1,60 +1,9 @@
-"""Descriptor pattern for job attributes and scheduler arguments."""
+"""Scheduler argument renderers."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar, overload
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
-
-
-# =============================================================================
-# Job Attribute Descriptor
-# =============================================================================
-
-
-class JobAttribute(Generic[T]):
-    """Descriptor for Job attributes that enables iteration and rendering.
-
-    This descriptor provides:
-    - Clean attribute access on Job instances
-    - Class-level access returns the descriptor itself
-    - Support for default values
-    - Registration for iteration by schedulers
-
-    Example:
-        class Job:
-            name = JobAttribute('name')
-            cpu = JobAttribute('cpu', default=1)
-
-        job = Job()
-        job.name = "test"
-        print(job.name)  # "test"
-        print(Job.name)  # <JobAttribute 'name'>
-    """
-
-    def __init__(self, name: str, *, default: T | None = None):
-        self.public_name = name
-        self.default = default
-        self._private_name: str = f"_{name}"
-
-    def __set_name__(self, owner: type, name: str) -> None:
-        self._private_name = f"_{name}"
-
-    @overload
-    def __get__(self, obj: None, objtype: type) -> "JobAttribute[T]": ...
-
-    @overload
-    def __get__(self, obj: Any, objtype: type | None = None) -> T | None: ...
-
-    def __get__(self, obj: Any, objtype: type | None = None) -> "T | None | JobAttribute[T]":
-        if obj is None:
-            return self
-        return getattr(obj, self._private_name, self.default)
-
-    def __set__(self, obj: Any, value: T | None) -> None:
-        setattr(obj, self._private_name, value)
-
-    def __repr__(self) -> str:
-        return f"<JobAttribute '{self.public_name}'>"
 
 
 # =============================================================================
@@ -86,9 +35,13 @@ class SchedulerArg(ABC, Generic[T]):
         flag: str,
         *,
         doc: str = "",
+        interactive_ok: bool = True,
     ):
         self.flag = flag
         self.doc = doc
+        # False when the scheduler's interactive command (qrsh, srun) rejects
+        # this flag; interactive argv builders skip such renderers.
+        self.interactive_ok = interactive_ok
 
     @abstractmethod
     def to_args(self, value: T | None) -> list[str]:

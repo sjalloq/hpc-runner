@@ -1,7 +1,6 @@
 # hpc-runner default configuration
 
 [defaults]
-scheduler = "auto"
 cpu = 1
 mem = "4G"
 time = "1:00:00"
@@ -9,13 +8,13 @@ inherit_env = true
 modules_path = []          # 'module use <path>' (searched first)
 modules_path_append = []   # 'module use --append <path>' (searched last)
 modules = []
+env_unset = []             # Environment variables to unset in jobs (e.g., ["https_proxy"])
 
 # SGE-specific settings
 [schedulers.sge]
 parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
-merge_output = true
 
 # Module handling
 purge_modules = true        # Run 'module purge' before loading modules
@@ -24,7 +23,6 @@ module_init_script = ""     # Site-specific module init (empty = auto-detect)
 
 # Environment handling
 expand_makeflags = true     # Expand $NSLOTS in MAKEFLAGS
-unset_vars = []             # Environment variables to unset (e.g., ["https_proxy"])
 
 # Local scheduler settings
 [schedulers.local]
@@ -48,11 +46,6 @@ time = "4:00:00"
 modules = ["python"]
 
 # Named job types
-[types.interactive]
-queue = "interactive"
-time = "8:00:00"
-inherit_env = true
-
 [types.gpu]
 queue = "gpu"
 resources = [{name = "gpu", value = 1}]

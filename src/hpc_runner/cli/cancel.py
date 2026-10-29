@@ -23,7 +23,7 @@ def cancel(
     """
     from hpc_runner.schedulers import get_scheduler
 
-    scheduler = get_scheduler(ctx.scheduler)
+    scheduler = get_scheduler(ctx.scheduler, config=ctx.config)
 
     if not force:
         if not click.confirm(f"Cancel job {job_id}?"):

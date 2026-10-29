@@ -1,5 +1,8 @@
-"""Dependency type definitions."""
+"""Job dependencies."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -7,7 +10,7 @@ class DependencyType(str, Enum):
     """Job dependency types.
 
     These map to scheduler-specific dependency modes:
-    - SGE: -hold_jid (basic), -hold_jid_ad (array)
+    - SGE: -hold_jid (afterany), with afterok emulated by an exit sentinel
     - Slurm: --dependency=afterok, afterany, after, afternotok
     """
 
@@ -18,3 +21,11 @@ class DependencyType(str, Enum):
 
     def __str__(self) -> str:
         return self.value
+
+
+@dataclass(frozen=True)
+class Dependency:
+    """One parent job and how this job depends on it."""
+
+    job_id: str
+    type: DependencyType = DependencyType.AFTEROK

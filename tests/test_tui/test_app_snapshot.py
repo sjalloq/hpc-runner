@@ -2,6 +2,7 @@
 
 import pytest
 from textual.color import Color
+from hpc_runner.core.config import HPCConfig
 from hpc_runner.tui.app import HpcMonitorApp, HPC_MONITOR_THEME
 
 
@@ -11,7 +12,7 @@ class TestHpcMonitorApp:
     @pytest.mark.asyncio
     async def test_app_renders(self):
         """Basic test that the app renders without error."""
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.widgets import Tab
 
@@ -27,7 +28,7 @@ class TestHpcMonitorApp:
     @pytest.mark.asyncio
     async def test_app_theme_applied(self):
         """Test that custom theme is applied."""
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             # Theme should be applied
             assert app.theme == "hpc-monitor"
@@ -39,7 +40,7 @@ class TestHpcMonitorApp:
         The active tab uses $primary when focused, $primary-darken-2 when not.
         Both should be in the teal/cyan family (higher green and blue than red).
         """
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.widgets import Tab
 
@@ -84,15 +85,13 @@ class TestTransparentBackgrounds:
     @pytest.mark.asyncio
     async def test_header_background_transparent(self):
         """Header should have transparent background."""
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.widgets import Header
 
             header = app.query_one(Header)
             bg = header.styles.background
-            assert self._is_transparent(bg), (
-                f"Header background should be transparent, got {bg}"
-            )
+            assert self._is_transparent(bg), f"Header background should be transparent, got {bg}"
 
     @pytest.mark.asyncio
     async def test_footer_background_transparent(self):
@@ -102,16 +101,14 @@ class TestTransparentBackgrounds:
         Textual's built-in Footer widget, as the built-in Footer uses internal
         Rich styles that don't respect CSS transparency or ANSI mode.
         """
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.containers import HorizontalGroup
 
             # Custom footer is a HorizontalGroup with id="footer"
             footer = app.query_one("#footer", HorizontalGroup)
             bg = footer.styles.background
-            assert self._is_transparent(bg), (
-                f"Footer background should be transparent, got {bg}"
-            )
+            assert self._is_transparent(bg), f"Footer background should be transparent, got {bg}"
 
             # Also check all footer children are transparent
             for child in footer.children:
@@ -123,7 +120,7 @@ class TestTransparentBackgrounds:
     @pytest.mark.asyncio
     async def test_tabbed_content_background_transparent(self):
         """TabbedContent container should have transparent background."""
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.widgets import TabbedContent
 
@@ -136,7 +133,7 @@ class TestTransparentBackgrounds:
     @pytest.mark.asyncio
     async def test_tab_pane_background_transparent(self):
         """TabPane content areas should have transparent background."""
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.widgets import TabPane
 
@@ -150,7 +147,7 @@ class TestTransparentBackgrounds:
     @pytest.mark.asyncio
     async def test_inactive_tab_background_transparent(self):
         """Inactive tabs should have transparent background."""
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             from textual.widgets import Tab
 
@@ -160,8 +157,7 @@ class TestTransparentBackgrounds:
             for tab in inactive_tabs:
                 bg = tab.styles.background
                 assert self._is_transparent(bg), (
-                    f"Inactive tab '{tab.label.plain}' background should be "
-                    f"transparent, got {bg}"
+                    f"Inactive tab '{tab.label.plain}' background should be transparent, got {bg}"
                 )
 
     @pytest.mark.asyncio
@@ -172,7 +168,7 @@ class TestTransparentBackgrounds:
         background color, otherwise the Screen widget will have a solid
         fill that hides the terminal's own background.
         """
-        app = HpcMonitorApp()
+        app = HpcMonitorApp(HPCConfig())
         async with app.run_test(size=(80, 24)) as pilot:
             screen_bg = app.screen.styles.background
 

@@ -40,14 +40,13 @@ Options:
 - ``--ntasks N`` (number of tasks, MPI jobs)
 - ``--directory PATH`` (working dir)
 - ``-t, --type TEXT`` (named profile from config)
-- ``--extra-module TEXT`` (extra module on top of config, repeatable)
 - ``--stdout TEXT`` (stdout file path pattern)
 - ``--stderr TEXT`` (separate stderr file; default: merged)
 - ``--array TEXT`` (e.g. ``1-100``)
-- ``--depend TEXT``
+- ``--depend TEXT`` (``ID``, or ``TYPE:ID[:ID...]``, e.g. ``afterok:123:124``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
 - ``--local`` (run as local subprocess)
-- ``--dry-run`` (render, don’t submit)
+- ``--dry-run`` (print the mode and the rendered script, don’t submit)
 - ``--wait`` (wait for completion)
 - ``--keep-script`` (keep generated script; path is logged at debug level —
   use ``--verbose`` to see it)

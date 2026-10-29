@@ -6,6 +6,13 @@ from click.testing import CliRunner
 from hpc_runner.cli.main import cli
 
 
+@pytest.fixture
+def sge_dirs(monkeypatch, tmp_path):
+    """Keep SGE script/exit-sentinel dirs out of the real home directory."""
+    monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
+    monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+
+
 class TestRunCommand:
     """Tests for hpc run command."""
 
@@ -77,7 +84,7 @@ class TestRunCommand:
         """Without --batch the dry run reports interactive mode."""
         result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hello"])
         assert result.exit_code == 0
-        assert "interactive" in result.output
+        assert "Mode: interactive" in result.output
 
     def test_batch_flag_selects_batch_mode(self, runner, temp_dir):
         """--batch / -b switch the dry run to batch mode."""
@@ -86,20 +93,21 @@ class TestRunCommand:
                 cli, ["--scheduler", "local", "run", "--dry-run", flag, "echo", "hello"]
             )
             assert result.exit_code == 0, result.output
-            assert "batch" in result.output
+            assert "Mode: batch" in result.output
 
-    def test_array_implies_batch(self, runner, temp_dir):
+    def test_array_implies_batch(self, runner, sge_dirs):
         """Array jobs are always batch, even without --batch."""
         result = runner.invoke(
             cli,
-            ["--scheduler", "local", "run", "--dry-run", "--array", "1-4", "echo", "task"],
+            ["--scheduler", "sge", "run", "--dry-run", "--array", "1-4", "echo", "task"],
         )
-        assert result.exit_code == 0
-        assert "Mode: batch" in result.output or "batch" in result.output
+        assert result.exit_code == 0, result.output
+        assert "Mode: batch" in result.output
+        assert "#$ -t 1-4" in result.output
 
     def test_removed_options_rejected(self, runner):
-        """--job-type, --job-name and --interactive no longer exist (with or without --)."""
-        for opt in ("--job-type", "--job-name", "--interactive"):
+        """--job-type, --job-name, --interactive, --extra-module no longer exist."""
+        for opt in ("--job-type", "--job-name", "--interactive", "--extra-module"):
             result = runner.invoke(
                 cli, ["--scheduler", "local", "run", "--dry-run", opt, "x", "--", "echo"]
             )
@@ -149,13 +157,13 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "Command is required" in result.output
 
-    def test_run_array_job_dry_run(self, runner, temp_dir):
+    def test_run_array_job_dry_run(self, runner, sge_dirs):
         """Test array job with --dry-run."""
         result = runner.invoke(
             cli,
             [
                 "--scheduler",
-                "local",
+                "sge",
                 "run",
                 "--dry-run",
                 "--array",
@@ -558,46 +566,6 @@ cpu = 8
             os.chdir(old_cwd)
 
 
-class TestExtraModuleCLI:
-    """Tests for --extra-module on hpc run."""
-
-    @pytest.fixture
-    def runner(self):
-        return CliRunner()
-
-    def test_extra_module_dry_run(self, runner, temp_dir):
-        """--extra-module adds modules to config defaults."""
-        config_file = temp_dir / "hpc-runner.toml"
-        config_file.write_text("""
-[tools.python]
-cpu = 4
-modules = ["python/3.11"]
-""")
-        import os
-
-        old_cwd = os.getcwd()
-        os.chdir(temp_dir)
-        try:
-            result = runner.invoke(
-                cli,
-                [
-                    "--scheduler",
-                    "local",
-                    "run",
-                    "--dry-run",
-                    "--extra-module",
-                    "cuda/12.0",
-                    "python",
-                    "script.py",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "python/3.11" in result.output
-            assert "cuda/12.0" in result.output
-        finally:
-            os.chdir(old_cwd)
-
-
 class TestMainCLI:
     """Tests for main CLI."""
 
@@ -635,3 +603,85 @@ class TestMainCLI:
         assert "-c, --config" not in result.output
         assert "-s, --scheduler" not in result.output
         assert "-v, --verbose" not in result.output
+
+
+class TestDepend:
+    """--depend is parsed into the same Dependency list the API builds."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_parse_type_and_ids(self):
+        from hpc_runner.cli.run import _parse_depend
+        from hpc_runner.core.dependency import Dependency, DependencyType
+
+        assert _parse_depend("afterok:1:2") == [
+            Dependency("1", DependencyType.AFTEROK),
+            Dependency("2", DependencyType.AFTEROK),
+        ]
+        assert _parse_depend("afterany:7") == [Dependency("7", DependencyType.AFTERANY)]
+
+    def test_bare_id_is_afterok(self):
+        from hpc_runner.cli.run import _parse_depend
+        from hpc_runner.core.dependency import Dependency, DependencyType
+
+        assert _parse_depend("123") == [Dependency("123", DependencyType.AFTEROK)]
+
+    @pytest.mark.parametrize("text", ["bogus:1", "afterok:", "afterok:1,2", "1 2", "afterok::1"])
+    def test_bad_depend_is_usage_error(self, runner, text):
+        result = runner.invoke(
+            cli, ["--scheduler", "local", "run", "--dry-run", "--batch", "--depend", text, "echo"]
+        )
+        assert result.exit_code == 2, result.output
+        assert "Invalid --depend" in result.output
+
+    def test_afterok_from_cli_is_guarded(self, runner, sge_dirs):
+        """B6: the CLI afterok goes through the same guard as the API."""
+        result = runner.invoke(
+            cli,
+            [
+                "--scheduler",
+                "sge",
+                "run",
+                "--dry-run",
+                "--batch",
+                "--depend",
+                "afterok:1:2",
+                "echo",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "#$ -hold_jid 1,2" in result.output
+        assert "for _dep in 1 2" in result.output
+
+    def test_bad_array_is_usage_error(self, runner):
+        result = runner.invoke(
+            cli, ["--scheduler", "local", "run", "--dry-run", "--array", "x-y", "echo"]
+        )
+        assert result.exit_code == 2
+        assert "--array" in result.output
+
+
+class TestPassthroughDirectives:
+    def test_batch_passthrough_one_directive_line(self, sge_dirs):
+        """B1 end-to-end: hpc run --batch -q batch.q -l gpu=2 -- python train.py."""
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--scheduler",
+                "sge",
+                "run",
+                "--dry-run",
+                "--batch",
+                "-q",
+                "batch.q",
+                "-l",
+                "gpu=2",
+                "--",
+                "python",
+                "train.py",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "#$ -q batch.q -l gpu=2" in result.output

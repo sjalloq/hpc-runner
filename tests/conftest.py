@@ -7,19 +7,13 @@ from pathlib import Path
 
 import pytest
 
-import hpc_runner.core.config as _config_mod
-from tests.fakes import patch_seam
+from tests.fakes import make_host, patch_seam
 
 
-@pytest.fixture(autouse=True)
-def _isolate_config_cache():
-    """Clear the global config cache before and after every test.
-
-    Prevents any test from polluting others via the cached HPCConfig.
-    """
-    _config_mod._cached_config = None
-    yield
-    _config_mod._cached_config = None
+@pytest.fixture
+def host(tmp_path):
+    """A fixed submit host: empty environment, user 'alice'."""
+    return make_host(cwd=tmp_path)
 
 
 @pytest.fixture

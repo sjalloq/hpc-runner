@@ -68,9 +68,9 @@ module load {{ mod }}{% if scheduler.silent_modules %} -s{% endif %}
 source {{ job.venv }}/bin/activate
 {% endif %}
 
-{% if scheduler.unset_vars %}
+{% if job.env_unset %}
 # Unset environment variables
-{% for var in scheduler.unset_vars %}
+{% for var in job.env_unset %}
 unset {{ var }}
 {% endfor %}
 {% endif %}
@@ -103,12 +103,12 @@ if [ -n "$MAKEFLAGS" ]; then
 fi
 {% endif %}
 
-{% if scheduler.enforce_afterok and scheduler.exit_dir and job.dependency_type == 'afterok' and job.dependencies %}
+{% if scheduler.enforce_afterok and scheduler.exit_dir and afterok_ids %}
 # --- hpc-runner afterok guard: abort unless all dependencies succeeded ---
 # -hold_jid guarantees parents have exited (and flushed their sentinels), but
 # allow a short bounded wait for the NFS directory-entry cache to refresh.
 _hpc_guard_dir="{{ scheduler.exit_dir }}"
-for _dep in {% for d in job.dependencies %}{{ d.job_id }} {% endfor %}; do
+for _dep in {% for d in afterok_ids %}{{ d }} {% endfor %}; do
     _rc=""
     for _try in $(seq 1 15); do
         if [ -f "$_hpc_guard_dir/${_dep}.rc" ]; then

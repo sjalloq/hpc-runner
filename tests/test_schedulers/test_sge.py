@@ -1,10 +1,11 @@
 """Tests for SGE scheduler."""
 
-from unittest.mock import patch
+import dataclasses
 
 import pytest
 
-from hpc_runner.core.job import Job
+from hpc_runner.core.config import HPCConfig
+from hpc_runner.core.dependency import Dependency, DependencyType
 from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.sge import SGEScheduler
 from hpc_runner.schedulers.sge.parser import (
@@ -14,7 +15,7 @@ from hpc_runner.schedulers.sge.parser import (
     parse_qsub_output,
     state_to_status,
 )
-from tests.fakes import patch_seam
+from tests.fakes import make_job, patch_seam
 
 
 class TestSGEParser:
@@ -75,14 +76,14 @@ class TestSGEScheduler:
 
     def test_scheduler_name(self):
         """Test scheduler name."""
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
         assert scheduler.name == "sge"
 
     def test_generate_script(self):
         """Test script generation."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="echo hello",
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "echo hello",
             name="test_job",
             cpu=4,
             mem="16G",
@@ -90,7 +91,7 @@ class TestSGEScheduler:
             queue="batch",
         )
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "#!/bin/bash" in script
         assert "#$ -N test_job" in script
@@ -99,17 +100,17 @@ class TestSGEScheduler:
 
     def test_generate_script_module_paths(self):
         """Both batch and interactive SGE scripts honour modules_path_append."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="xrun -f top.f",
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "xrun -f top.f",
             modules=["xcelium/26.03.006"],
             modules_path=["/site/modulefiles"],
             modules_path_append=["/proj/modulefiles"],
         )
 
         scripts = [
-            scheduler.generate_script(job),
-            scheduler.generate_interactive_script(job, script_path="/tmp/wrap.sh"),
+            scheduler.preview(job),
+            scheduler.preview(dataclasses.replace(job, interactive=True)),
         ]
         for script in scripts:
             assert "module use /site/modulefiles" in script
@@ -118,27 +119,27 @@ class TestSGEScheduler:
 
     def test_generate_script_merged_output(self):
         """Test script generation with merged output."""
-        scheduler = SGEScheduler()
-        job = Job(command="echo hello", name="test_job")
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job("echo hello", name="test_job")
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "#$ -j y" in script  # Join stdout/stderr
 
     def test_generate_script_separate_stderr(self):
         """Test script generation with separate stderr."""
-        scheduler = SGEScheduler()
-        job = Job(command="echo hello", name="test_job", stderr="error.log")
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job("echo hello", name="test_job", stderr="error.log")
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "#$ -j y" not in script
         assert "#$ -e error.log" in script
 
     def test_submit_job(self, mock_sge_commands):
         """Test job submission with mocked qsub."""
-        scheduler = SGEScheduler()
-        job = Job(command="echo hello", name="test_job")
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job("echo hello", name="test_job")
 
         result = scheduler.submit(job)
 
@@ -146,75 +147,70 @@ class TestSGEScheduler:
 
     def test_cancel_job(self, mock_sge_commands):
         """Test job cancellation."""
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
         success = scheduler.cancel("12345")
         assert success is True
 
     def test_get_status(self, mock_sge_commands):
         """Test getting job status."""
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
         status = scheduler.get_status("12345")
         assert status == JobStatus.RUNNING
 
-    def test_build_submit_command(self):
-        """Test building qsub command."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="echo hello",
-            name="test_job",
-            cpu=4,
-            mem="16G",
-            queue="batch",
-        )
+    def test_batch_options_are_all_directives(self, mock_sge_commands):
+        """Batch submission is ``qsub <script>``: every option is a #$ directive."""
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job("echo hello", name="test_job", cpu=4, mem="16G", queue="batch")
 
-        cmd = scheduler.build_submit_command(job)
+        script = scheduler.preview(job)
+        scheduler.submit(job)
 
-        assert cmd[0] == "qsub"
-        assert "-N" in cmd
-        assert "test_job" in cmd
-        assert "-pe" in cmd
-        assert "-q" in cmd
+        for directive in ("#$ -N test_job", "#$ -pe smp 4", "#$ -l mem_free=16G", "#$ -q batch"):
+            assert directive in script
+        qsub = [c.args[0] for c in mock_sge_commands.call_args_list if c.args[0][0] == "qsub"]
+        assert len(qsub) == 1
+        assert len(qsub[0]) == 2  # qsub <script>, nothing else
 
     def test_generate_script_env_prepend(self):
         """Test script generation with env_prepend."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="echo hello",
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "echo hello",
             name="test_job",
             env_prepend={"PATH": "/new/bin"},
         )
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "# Prepend to environment variables" in script
         assert 'export PATH="/new/bin${PATH:+:$PATH}"' in script
 
     def test_generate_script_env_append(self):
         """Test script generation with env_append."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="echo hello",
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "echo hello",
             name="test_job",
             env_append={"PYTHONPATH": "/extra/lib"},
         )
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "# Append to environment variables" in script
         assert 'export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}/extra/lib"' in script
 
     def test_generate_script_all_env_types(self):
         """Test script with env_vars, env_prepend, and env_append together."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="echo hello",
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "echo hello",
             name="test_job",
             env_prepend={"PATH": "/cocotb/bin"},
             env_append={"PYTHONPATH": "/extra/lib"},
             env_vars={"COCOTB_TOPLEVEL": "counter"},
         )
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         # All three sections should be present
         assert 'export PATH="/cocotb/bin${PATH:+:$PATH}"' in script
@@ -229,33 +225,33 @@ class TestSGEScheduler:
 
     def test_generate_script_env_vars_unchanged(self):
         """Test that existing env_vars behavior is unchanged."""
-        scheduler = SGEScheduler()
-        job = Job(
-            command="echo hello",
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "echo hello",
             name="test_job",
             env_vars={"FOO": "bar", "BAZ": "qux"},
         )
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert 'export FOO="bar"' in script
         assert 'export BAZ="qux"' in script
 
     def test_configurable_pe_name(self):
         """Test that PE name is configurable."""
-        with patch("hpc_runner.schedulers.sge.scheduler.get_config") as mock_config:
-            mock_config.return_value.get_scheduler_config.return_value = {
-                "parallel_environment": "mpi",
-                "memory_resource": "h_vmem",
-            }
-
-            scheduler = SGEScheduler()
-            assert scheduler.pe_name == "mpi"
-            assert scheduler.mem_resource == "h_vmem"
+        config = HPCConfig(
+            schedulers={"sge": {"parallel_environment": "mpi", "memory_resource": "h_vmem"}}
+        )
+        scheduler = SGEScheduler(config)
+        assert scheduler.pe_name == "mpi"
+        assert scheduler.mem_resource == "h_vmem"
+        script = scheduler.preview(make_job(cpu=2, mem="1G"))
+        assert "#$ -pe mpi 2" in script
+        assert "#$ -l h_vmem=1G" in script
 
     def test_list_active_jobs(self, mock_sge_commands):
         """Test listing active jobs."""
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
         jobs = scheduler.list_active_jobs()
 
         # Should return 3 jobs from mock XML
@@ -276,7 +272,7 @@ class TestSGEScheduler:
 
     def test_list_active_jobs_filter_by_status(self, mock_sge_commands):
         """Test filtering jobs by status."""
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
 
         # Only running jobs
         running = scheduler.list_active_jobs(status={JobStatus.RUNNING})
@@ -289,7 +285,7 @@ class TestSGEScheduler:
 
     def test_list_active_jobs_filter_by_queue(self, mock_sge_commands):
         """Test filtering jobs by queue."""
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
 
         # Filter by batch.q
         batch_jobs = scheduler.list_active_jobs(queue="batch.q")
@@ -399,18 +395,12 @@ class TestSGEAfterok:
     afterok dependents verify their parents succeeded before running.
     """
 
-    def _job_result(self, scheduler, job_id):
-        from hpc_runner.core.result import JobResult
-
-        return JobResult(job_id=job_id, scheduler=scheduler, job=Job("parent", name="p"))
-
     def test_afterok_emits_publish_and_guard(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler()
-        job = Job(command="run_sim", name="sim")
-        job.after(self._job_result(scheduler, "111"), self._job_result(scheduler, "222"))
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job("run_sim", name="sim", dependencies=[Dependency("111"), Dependency("222")])
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         # Publisher (every job) and guard (afterok only) both present.
         assert "trap _hpc_publish_rc EXIT" in script
@@ -421,32 +411,32 @@ class TestSGEAfterok:
 
     def test_afterany_publishes_but_no_guard(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler()
-        job = Job(command="run_sim", name="sim")
-        job.after(self._job_result(scheduler, "111"), type="afterany")
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job(
+            "run_sim", name="sim", dependencies=[Dependency("111", DependencyType.AFTERANY)]
+        )
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "trap _hpc_publish_rc EXIT" in script  # still publishes its own rc
         assert "afterok guard" not in script  # but does not gate on parents
 
     def test_no_dependencies_has_no_guard(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler()
-        script = scheduler.generate_script(Job(command="echo hi", name="solo"))
+        scheduler = SGEScheduler(HPCConfig())
+        script = scheduler.preview(make_job("echo hi", name="solo"))
 
         assert "trap _hpc_publish_rc EXIT" in script
         assert "afterok guard" not in script
 
     def test_enforce_afterok_disabled(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler()
+        scheduler = SGEScheduler(HPCConfig())
         scheduler.enforce_afterok = False
         scheduler.exit_dir = ""
-        job = Job(command="run_sim", name="sim")
-        job.after(self._job_result(scheduler, "111"))
+        job = make_job("run_sim", name="sim", dependencies=[Dependency("111")])
 
-        script = scheduler.generate_script(job)
+        script = scheduler.preview(job)
 
         assert "_hpc_publish_rc" not in script
         assert "afterok guard" not in script
@@ -468,10 +458,9 @@ class TestSGEAfterok:
         import subprocess
 
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        scheduler = SGEScheduler()
-        job = Job(command="echo SIM-RAN", name="sim")
-        job.after(self._job_result(scheduler, "111"))
-        script = scheduler.generate_script(job)
+        scheduler = SGEScheduler(HPCConfig())
+        job = make_job("echo SIM-RAN", name="sim", dependencies=[Dependency("111")])
+        script = scheduler.preview(job)
 
         script_file = tmp_path / "sim.sh"
         script_file.write_text(script)
@@ -520,7 +509,7 @@ class TestSGEExitSentinelFallback:
     @pytest.fixture
     def scheduler(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        sched = SGEScheduler()
+        sched = SGEScheduler(HPCConfig())
         assert sched.exit_dir == str(tmp_path)
         return sched
 
@@ -579,3 +568,107 @@ class TestSGEExitSentinelFallback:
         with patch_seam(self._fake_run(qacct, 0)):
             assert scheduler.get_status("123") == JobStatus.FAILED
             assert scheduler.get_exit_code("123") == 2
+
+
+class TestSGESubmissionContract:
+    """One submit()/preview() shape; directives-only batch; qrsh for interactive."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        return SGEScheduler(HPCConfig())
+
+    def test_passthrough_is_one_directive_line(self, scheduler):
+        """B1: '-q batch.q -l gpu=2' stays together on one #$ line."""
+        job = make_job("python train.py", scheduler_args={"sge": ["-q", "batch.q", "-l", "gpu=2"]})
+        script = scheduler.preview(job)
+        assert "#$ -q batch.q -l gpu=2\n" in script
+        assert "#$ -batch.q" not in script
+        assert "#$ -gpu=2" not in script
+
+    def test_other_schedulers_passthrough_ignored(self, scheduler):
+        job = make_job(scheduler_args={"slurm": ["--constraint=x"]})
+        assert "--constraint" not in scheduler.preview(job)
+
+    def test_preview_equals_submitted_script(self, scheduler, tmp_path, mock_sge_commands):
+        job = make_job("echo hello", name="j", cpu=2, dependencies=[Dependency("5")])
+        scheduler.submit(job, keep_script=True)
+        written = list((tmp_path / "scripts").glob("hpc_batch_*.sh"))
+        assert len(written) == 1
+        assert written[0].read_text() == scheduler.preview(job)
+
+    def test_script_deleted_without_keep_script(self, scheduler, tmp_path, mock_sge_commands):
+        scheduler.submit(make_job())
+        assert list((tmp_path / "scripts").glob("*.sh")) == []
+
+    def test_project_directive(self, scheduler):
+        assert "#$ -P proj1" in scheduler.preview(make_job(project="proj1"))
+
+    def test_env_unset_rendered(self, scheduler):
+        script = scheduler.preview(make_job(env_unset=["https_proxy"]))
+        assert "unset https_proxy" in script
+
+    def test_hold_jid_lists_all_parents_guard_only_afterok(self, scheduler):
+        job = make_job(
+            dependencies=[Dependency("1"), Dependency("2", DependencyType.AFTERANY)],
+        )
+        script = scheduler.preview(job)
+        assert "#$ -hold_jid 1,2" in script
+        assert "for _dep in 1 ; do" in script
+
+    def test_array_job(self, scheduler, mock_sge_commands):
+        from hpc_runner.core.result import ArrayJobResult
+
+        job = make_job(array="1-10:2%3")
+        assert "#$ -t 1-10:2%3" in scheduler.preview(job)
+        result = scheduler.submit(job)
+        assert isinstance(result, ArrayJobResult)
+        assert result.job_id == "12345"
+        assert result.array.count == 5
+
+    def test_interactive_runs_qrsh_and_returns_exit_code(self, scheduler):
+        calls = []
+
+        def respond(argv):
+            calls.append(argv)
+            return 3, "", ""
+
+        job = make_job(
+            "xterm",
+            interactive=True,
+            name="gui",
+            queue="interactive.q",
+            priority=-5,
+            project="proj1",
+            stdout="out.log",
+            cpu=2,
+            scheduler_args={"sge": ["-l", "display=1"]},
+        )
+        with patch_seam(respond):
+            result = scheduler.submit(job)
+
+        assert result.job_id is None
+        assert result.exit_code == 3
+        assert result.job is job
+        argv = calls[0]
+        assert argv[0] == "qrsh"
+        # qrsh rejects -N/-o/-e/-j/-S; those are skipped
+        for flag in ("-N", "-o", "-e", "-j", "-S"):
+            assert flag not in argv
+        for pair in (["-q", "interactive.q"], ["-p", "-5"], ["-P", "proj1"], ["-pe", "smp", "2"]):
+            idx = argv.index(pair[0])
+            assert argv[idx : idx + len(pair)] == pair
+        assert argv[-3:-1] == ["-l", "display=1"]
+        assert argv[-1].endswith(".sh")
+
+    def test_interactive_preview_has_no_directives(self, scheduler):
+        script = scheduler.preview(make_job("xterm", interactive=True))
+        assert "#$" not in script
+        assert "xterm" in script
+
+    def test_result_handle_without_job(self, scheduler, mock_sge_commands):
+        handle = scheduler.result("12345")
+        assert handle.job is None
+        assert handle.job_id == "12345"
+        assert handle.status == JobStatus.RUNNING

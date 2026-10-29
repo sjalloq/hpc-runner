@@ -1,7 +1,9 @@
 """SGE-specific argument renderers.
 
 Each class knows how to render a single job attribute to SGE syntax,
-both as a script directive (#$ ...) and as command-line arguments.
+both as a script directive (#$ ...) for batch jobs and as command-line
+arguments for qrsh. Renderers for flags qrsh rejects (-S, -o, -e, -j, -N)
+are declared ``interactive_ok=False``.
 """
 
 from hpc_runner.core.descriptors import SchedulerArg
@@ -35,7 +37,7 @@ class SGEJobNameArg(SGEArg):
     """Job name: -N name"""
 
     def __init__(self) -> None:
-        super().__init__("N", doc="Job name")
+        super().__init__("N", doc="Job name", interactive_ok=False)
 
 
 class SGEQueueArg(SGEArg):
@@ -49,14 +51,14 @@ class SGEOutputArg(SGEArg):
     """Stdout path: -o path"""
 
     def __init__(self) -> None:
-        super().__init__("o", doc="Stdout file path")
+        super().__init__("o", doc="Stdout file path", interactive_ok=False)
 
 
 class SGEErrorArg(SGEArg):
     """Stderr path: -e path"""
 
     def __init__(self) -> None:
-        super().__init__("e", doc="Stderr file path")
+        super().__init__("e", doc="Stderr file path", interactive_ok=False)
 
 
 class SGEPriorityArg(SGEArg):
@@ -66,11 +68,18 @@ class SGEPriorityArg(SGEArg):
         super().__init__("p", doc="Job priority (-1023 to 1024)")
 
 
+class SGEProjectArg(SGEArg):
+    """Project: -P project"""
+
+    def __init__(self) -> None:
+        super().__init__("P", doc="Project")
+
+
 class SGEShellArg(SGEArg):
     """Shell selection: -S /path/to/shell"""
 
     def __init__(self) -> None:
-        super().__init__("S", doc="Shell path")
+        super().__init__("S", doc="Shell path", interactive_ok=False)
 
 
 # =============================================================================
@@ -108,7 +117,7 @@ class SGEMergeOutputArg(SchedulerArg[bool]):
     """Merge stdout and stderr: -j y"""
 
     def __init__(self) -> None:
-        super().__init__("j", doc="Join stdout and stderr")
+        super().__init__("j", doc="Join stdout and stderr", interactive_ok=False)
 
     def to_args(self, value: bool | None) -> list[str]:
         return ["-j", "y"] if value else []

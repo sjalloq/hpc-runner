@@ -2,6 +2,8 @@
 
 import rich_click as click
 
+from hpc_runner.cli._context import Context, pass_context
+
 
 @click.command()
 @click.option(
@@ -11,7 +13,8 @@ import rich_click as click
     type=int,
     help="Auto-refresh interval in seconds",
 )
-def monitor(refresh: int) -> None:
+@pass_context
+def monitor(ctx: Context, refresh: int) -> None:
     """Launch interactive job monitor TUI.
 
     Opens a terminal UI for monitoring HPC jobs across schedulers.
@@ -26,5 +29,5 @@ def monitor(refresh: int) -> None:
     """
     from hpc_runner.tui import HpcMonitorApp
 
-    app = HpcMonitorApp(refresh_interval=refresh)
+    app = HpcMonitorApp(ctx.config, refresh_interval=refresh)
     app.run()

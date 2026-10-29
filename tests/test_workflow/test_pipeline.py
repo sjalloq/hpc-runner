@@ -1,6 +1,7 @@
 """Tests for Pipeline API."""
 
-from unittest.mock import MagicMock, patch
+from itertools import count
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,7 +13,23 @@ from hpc_runner.core.exceptions import (
     PipelineError,
     UnknownStepError,
 )
+from hpc_runner.core.dependency import Dependency
+from hpc_runner.core.spec import JobSpec
 from hpc_runner.workflow import DependencyType, Pipeline
+from tests.fakes import make_host
+
+
+def _pipeline(name: str = "pipeline", config: HPCConfig | None = None, **kwargs) -> Pipeline:
+    return Pipeline(name, config=config or HPCConfig(), host=make_host(), **kwargs)
+
+
+def _submitted_jobs(p: Pipeline) -> list:
+    """Submit *p* to a mock scheduler; return the resolved Jobs it received."""
+    ids = count(1)
+    scheduler = MagicMock()
+    scheduler.submit.side_effect = lambda job: MagicMock(job_id=str(next(ids)), job=job)
+    p.submit(scheduler=scheduler)
+    return [c.args[0] for c in scheduler.submit.call_args_list]
 
 
 class TestPipeline:
@@ -20,37 +37,41 @@ class TestPipeline:
 
     def test_create_pipeline(self):
         """Test creating a pipeline."""
-        p = Pipeline("my_pipeline")
+        p = _pipeline("my_pipeline")
         assert p.name == "my_pipeline"
         assert len(p) == 0
 
     def test_add_job(self):
         """Test adding a job to pipeline."""
-        p = Pipeline()
+        p = _pipeline()
         job = p.add("echo hello", name="step1")
 
         assert len(p) == 1
         assert job.name == "step1"
-        assert job.job.command == "echo hello"
+        assert job.spec.command == "echo hello"
+        assert job.result is None
 
     def test_add_job_auto_name(self):
         """Test auto-generated job name."""
-        p = Pipeline()
+        p = _pipeline()
         job = p.add("echo hello")
 
         assert job.name == "step_1"
 
-    def test_add_job_with_kwargs(self):
-        """Test adding job with extra kwargs."""
-        p = Pipeline()
-        job = p.add("echo hello", name="step1", cpu=4, mem="8G")
+    def test_add_job_spec(self):
+        """A JobSpec is stored as given and resolved at submit."""
+        p = _pipeline()
+        spec = JobSpec("echo hello", cpu=4, mem="8G")
+        step = p.add(spec, name="step1")
 
-        assert job.job.cpu == 4
-        assert job.job.mem == "8G"
+        assert step.spec is spec
+        (job,) = _submitted_jobs(p)
+        assert job.cpu == 4
+        assert job.mem == "8G"
 
     def test_add_job_with_dependencies(self):
         """Test adding job with dependencies."""
-        p = Pipeline()
+        p = _pipeline()
         step1 = p.add("echo step1", name="step1")
         step2 = p.add("echo step2", name="step2", depends_on=["step1"])
 
@@ -59,7 +80,7 @@ class TestPipeline:
 
     def test_add_job_with_pipeline_job_dependency(self):
         """Test adding job with PipelineJob dependency."""
-        p = Pipeline()
+        p = _pipeline()
         step1 = p.add("echo step1", name="step1")
         step2 = p.add("echo step2", name="step2", depends_on=[step1])
 
@@ -67,7 +88,7 @@ class TestPipeline:
 
     def test_duplicate_name_raises(self):
         """Test that duplicate job names raise error."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo hello", name="step1")
 
         with pytest.raises(DuplicateStepError, match="already exists"):
@@ -75,7 +96,7 @@ class TestPipeline:
 
     def test_unknown_dependency_raises(self):
         """Test that unknown dependency raises error."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo hello", name="step1")
 
         with pytest.raises(UnknownStepError, match="Unknown dependency"):
@@ -83,7 +104,7 @@ class TestPipeline:
 
     def test_topological_sort(self):
         """Test topological sorting of jobs."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step3", name="step3", depends_on=[])
         p.add("echo step1", name="step1", depends_on=[])
         p.add("echo step2", name="step2", depends_on=["step1", "step3"])
@@ -100,7 +121,7 @@ class TestPipeline:
 
     def test_circular_dependency_raises(self):
         """Test that circular dependencies raise error."""
-        p = Pipeline()
+        p = _pipeline()
 
         # Create jobs first without dependencies
         p.add("echo step1", name="step1")
@@ -114,7 +135,7 @@ class TestPipeline:
 
     def test_get_job(self):
         """Test getting job by name."""
-        p = Pipeline()
+        p = _pipeline()
         step1 = p.add("echo hello", name="step1")
 
         assert p.get_job("step1") is step1
@@ -125,7 +146,7 @@ class TestPipeline:
         mock_scheduler = MagicMock()
         mock_scheduler.submit.return_value = MagicMock(job_id="1")
 
-        with Pipeline("test", scheduler=mock_scheduler) as p:
+        with _pipeline("test", scheduler=mock_scheduler) as p:
             p.add("echo hello", name="step1")
 
         assert len(p) == 1
@@ -137,7 +158,7 @@ class TestPipeline:
         mock_scheduler = MagicMock()
 
         with pytest.raises(ValueError, match="boom"):
-            with Pipeline("test", scheduler=mock_scheduler) as p:
+            with _pipeline("test", scheduler=mock_scheduler) as p:
                 p.add("echo hello", name="step1")
                 raise ValueError("boom")
 
@@ -147,14 +168,14 @@ class TestPipeline:
         """Context manager does nothing for an empty pipeline."""
         mock_scheduler = MagicMock()
 
-        with Pipeline("test", scheduler=mock_scheduler):
+        with _pipeline("test", scheduler=mock_scheduler):
             pass
 
         mock_scheduler.submit.assert_not_called()
 
     def test_iteration(self):
         """Test iterating over pipeline jobs."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add("echo step2", name="step2")
 
@@ -164,7 +185,7 @@ class TestPipeline:
 
     def test_submit_sets_dependencies(self):
         """Test that submit sets job dependencies correctly."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add("echo step2", name="step2", depends_on=["step1"])
 
@@ -185,12 +206,11 @@ class TestPipeline:
 
         # The second job should have dependencies set
         second_job = calls[1][0][0]
-        assert len(second_job.dependencies) == 1
-        assert second_job.dependencies[0].job_id == "123"
+        assert second_job.dependencies == (Dependency("123", DependencyType.AFTEROK),)
 
     def test_results_property(self):
         """results property returns submitted job results."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add("echo step2", name="step2")
 
@@ -213,7 +233,7 @@ class TestPipeline:
         mock_scheduler = MagicMock()
         mock_scheduler.submit.return_value = MagicMock(job_id="1")
 
-        p = Pipeline("test", scheduler=mock_scheduler)
+        p = _pipeline("test", scheduler=mock_scheduler)
         p.add("echo hello", name="step1")
         p.submit()
 
@@ -221,60 +241,61 @@ class TestPipeline:
 
 
 class TestPipelineConfig:
-    """Tests for config-aware job creation in Pipeline."""
+    """Steps are resolved against the pipeline's config at submit time."""
 
     def test_add_job_loads_defaults(self):
-        """Jobs created via add() pick up [defaults] from config."""
-        config = HPCConfig(defaults={"cpu": 2, "mem": "8G"})
-        with patch("hpc_runner.core.config.get_config", return_value=config):
-            p = Pipeline()
-            job = p.add("echo hello", name="step1")
-
-        assert job.job.cpu == 2
-        assert job.job.mem == "8G"
+        p = _pipeline(config=HPCConfig(defaults={"cpu": 2, "mem": "8G"}))
+        p.add("echo hello", name="step1")
+        (job,) = _submitted_jobs(p)
+        assert job.cpu == 2
+        assert job.mem == "8G"
 
     def test_add_job_with_tool(self):
-        """Tool auto-detected from command picks up [tools.<name>] config."""
         config = HPCConfig(
             defaults={"cpu": 1},
             tools={"python": {"cpu": 4, "modules": ["python/3.11"]}},
         )
-        with patch("hpc_runner.core.config.get_config", return_value=config):
-            p = Pipeline()
-            job = p.add("python script.py", name="step1")
+        p = _pipeline(config=config)
+        p.add("python script.py", name="step1")
+        (job,) = _submitted_jobs(p)
+        assert job.cpu == 4
+        assert job.modules == ("python/3.11",)
 
-        assert job.job.cpu == 4
-        assert job.job.modules == ["python/3.11"]
+    def test_add_job_with_type(self):
+        config = HPCConfig(defaults={"cpu": 1}, types={"gpu": {"queue": "gpu", "cpu": 8}})
+        p = _pipeline(config=config)
+        p.add(JobSpec("python train.py", type="gpu"), name="train")
+        (job,) = _submitted_jobs(p)
+        assert job.queue == "gpu"
+        assert job.cpu == 8
 
-    def test_add_job_with_job_type(self):
-        """Jobs created with job_type= pick up [types.<name>] config."""
-        config = HPCConfig(
-            defaults={"cpu": 1},
-            types={"gpu": {"queue": "gpu", "cpu": 8}},
-        )
-        with patch("hpc_runner.core.config.get_config", return_value=config):
-            p = Pipeline()
-            job = p.add("python train.py", name="train", job_type="gpu")
-
-        assert job.job.queue == "gpu"
-        assert job.job.cpu == 8
-
-    def test_kwargs_override_config(self):
-        """Explicit kwargs override values from config."""
-        config = HPCConfig(defaults={"cpu": 1, "mem": "4G"})
-        with patch("hpc_runner.core.config.get_config", return_value=config):
-            p = Pipeline()
-            job = p.add("echo hello", name="step1", cpu=16)
-
-        assert job.job.cpu == 16
-        assert job.job.mem == "4G"
+    def test_spec_overrides_config(self):
+        p = _pipeline(config=HPCConfig(defaults={"cpu": 1, "mem": "4G"}))
+        p.add(JobSpec("echo hello", cpu=16), name="step1")
+        (job,) = _submitted_jobs(p)
+        assert job.cpu == 16
+        assert job.mem == "4G"
 
     def test_job_name_prefixed_with_pipeline_name(self):
-        """Job.name is always prefixed with the pipeline name."""
-        p = Pipeline("my_pipe")
-        job = p.add("echo hello", name="step1")
+        p = _pipeline("my_pipe")
+        p.add("echo hello", name="step1")
+        (job,) = _submitted_jobs(p)
+        assert job.name == "my_pipe_step1"
 
-        assert job.job.name == "my_pipe_step1"
+    def test_spec_is_not_mutated(self):
+        p = _pipeline()
+        p.add("echo 1", name="a")
+        spec = JobSpec("echo 2")
+        p.add(spec, name="b", depends_on=["a"])
+        _submitted_jobs(p)
+        assert spec.dependencies == []
+        assert spec.name is None
+
+    def test_host_used_for_resolution(self):
+        p = Pipeline("p", config=HPCConfig(), host=make_host(env={"VIRTUAL_ENV": "/v"}))
+        p.add("echo hi", name="s")
+        (job,) = _submitted_jobs(p)
+        assert job.venv == "/v"
 
 
 class TestPipelinePerJobDependencyType:
@@ -282,14 +303,14 @@ class TestPipelinePerJobDependencyType:
 
     def test_default_dependency_type(self):
         """PipelineJob defaults to AFTEROK."""
-        p = Pipeline()
+        p = _pipeline()
         job = p.add("echo hello", name="step1")
 
         assert job.dependency_type == DependencyType.AFTEROK
 
     def test_custom_dependency_type(self):
         """Per-job dependency_type is set via add()."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         step2 = p.add(
             "echo step2",
@@ -302,7 +323,7 @@ class TestPipelinePerJobDependencyType:
 
     def test_submit_uses_per_job_dependency_type(self):
         """submit() applies each job's own dependency_type."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add(
             "echo step2",
@@ -317,11 +338,11 @@ class TestPipelinePerJobDependencyType:
         p.submit(scheduler=mock_scheduler)
 
         second_job = mock_scheduler.submit.call_args_list[1][0][0]
-        assert second_job.dependency_type == "afterany"
+        assert second_job.dependencies == (Dependency("1", DependencyType.AFTERANY),)
 
     def test_mixed_dependency_types(self):
         """Different jobs can have different dependency types."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add(
             "echo step2",
@@ -343,8 +364,8 @@ class TestPipelinePerJobDependencyType:
         p.submit(scheduler=mock_scheduler)
 
         calls = mock_scheduler.submit.call_args_list
-        assert calls[1][0][0].dependency_type == "afterok"
-        assert calls[2][0][0].dependency_type == "afterany"
+        assert calls[1][0][0].dependencies[0].type is DependencyType.AFTEROK
+        assert calls[2][0][0].dependencies[0].type is DependencyType.AFTERANY
 
 
 class TestPipelinePartialSubmission:
@@ -352,14 +373,14 @@ class TestPipelinePartialSubmission:
 
     def test_submit_empty_pipeline_raises(self):
         """Submitting an empty pipeline raises."""
-        p = Pipeline()
+        p = _pipeline()
 
         with pytest.raises(PipelineError, match="no jobs to submit"):
             p.submit(scheduler=MagicMock())
 
     def test_submit_already_submitted_raises(self):
         """Submitting a fully-submitted pipeline raises."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo hello", name="step1")
 
         mock_scheduler = MagicMock()
@@ -371,7 +392,7 @@ class TestPipelinePartialSubmission:
 
     def test_partial_failure_can_retry(self):
         """After a partial failure, submit() retries only unsubmitted jobs."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add("echo step2", name="step2", depends_on=["step1"])
         p.add("echo step3", name="step3", depends_on=["step2"])
@@ -403,7 +424,7 @@ class TestPipelinePartialSubmission:
 
     def test_wait_raises_on_no_submission(self):
         """wait() raises if nothing was submitted."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo hello", name="step1")
 
         with pytest.raises(NotSubmittedError, match="has not been submitted"):
@@ -411,7 +432,7 @@ class TestPipelinePartialSubmission:
 
     def test_wait_raises_on_partial_submission(self):
         """wait() raises if some jobs were never submitted."""
-        p = Pipeline()
+        p = _pipeline()
         p.add("echo step1", name="step1")
         p.add("echo step2", name="step2", depends_on=["step1"])
 
@@ -434,3 +455,14 @@ class TestDependencyType:
         assert str(DependencyType.AFTERANY) == "afterany"
         assert str(DependencyType.AFTER) == "after"
         assert str(DependencyType.AFTERNOTOK) == "afternotok"
+
+
+class TestPipelineInteractiveParent:
+    def test_interactive_parent_has_no_id_to_depend_on(self):
+        p = _pipeline()
+        p.add(JobSpec("echo 1", interactive=True), name="a")
+        p.add("echo 2", name="b", depends_on=["a"])
+        scheduler = MagicMock()
+        scheduler.submit.return_value = MagicMock(job_id=None)
+        with pytest.raises(PipelineError, match="no job id"):
+            p.submit(scheduler=scheduler)

@@ -5,7 +5,9 @@ try:
 except ImportError:
     __version__ = "0.0.0.dev0"
 
-from hpc_runner.core.config import HPCConfig, get_config, load_config, reload_config
+from hpc_runner.core.array import ArrayRange
+from hpc_runner.core.config import HPCConfig, load_config
+from hpc_runner.core.dependency import Dependency, DependencyType
 from hpc_runner.core.exceptions import (
     AccountingNotAvailable,
     ConfigError,
@@ -24,19 +26,26 @@ from hpc_runner.core.exceptions import (
     SubmissionError,
     UnknownStepError,
 )
+from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
-from hpc_runner.core.job_array import JobArray
+from hpc_runner.core.resolve import resolve
 from hpc_runner.core.resources import Resource, ResourceSet
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
+from hpc_runner.core.spec import JobSpec
 from hpc_runner.schedulers import get_scheduler, list_schedulers, register_scheduler
-from hpc_runner.workflow import DependencyType, Pipeline, PipelineJob
+from hpc_runner.workflow import Pipeline, PipelineJob
 
 __all__ = [
     # Version
     "__version__",
     # Core
+    "JobSpec",
     "Job",
-    "JobArray",
+    "Host",
+    "resolve",
+    "ArrayRange",
+    "Dependency",
+    "DependencyType",
     "JobResult",
     "ArrayJobResult",
     "JobStatus",
@@ -44,8 +53,6 @@ __all__ = [
     "ResourceSet",
     # Config
     "load_config",
-    "get_config",
-    "reload_config",
     "HPCConfig",
     # Schedulers
     "get_scheduler",
@@ -54,7 +61,6 @@ __all__ = [
     # Workflow
     "Pipeline",
     "PipelineJob",
-    "DependencyType",
     # Exceptions
     "AccountingNotAvailable",
     "ConfigError",

@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
+from hpc_runner.core.config import load_config
 from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.schedulers.detection import detect_scheduler
 
 if TYPE_CHECKING:
+    from hpc_runner.core.config import HPCConfig
     from hpc_runner.schedulers.base import BaseScheduler
 
 _SCHEDULERS: dict[str, str] = {
@@ -19,11 +21,13 @@ _SCHEDULERS: dict[str, str] = {
 }
 
 
-def get_scheduler(name: str | None = None) -> BaseScheduler:
+def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -> BaseScheduler:
     """Get scheduler instance.
 
     Args:
         name: Scheduler name or None to auto-detect
+        config: Configuration the scheduler reads its ``[schedulers.<name>]``
+            settings from. None loads it afresh with ``load_config()``.
 
     Returns:
         Scheduler instance
@@ -43,7 +47,9 @@ def get_scheduler(name: str | None = None) -> BaseScheduler:
     module = importlib.import_module(module_path)
     scheduler_class = getattr(module, class_name)
 
-    return scheduler_class()  # type: ignore[no-any-return]
+    if config is None:
+        config = load_config()
+    return scheduler_class(config)  # type: ignore[no-any-return]
 
 
 def register_scheduler(name: str, import_path: str) -> None:

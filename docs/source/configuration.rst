@@ -33,23 +33,23 @@ Configuration supports four top-level namespaces:
 - ``[tools.<name>]``: overrides keyed by tool name (e.g., ``python``, ``make``).
   Each tool entry can also contain an ``[tools.<name>.options]`` sub-table for
   argument-specific specialisation (see :ref:`tool-option-specialisation`).
-- ``[types.<name>]``: named job profiles (e.g., ``gpu``, ``interactive``)
+- ``[types.<name>]``: named job profiles (e.g., ``gpu``, ``mpi``)
 - ``[schedulers.<name>]``: scheduler-specific behavior (e.g., SGE resource names)
 
 
 How jobs pick up config
 -----------------------
 
-Every ``Job()`` automatically consults the config hierarchy.  Values merge in
-this order:
+``resolve(spec, config, host)`` consults the config hierarchy for every job.
+Values merge in this order:
 
 1. Start from ``[defaults]``.
-2. If ``job_type`` is given, merge ``[types.<name>]``.
+2. If the spec names a ``type`` (``-t`` on the CLI), merge ``[types.<name>]``.
    Otherwise auto-detect the tool name from the command (first word, path
    stripped) and merge ``[tools.<name>]`` if it exists.
 3. If ``[tools.<name>.options]`` entries exist and the command arguments match
    one (see :ref:`tool-option-specialisation`), merge that option config on top.
-4. CLI options (or explicit keyword arguments) override whatever came from
+4. CLI options (or fields set on the ``JobSpec``) override whatever came from
    config.
 
 .. note::
@@ -158,7 +158,6 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
 .. code-block:: toml
 
    [defaults]
-   scheduler = "auto"          # auto|sge|slurm|pbs|local
    name = "job"
    cpu = 1
    mem = "4G"
@@ -177,12 +176,11 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    modules_path = []           # module use <path>: searched before the site paths
    modules_path_append = []    # module use --append <path>: searched after them
 
-   raw_args = []
-   sge_args = []
-
    resources = [
      { name = "scratch", value = "20G" }
    ]
+
+   env_unset = ["https_proxy", "http_proxy"]   # unset in the job script
 
    # Environment variable manipulation (values support $VAR / ${VAR} expansion)
    [defaults.env_vars]
@@ -199,12 +197,10 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    memory_resource = "mem_free"
    time_resource = "h_rt"
 
-   merge_output = true
    purge_modules = true
    silent_modules = false
    module_init_script = ""
    expand_makeflags = true
-   unset_vars = ["https_proxy", "http_proxy"]
 
    [tools.python]
    cpu = 4
@@ -227,7 +223,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    cpu = 4
    modules = ["verilator/5.0"]
 
-   [types.interactive]
+   [tools.xterm]
    queue = "interactive.q"
    time = "8:00:00"
    cpu = 2

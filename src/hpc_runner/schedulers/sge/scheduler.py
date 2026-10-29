@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import tempfile
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -12,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from hpc_runner.core.config import get_config
+from hpc_runner.core.dependency import DependencyType
 from hpc_runner.core.exceptions import (
     AccountingNotAvailable,
     JobNotFoundError,
@@ -35,6 +34,7 @@ from hpc_runner.schedulers.sge.args import (
     SGEMergeOutputArg,
     SGEOutputArg,
     SGEPriorityArg,
+    SGEProjectArg,
     SGEQueueArg,
     SGEShellArg,
     SGETimeArg,
@@ -53,8 +53,11 @@ from hpc_runner.templates import render_template
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from hpc_runner.core.config import HPCConfig
     from hpc_runner.core.job import Job
-    from hpc_runner.core.job_array import JobArray
+
+# Script path shown by preview(); never written or deleted.
+_PREVIEW_SCRIPT_PATH = "<script>"
 
 
 def get_script_dir() -> Path:
@@ -124,9 +127,9 @@ class SGEScheduler(BaseScheduler):
 
     name = "sge"
 
-    def __init__(self) -> None:
+    def __init__(self, config: HPCConfig) -> None:
         """Initialize SGE scheduler with config-driven settings."""
-        config = get_config()
+        super().__init__(config)
         sge_config = config.get_scheduler_config("sge")
 
         # Extract config values (also stored as attributes for testing/introspection)
@@ -141,7 +144,6 @@ class SGEScheduler(BaseScheduler):
 
         # Environment handling config
         self.expand_makeflags = sge_config.get("expand_makeflags", True)
-        self.unset_vars = sge_config.get("unset_vars", [])
 
         # afterok emulation: SGE -hold_jid is afterany, so each job publishes
         # its exit code to a sentinel file and afterok dependents verify their
@@ -162,6 +164,7 @@ class SGEScheduler(BaseScheduler):
             "name": SGEJobNameArg(),
             "queue": SGEQueueArg(),
             "priority": SGEPriorityArg(),
+            "project": SGEProjectArg(),
             "stdout": SGEOutputArg(),
             "stderr": SGEErrorArg(),
             # Resource attributes (config-driven)
@@ -179,35 +182,31 @@ class SGEScheduler(BaseScheduler):
     # Script Generation
     # =========================================================================
 
-    def generate_script(
-        self,
-        job: Job,
-        array_range: str | None = None,
-        keep_script: bool = False,
-        script_path: str | None = None,
-    ) -> str:
-        """Generate qsub script using template.
+    def preview(self, job: Job) -> str:
+        """Return the script :meth:`submit` would write for *job*.
 
-        Args:
-            job: Job to generate script for.
-            array_range: Array job range string (e.g., "1-100").
-            keep_script: If True, script won't self-delete after execution.
-            script_path: Path where script will be written (for self-deletion).
+        Rendered as with ``keep_script=True`` (no self-delete line), so it
+        is byte-for-byte what ``submit(job, keep_script=True)`` writes.
         """
-        directives = self._build_directives(job, array_range)
+        if job.interactive:
+            return self._render_interactive(job, _PREVIEW_SCRIPT_PATH, keep_script=True)
+        return self._render_batch(job, _PREVIEW_SCRIPT_PATH, keep_script=True)
+
+    def _render_batch(self, job: Job, script_path: str, keep_script: bool) -> str:
+        """Render the qsub script: every option is a ``#$`` directive."""
+        afterok_ids = [d.job_id for d in job.dependencies if d.type is DependencyType.AFTEROK]
         return render_template(
             "sge/templates/batch.sh.j2",
             job=job,
             scheduler=self,
-            directives=directives,
+            directives=self._build_directives(job),
+            afterok_ids=afterok_ids,
             script_path=script_path,
             keep_script=keep_script,
         )
 
-    def generate_interactive_script(
-        self, job: Job, script_path: str, keep_script: bool = False
-    ) -> str:
-        """Generate wrapper script for interactive jobs."""
+    def _render_interactive(self, job: Job, script_path: str, keep_script: bool) -> str:
+        """Render the wrapper script qrsh runs (no directives)."""
         return render_template(
             "sge/templates/interactive.sh.j2",
             job=job,
@@ -216,7 +215,7 @@ class SGEScheduler(BaseScheduler):
             keep_script=keep_script,
         )
 
-    def _build_directives(self, job: Job, array_range: str | None = None) -> list[str]:
+    def _build_directives(self, job: Job) -> list[str]:
         """Build complete list of #$ directives for the job.
 
         Uses the rendering protocol from BaseScheduler, then adds
@@ -233,111 +232,54 @@ class SGEScheduler(BaseScheduler):
                 directives.append(d)
 
         # 3. Array job range
-        if array_range:
-            if d := self._array_arg.to_directive(array_range):
+        if job.array is not None:
+            if d := self._array_arg.to_directive(job.array.range_str):
                 directives.append(d)
 
-        # 4. Dependencies
-        dep_str = self._build_dependency_string(job)
-        if dep_str:
-            if d := self._hold_arg.to_directive(dep_str):
+        # 4. Dependencies (-hold_jid is afterany; afterok is guarded in the script)
+        if job.dependencies:
+            hold = ",".join(dep.job_id for dep in job.dependencies)
+            if d := self._hold_arg.to_directive(hold):
                 directives.append(d)
 
         # 5. Custom resources (ResourceSet)
         for resource in job.resources:
             directives.append(f"#$ -l {resource.name}={resource.value}")
 
-        # 6. Raw passthrough arguments
-        for arg in job.raw_args + job.sge_args:
-            if arg.startswith("-"):
-                directives.append(f"#$ {arg}")
-            else:
-                directives.append(f"#$ -{arg}")
+        # 6. Raw passthrough arguments, as one directive line: SGE parses a
+        #    directive line like a qsub command line, so "-q batch.q -l gpu=2"
+        #    must stay together.
+        passthrough = self._passthrough_args(job)
+        if passthrough:
+            directives.append("#$ " + " ".join(passthrough))
 
         return directives
-
-    def _build_dependency_string(self, job: Job) -> str | None:
-        """Build SGE dependency string from job dependencies."""
-        # String-based dependency from CLI
-        if job.dependency:
-            if ":" in job.dependency:
-                return job.dependency.split(":", 1)[1]
-            return job.dependency
-
-        # Programmatic dependencies from Job.after()
-        if job.dependencies:
-            return ",".join(dep.job_id for dep in job.dependencies)
-
-        return None
-
-    # =========================================================================
-    # Command Building
-    # =========================================================================
-
-    def build_submit_command(self, job: Job) -> list[str]:
-        """Build qsub command line."""
-        cmd = ["qsub"]
-        cmd.extend(self.render_args(job))
-        cmd.extend(job.raw_args)
-        cmd.extend(job.sge_args)
-        return cmd
-
-    def build_interactive_command(self, job: Job) -> list[str]:
-        """Build qrsh command for interactive jobs.
-
-        Note: qrsh supports a subset of qsub options. Notably:
-        - Does NOT support: -S (shell), -o/-e (output), -j (join), -N (name)
-        - Does support: -V, -pe, -l, -q, -cwd
-        """
-        import shlex
-
-        cmd = ["qrsh"]
-
-        # Only include qrsh-compatible options
-        QRSH_COMPATIBLE = {"inherit_env", "use_cwd", "cpu", "mem", "time", "queue"}
-
-        for attr_name, value in job.iter_attributes():
-            if attr_name not in QRSH_COMPATIBLE:
-                continue
-            renderer = self.ARG_RENDERERS.get(attr_name)
-            if renderer:
-                cmd.extend(renderer.to_args(value))
-
-        cmd.extend(job.raw_args)
-        cmd.extend(job.sge_args)
-
-        # Add the command - split it back into parts for proper argument handling
-        # This preserves quoting: "bash -c 'echo hello'" -> ['bash', '-c', 'echo hello']
-        cmd.extend(shlex.split(job.command))
-
-        return cmd
 
     # =========================================================================
     # Job Submission
     # =========================================================================
 
-    def submit(self, job: Job, interactive: bool = False, keep_script: bool = False) -> JobResult:
-        """Submit a job to SGE.
+    def submit(self, job: Job, *, keep_script: bool = False) -> JobResult:
+        """Submit a job to SGE: qrsh when ``job.interactive``, else qsub.
 
         Args:
             job: Job to submit.
-            interactive: If True, run interactively via qrsh.
             keep_script: If True, don't delete the job script after submission.
                          Useful for debugging.
         """
-        if interactive:
+        if job.interactive:
             return self._submit_interactive(job, keep_script=keep_script)
         return self._submit_batch(job, keep_script=keep_script)
 
     def _submit_batch(self, job: Job, keep_script: bool = False) -> JobResult:
-        """Submit via qsub."""
+        """Submit via ``qsub <script>``; all options are in the script."""
         # Determine script path first (needed for self-deletion in template)
         script_dir = get_script_dir()
         script_name = f"hpc_batch_{uuid.uuid4().hex[:8]}.sh"
         script_path = script_dir / script_name
 
         # Generate script with cleanup instruction
-        script = self.generate_script(job, keep_script=keep_script, script_path=str(script_path))
+        script = self._render_batch(job, str(script_path), keep_script=keep_script)
 
         script_path.write_text(script)
         script_path.chmod(0o755)
@@ -349,15 +291,18 @@ class SGEScheduler(BaseScheduler):
 
         try:
             job_id = self._qsub(["qsub", str(script_path)], script=script, cwd=workdir)
-            return JobResult(job_id=job_id, scheduler=self, job=job)
         finally:
             # Clean up locally after qsub (script is copied to spool)
             # The script inside the job will also self-delete unless keep_script
             if not keep_script:
                 script_path.unlink(missing_ok=True)
 
+        if job.array is not None:
+            return ArrayJobResult(scheduler=self, job_id=job_id, job=job, array=job.array)
+        return JobResult(scheduler=self, job_id=job_id, job=job)
+
     def _submit_interactive(self, job: Job, keep_script: bool = False) -> JobResult:
-        """Submit via qrsh for interactive execution.
+        """Run via qrsh and wait for it.
 
         Creates a wrapper script with full environment setup (modules, venv, etc.)
         and executes it via qrsh. The script self-deletes after execution unless
@@ -372,7 +317,7 @@ class SGEScheduler(BaseScheduler):
         script_path = script_dir / script_name
 
         # Generate wrapper script with the actual path (for self-deletion)
-        script = self.generate_interactive_script(job, str(script_path), keep_script=keep_script)
+        script = self._render_interactive(job, str(script_path), keep_script=keep_script)
 
         # Write script to shared filesystem
         script_path.write_text(script)
@@ -394,50 +339,19 @@ class SGEScheduler(BaseScheduler):
         if not keep_script:
             script_path.unlink(missing_ok=True)
 
-        return JobResult(
-            job_id="interactive",
-            scheduler=self,
-            job=job,
-            _exit_code=result.returncode,
-        )
+        return JobResult(scheduler=self, job_id=None, job=job, exit_code=result.returncode)
 
     def _build_qrsh_command(self, job: Job, script_path: str) -> list[str]:
-        """Build qrsh command to run wrapper script."""
+        """Build the qrsh argv that runs the wrapper script.
+
+        qrsh has no directives, so options go on its command line; flags
+        qrsh rejects are skipped via ``interactive_ok``.
+        """
         cmd = ["qrsh"]
-
-        # Only include qrsh-compatible options
-        QRSH_COMPATIBLE = {"inherit_env", "use_cwd", "cpu", "mem", "time", "queue"}
-
-        for attr_name, value in job.iter_attributes():
-            if attr_name not in QRSH_COMPATIBLE:
-                continue
-            renderer = self.ARG_RENDERERS.get(attr_name)
-            if renderer:
-                cmd.extend(renderer.to_args(value))
-
-        cmd.extend(job.raw_args)
-        cmd.extend(job.sge_args)
-
-        # Execute the wrapper script
+        cmd.extend(self._render_interactive_args(job))
+        cmd.extend(self._passthrough_args(job))
         cmd.append(script_path)
-
         return cmd
-
-    def submit_array(self, array: JobArray) -> ArrayJobResult:
-        """Submit array job."""
-        script = self.generate_script(array.job, array_range=array.range_str)
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, prefix="hpc_") as f:
-            f.write(script)
-            script_path = f.name
-
-        workdir = Path(array.job.workdir).resolve() if array.job.workdir else None
-
-        try:
-            job_id = self._qsub(["qsub", script_path], script=script, cwd=workdir)
-            return ArrayJobResult(base_job_id=job_id, scheduler=self, array=array)
-        finally:
-            Path(script_path).unlink(missing_ok=True)
 
     def _qsub(self, argv: list[str], *, script: str, cwd: Path | None) -> str:
         """Run qsub and return the job id.

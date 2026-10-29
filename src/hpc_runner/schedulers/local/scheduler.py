@@ -13,17 +13,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hpc_runner.core.config import get_config
-from hpc_runner.core.exceptions import AccountingNotAvailable, JobNotFoundError
+from hpc_runner.core.exceptions import (
+    AccountingNotAvailable,
+    JobNotFoundError,
+    NotSupportedError,
+)
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.schedulers.base import BaseScheduler
 from hpc_runner.templates import render_template
 
 if TYPE_CHECKING:
+    from hpc_runner.core.config import HPCConfig
     from hpc_runner.core.job import Job
-    from hpc_runner.core.job_array import JobArray
-    from hpc_runner.core.result import ArrayJobResult
+
+
+def _check_supported(job: Job) -> None:
+    """Refuse what the local scheduler cannot honour rather than degrade."""
+    if job.array is not None:
+        raise NotSupportedError("the local scheduler does not support array jobs")
+    if job.dependencies:
+        raise NotSupportedError("the local scheduler does not support job dependencies")
 
 
 class LocalScheduler(BaseScheduler):
@@ -33,9 +43,9 @@ class LocalScheduler(BaseScheduler):
 
     _job_counter: int = 0
 
-    def __init__(self) -> None:
+    def __init__(self, config: HPCConfig) -> None:
         """Initialize local scheduler with config-driven settings."""
-        config = get_config()
+        super().__init__(config)
         local_config = config.get_scheduler_config("local")
 
         self.purge_modules = local_config.get("purge_modules", True)
@@ -47,8 +57,15 @@ class LocalScheduler(BaseScheduler):
         self._output_paths: dict[str, dict[str, Path]] = {}
         self._script_paths: dict[str, Path] = {}
 
-    def submit(self, job: Job, interactive: bool = False, keep_script: bool = False) -> JobResult:
-        """Run job as local subprocess."""
+    def submit(self, job: Job, *, keep_script: bool = False) -> JobResult:
+        """Run job as a local subprocess; waits for it when ``job.interactive``.
+
+        Raises:
+            NotSupportedError: The job is an array job or has dependencies;
+                the local scheduler can honour neither.
+        """
+        _check_supported(job)
+
         LocalScheduler._job_counter += 1
         job_id = f"local_{LocalScheduler._job_counter}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
@@ -59,57 +76,60 @@ class LocalScheduler(BaseScheduler):
 
         workdir = Path(job.workdir).resolve() if job.workdir else Path.cwd()
 
-        # Resolve output paths for template-based redirection
-        stdout_path: Path | None = None
-        stderr_path: Path | None = None
-
-        if job.stdout is not None or job.stderr is not None:
-            stdout_file = job.stdout or f"{job.name}.{job_id}.out"
-            stdout_path = workdir / stdout_file
-            if job.merge_output:
-                stderr_path = None
-            else:
-                stderr_file = job.stderr or f"{job.name}.{job_id}.err"
-                stderr_path = workdir / stderr_file
-
+        stdout_path, stderr_path = self._resolve_output_paths(job, job_id, workdir)
+        if stdout_path is not None:
             self._output_paths[job_id] = {
                 "stdout": stdout_path,
                 "stderr": stderr_path if stderr_path else stdout_path,
             }
 
         # Generate and write script (template handles output redirection)
-        script = self.generate_script(
-            job,
-            stdout_path=stdout_path,
-            stderr_path=stderr_path,
-        )
+        script = self._render(job, stdout_path, stderr_path)
         script_path = Path(tempfile.gettempdir()) / f".hpc_local_{job_id}.sh"
         script_path.write_text(script)
         script_path.chmod(0o755)
 
-        if interactive:
+        if job.interactive:
             result = subprocess.run(
                 [str(script_path)],
                 cwd=workdir,
                 env=env,
             )
-            self._exit_codes[job_id] = result.returncode
             if not keep_script:
                 script_path.unlink(missing_ok=True)
-        else:
-            proc = subprocess.Popen(
-                [str(script_path)],
-                cwd=workdir,
-                env=env,
-            )
-            self._processes[job_id] = proc
-            self._script_paths[job_id] = script_path
+            return JobResult(scheduler=self, job_id=None, job=job, exit_code=result.returncode)
 
-        return JobResult(job_id=job_id, scheduler=self, job=job)
+        proc = subprocess.Popen(
+            [str(script_path)],
+            cwd=workdir,
+            env=env,
+        )
+        self._processes[job_id] = proc
+        self._script_paths[job_id] = script_path
+        return JobResult(scheduler=self, job_id=job_id, job=job)
 
-    def submit_array(self, array: JobArray) -> ArrayJobResult:
-        """Array jobs are not supported by the local scheduler."""
-        raise NotImplementedError("Array jobs are not supported by the local scheduler")
+    def preview(self, job: Job) -> str:
+        """Return the script :meth:`submit` would write for *job*.
+
+        Output file names contain the job id, which is only assigned at
+        submit, so the preview shows ``<job_id>`` in its place.
+        """
+        _check_supported(job)
+        workdir = Path(job.workdir).resolve() if job.workdir else Path.cwd()
+        stdout_path, stderr_path = self._resolve_output_paths(job, "<job_id>", workdir)
+        return self._render(job, stdout_path, stderr_path)
+
+    @staticmethod
+    def _resolve_output_paths(
+        job: Job, job_id: str, workdir: Path
+    ) -> tuple[Path | None, Path | None]:
+        """Output files for template-based redirection (None = inherit)."""
+        if job.stdout is None and job.stderr is None:
+            return None, None
+        stdout_path = workdir / (job.stdout or f"{job.name}.{job_id}.out")
+        if job.merge_output:
+            return stdout_path, None
+        return stdout_path, workdir / (job.stderr or f"{job.name}.{job_id}.err")
 
     def cancel(self, job_id: str) -> bool:
         """Cancel a local job."""
@@ -170,15 +190,8 @@ class LocalScheduler(BaseScheduler):
             return self._output_paths[job_id].get(stream)
         return None
 
-    def generate_script(
-        self,
-        job: Job,
-        array_range: str | None = None,
-        *,
-        stdout_path: Path | None = None,
-        stderr_path: Path | None = None,
-    ) -> str:
-        """Generate local execution script."""
+    def _render(self, job: Job, stdout_path: Path | None, stderr_path: Path | None) -> str:
+        """Render the local execution script."""
         return render_template(
             "local/templates/job.sh.j2",
             job=job,
@@ -187,16 +200,6 @@ class LocalScheduler(BaseScheduler):
             stderr_path=stderr_path,
             merge_output=job.merge_output,
         )
-
-    def build_submit_command(self, job: Job) -> list[str]:
-        """Build command - for local, just bash."""
-        cmd = job.command if isinstance(job.command, str) else " ".join(job.command)
-        return ["bash", "-c", cmd]
-
-    def build_interactive_command(self, job: Job) -> list[str]:
-        """Build interactive command - for local, just bash."""
-        cmd = job.command if isinstance(job.command, str) else " ".join(job.command)
-        return ["bash", "-c", cmd]
 
     # -------------------------------------------------------------------------
     # TUI Monitor API (stubs for local scheduler)

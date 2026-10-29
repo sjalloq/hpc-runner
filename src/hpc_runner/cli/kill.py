@@ -64,7 +64,7 @@ def kill(
 
     from hpc_runner.schedulers import get_scheduler
 
-    scheduler = get_scheduler(ctx.scheduler)
+    scheduler = get_scheduler(ctx.scheduler, config=ctx.config)
 
     user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
     jobs = scheduler.list_active_jobs(user=user)
