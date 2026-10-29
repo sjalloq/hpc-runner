@@ -10,7 +10,6 @@ import pytest
 from hpc_runner.core.config import (
     HPC_CONFIG_ENV_VAR,
     HPCConfig,
-    _expand_env_vars,
     _match_contiguous,
     _merge,
     _normalise_tokens,
@@ -266,42 +265,29 @@ class TestFindConfigFile:
             os.chdir(old_cwd)
 
 
-class TestEnvVarExpansion:
-    """Tests for environment variable expansion in paths."""
+class TestExtendsExpansion:
+    """`extends` follows the D5 rule: $VAR from the environment, ${CONFIG_DIR}."""
 
-    def test_expand_braced_env_var(self):
-        """Test ${VAR} syntax expansion."""
-        os.environ["TEST_HPC_PATH"] = "/test/path"
-        try:
-            result = _expand_env_vars("${TEST_HPC_PATH}/config.toml")
-            assert result == "/test/path/config.toml"
-        finally:
-            del os.environ["TEST_HPC_PATH"]
+    def test_env_var(self, tmp_path, monkeypatch):
+        (tmp_path / "base.toml").write_text("config_version = 1\n")
+        child = tmp_path / "child.toml"
+        child.write_text('config_version = 1\nextends = "${TEST_HPC_BASE}/base.toml"\n')
+        monkeypatch.setenv("TEST_HPC_BASE", str(tmp_path))
+        assert _resolve_extends(child) == [(tmp_path / "base.toml").resolve(), child.resolve()]
 
-    def test_expand_simple_env_var(self):
-        """Test $VAR syntax expansion."""
-        os.environ["TEST_HPC_PATH"] = "/test/path"
-        try:
-            result = _expand_env_vars("$TEST_HPC_PATH/config.toml")
-            assert result == "/test/path/config.toml"
-        finally:
-            del os.environ["TEST_HPC_PATH"]
+    def test_config_dir(self, tmp_path):
+        (tmp_path / "base.toml").write_text("config_version = 1\n")
+        child = tmp_path / "child.toml"
+        child.write_text('config_version = 1\nextends = "${CONFIG_DIR}/base.toml"\n')
+        assert _resolve_extends(child)[0] == (tmp_path / "base.toml").resolve()
 
-    def test_undefined_env_var_unchanged(self):
-        """Test that undefined env vars are left unchanged."""
-        result = _expand_env_vars("${UNDEFINED_VAR}/config.toml")
-        assert result == "${UNDEFINED_VAR}/config.toml"
-
-    def test_multiple_env_vars(self):
-        """Test multiple env vars in one path."""
-        os.environ["TEST_BASE"] = "/base"
-        os.environ["TEST_SUB"] = "subdir"
-        try:
-            result = _expand_env_vars("${TEST_BASE}/${TEST_SUB}/config.toml")
-            assert result == "/base/subdir/config.toml"
-        finally:
-            del os.environ["TEST_BASE"]
-            del os.environ["TEST_SUB"]
+    def test_undefined_is_error(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("TEST_HPC_UNSET", raising=False)
+        child = tmp_path / "child.toml"
+        child.write_text('config_version = 1\nextends = "$TEST_HPC_UNSET/base.toml"\n')
+        with pytest.raises(ConfigError, match=r"undefined variable \$TEST_HPC_UNSET") as info:
+            _resolve_extends(child)
+        assert info.value.line == 2
 
 
 class TestExtendsResolution:
@@ -874,6 +860,49 @@ class TestSchema:
         (err,) = _errors(bad)
         assert "expected a path or false" in str(err)
 
+    def test_env_set_and_prepend_same_layer_is_error(self, tmp_path):
+        """D5.6: env_vars and env_prepend/env_append on one key in one layer."""
+        path = _write(
+            tmp_path,
+            "config_version = 1\n[tools.a]\n"
+            'env_vars = { PATH = "/a" }\nenv_append = { PATH = "/b" }\n',
+        )
+        (err,) = _errors(path)
+        assert "[tools.a] env_append.PATH: PATH is also set by env_vars" in str(err)
+        assert err.line == 4
+
+    def test_env_set_and_prepend_across_layers_allowed(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "config_version = 1\n"
+            '[defaults.env_vars]\nPATH = "/a"\n[tools.a.env_prepend]\nPATH = "/b"\n',
+        )
+        assert load_config(path).tools["a"]["env_prepend"] == {"PATH": "/b"}
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            'env_vars = { "A B" = "x" }',
+            'env_prepend = { "1A" = "x" }',
+            'env_unset = ["a;b"]',
+            'env_passthrough = ["$DISPLAY"]',
+        ],
+    )
+    def test_env_names_must_be_identifiers(self, tmp_path, line):
+        path = _write(tmp_path, f"config_version = 1\n[defaults]\n{line}\n")
+        (err,) = _errors(path)
+        assert "not a valid environment variable name" in str(err)
+
+    def test_env_passthrough_is_a_d1_list(self, tmp_path):
+        path = _write(
+            tmp_path,
+            'config_version = 1\n[defaults]\nenv_passthrough = ["DISPLAY"]\n'
+            '[types.t]\nenv_passthrough = { set = ["LM_LICENSE_FILE"] }\n',
+        )
+        config = load_config(path)
+        assert config.defaults["env_passthrough"] == ["DISPLAY"]
+        assert config.types["t"]["env_passthrough"] == Set(["LM_LICENSE_FILE"])
+
     def test_verbs_converted(self, tmp_path):
         path = _write(
             tmp_path,
@@ -964,9 +993,16 @@ class TestSchedulerSections:
         assert "[schedulers.sge] merge_output: unknown key" in str(err)
 
     def test_wrong_type_rejected(self, tmp_path):
-        path = _write(tmp_path, 'config_version = 1\n[schedulers.local]\npurge_modules = "yes"\n')
+        path = _write(tmp_path, "config_version = 1\n[schedulers.local]\nmodule_system = 1\n")
         (err,) = _errors(path)
-        assert "expected bool" in str(err)
+        assert "expected str" in str(err)
+
+    @pytest.mark.parametrize("key", ["purge_modules", "silent_modules", "expand_makeflags"])
+    def test_deleted_script_flags_rejected(self, tmp_path, key):
+        """D15: these keys are gone; module purge is unconditional."""
+        path = _write(tmp_path, f"config_version = 1\n[schedulers.sge]\n{key} = true\n")
+        (err,) = _errors(path)
+        assert f"[schedulers.sge] {key}: unknown key" in str(err)
 
     def test_unknown_scheduler_is_warning(self, tmp_path, caplog):
         path = _write(tmp_path, 'config_version = 1\n[schedulers.lsf]\nqueue = "x"\n')

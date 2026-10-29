@@ -11,6 +11,7 @@ modules_path = []          # 'module use <path>' (searched first)
 modules_path_append = []   # 'module use --append <path>' (searched last)
 modules = []
 env_unset = []             # Environment variables to unset in jobs (e.g., ["https_proxy"])
+env_passthrough = []       # With inherit_env = false: submit-host variables to pass (e.g., ["DISPLAY"])
 
 # SGE-specific settings
 [schedulers.sge]
@@ -18,19 +19,14 @@ parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
 
-# Module handling
-purge_modules = true        # Run 'module purge' before loading modules
-silent_modules = false      # Use -s flag for silent module operations
+# Module handling ('module purge' always runs first)
 module_init_script = ""     # Site-specific module init (empty = auto-detect)
-
-# Environment handling
-expand_makeflags = true     # Expand $NSLOTS in MAKEFLAGS
+module_system = ""          # "modules" (Environment Modules), "lmod" or "" (unknown)
 
 # Local scheduler settings
 [schedulers.local]
-purge_modules = true
-silent_modules = false
 module_init_script = ""
+module_system = ""
 
 # Slurm-specific settings (for future use)
 [schedulers.slurm]
@@ -42,7 +38,8 @@ queue = "interactive"
 time = "4:00:00"
 
 [tools.make]
-# Inherit defaults
+# ${hpc.cpus} is rendered by the scheduler: $NSLOTS on SGE.
+env_vars = { MAKEFLAGS = "-j${hpc.cpus}" }
 
 [tools.python]
 modules = ["python"]

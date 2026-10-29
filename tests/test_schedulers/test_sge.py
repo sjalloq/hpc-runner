@@ -183,7 +183,7 @@ class TestSGEScheduler:
         script = scheduler.preview(job)
 
         assert "# Prepend to environment variables" in script
-        assert 'export PATH="/new/bin${PATH:+:$PATH}"' in script
+        assert "export PATH=/new/bin${PATH:+:$PATH}" in script
 
     def test_generate_script_env_append(self):
         """Test script generation with env_append."""
@@ -197,7 +197,7 @@ class TestSGEScheduler:
         script = scheduler.preview(job)
 
         assert "# Append to environment variables" in script
-        assert 'export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}/extra/lib"' in script
+        assert "export PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}/extra/lib" in script
 
     def test_generate_script_all_env_types(self):
         """Test script with env_vars, env_prepend, and env_append together."""
@@ -213,18 +213,18 @@ class TestSGEScheduler:
         script = scheduler.preview(job)
 
         # All three sections should be present
-        assert 'export PATH="/cocotb/bin${PATH:+:$PATH}"' in script
-        assert 'export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}/extra/lib"' in script
-        assert 'export COCOTB_TOPLEVEL="counter"' in script
+        assert "export PATH=/cocotb/bin${PATH:+:$PATH}" in script
+        assert "export PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}/extra/lib" in script
+        assert "export COCOTB_TOPLEVEL=counter" in script
 
         # Prepend/append should come before env_vars (full overwrite)
         prepend_pos = script.index("Prepend to environment variables")
         append_pos = script.index("Append to environment variables")
-        vars_pos = script.index("Set custom environment variables")
+        vars_pos = script.index("Set environment variables")
         assert prepend_pos < append_pos < vars_pos
 
-    def test_generate_script_env_vars_unchanged(self):
-        """Test that existing env_vars behavior is unchanged."""
+    def test_generate_script_env_vars(self):
+        """env_vars render as quoted exports."""
         scheduler = SGEScheduler(HPCConfig())
         job = make_job(
             "echo hello",
@@ -234,8 +234,8 @@ class TestSGEScheduler:
 
         script = scheduler.preview(job)
 
-        assert 'export FOO="bar"' in script
-        assert 'export BAZ="qux"' in script
+        assert "export FOO=bar" in script
+        assert "export BAZ=qux" in script
 
     def test_configurable_pe_name(self):
         """Test that PE name is configurable."""
@@ -403,7 +403,7 @@ class TestSGEAfterok:
         script = scheduler.preview(job)
 
         # Publisher (every job) and guard (afterok only) both present.
-        assert "trap _hpc_publish_rc EXIT" in script
+        assert "afterok: publish" in script
         assert "afterok guard" in script
         # Guard iterates over the actual dependency job IDs.
         assert "for _dep in 111 222 " in script
@@ -418,7 +418,7 @@ class TestSGEAfterok:
 
         script = scheduler.preview(job)
 
-        assert "trap _hpc_publish_rc EXIT" in script  # still publishes its own rc
+        assert "afterok: publish" in script  # still publishes its own rc
         assert "afterok guard" not in script  # but does not gate on parents
 
     def test_no_dependencies_has_no_guard(self, monkeypatch, tmp_path):
@@ -426,7 +426,7 @@ class TestSGEAfterok:
         scheduler = SGEScheduler(HPCConfig())
         script = scheduler.preview(make_job("echo hi", name="solo"))
 
-        assert "trap _hpc_publish_rc EXIT" in script
+        assert "afterok: publish" in script
         assert "afterok guard" not in script
 
     def test_enforce_afterok_disabled(self, monkeypatch, tmp_path):
@@ -438,7 +438,7 @@ class TestSGEAfterok:
 
         script = scheduler.preview(job)
 
-        assert "_hpc_publish_rc" not in script
+        assert "afterok: publish" not in script
         assert "afterok guard" not in script
         assert "#$ -hold_jid 111" in script  # plain hold_jid still applied
 

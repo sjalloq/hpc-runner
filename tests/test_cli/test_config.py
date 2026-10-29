@@ -104,6 +104,20 @@ class TestResolve:
         assert "tools.xrun" in result.output
         assert "slang" not in result.output
 
+    def test_environment_provenance(self, runner, tmp_path, monkeypatch):
+        venv = tmp_path / "v"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "bin" / "activate").write_text("")
+        monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+        (tmp_path / "hpc-runner.toml").write_text(
+            'config_version = 1\n[defaults]\nenv_passthrough = ["DISPLAY"]\n'
+        )
+        result = runner.invoke(cli, ["config", "resolve", "echo"])
+        assert result.exit_code == 0, result.output
+        rows = [[c.strip() for c in line.split("│")[1:-1]] for line in result.output.splitlines()]
+        assert ["env_passthrough", "DISPLAY", "defaults"] in rows
+        assert "captured from VIRTUAL_ENV" in result.output
+
     def test_unknown_type(self, runner, tmp_path):
         (tmp_path / "hpc-runner.toml").write_text(GOOD)
         result = runner.invoke(cli, ["config", "resolve", "-t", "nope", "make"])

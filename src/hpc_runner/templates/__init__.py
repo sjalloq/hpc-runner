@@ -1,5 +1,5 @@
 """Template engine for job script generation."""
 
-from hpc_runner.templates.engine import render_template
+from hpc_runner.templates.engine import ShellWord, render_template, sh
 
-__all__ = ["render_template"]
+__all__ = ["ShellWord", "render_template", "sh"]

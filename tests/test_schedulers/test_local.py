@@ -1,6 +1,5 @@
 """Tests for local scheduler."""
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -14,10 +13,14 @@ from tests.fakes import make_job
 
 MODULEFILES_DIR = str(Path(__file__).parent.parent / "modulefiles")
 
-has_modules = (
-    shutil.which("modulecmd") is not None
-    or Path("/usr/share/Modules/init/bash").exists()
-    or Path("/etc/profile.d/modules.sh").exists()
+# The module init files the job script sources (templates/_environment.sh.j2).
+has_modules = any(
+    Path(init).exists()
+    for init in (
+        "/etc/profile.d/modules.sh",
+        "/usr/share/Modules/init/bash",
+        "/etc/modules/init/bash",
+    )
 )
 requires_modules = pytest.mark.skipif(not has_modules, reason="Environment Modules not installed")
 

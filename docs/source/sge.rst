@@ -94,6 +94,28 @@ through:
    hpc run -P myproject -l exclusive=true -- python train.py
 
 
+Environment and modules
+-----------------------
+
+- ``inherit_env = true`` (the default) renders ``#$ -V``: the job inherits
+  the submitting shell's environment. ``inherit_env = false`` omits it, and
+  each name in ``env_passthrough`` becomes ``#$ -v NAME=value`` (``qrsh -v``
+  for interactive jobs) with the value read from the submitting shell.
+- Every job script then runs ``module purge`` (always; it is how the
+  configured module versions are guaranteed) and the configured
+  ``module use`` / ``module load`` commands, quietly unless one fails. Set
+  ``[schedulers.sge] module_init_script`` if the node's module init is not
+  in a standard place, and ``module_system = "modules"`` on Environment
+  Modules sites for terser output.
+- ``${hpc.*}`` runtime values render as SGE variables: ``${hpc.cpus}`` is
+  ``$NSLOTS``, ``${hpc.job_id}`` ``$JOB_ID``, ``${hpc.task_id}``
+  ``$SGE_TASK_ID``, ``${hpc.tmpdir}`` ``$TMPDIR``, ``${hpc.job_name}``
+  ``$JOB_NAME`` and ``${hpc.host}`` ``$HOSTNAME``.
+
+See :ref:`variable-expansion` and the Environment section of the
+configuration guide.
+
+
 Exit sentinels and job status
 -----------------------------
 

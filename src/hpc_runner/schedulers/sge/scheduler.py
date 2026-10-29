@@ -132,11 +132,20 @@ class SGEScheduler(BaseScheduler):
         "memory_resource": str,
         "time_resource": str,
         "module_init_script": str,
+        "module_system": str,
         "enforce_afterok": bool,
-        "purge_modules": bool,
-        "silent_modules": bool,
-        "expand_makeflags": bool,
     }
+
+    HPC_VARS = {
+        "cpus": "$NSLOTS",
+        "job_id": "$JOB_ID",
+        "task_id": "$SGE_TASK_ID",
+        "tmpdir": "$TMPDIR",
+        "job_name": "$JOB_NAME",
+        "host": "$HOSTNAME",
+    }
+    # SGE expands -o/-e paths itself, where the task id is $TASK_ID.
+    HPC_PATH_VARS = {"task_id": "$TASK_ID"}
 
     def __init__(self, config: HPCConfig) -> None:
         """Initialize SGE scheduler with config-driven settings."""
@@ -147,14 +156,6 @@ class SGEScheduler(BaseScheduler):
         self.pe_name = sge_config.get("parallel_environment", "smp")
         self.mem_resource = sge_config.get("memory_resource", "mem_free")
         self.time_resource = sge_config.get("time_resource", "h_rt")
-
-        # Module handling config
-        self.purge_modules = sge_config.get("purge_modules", True)
-        self.silent_modules = sge_config.get("silent_modules", False)
-        self.module_init_script = sge_config.get("module_init_script", "")
-
-        # Environment handling config
-        self.expand_makeflags = sge_config.get("expand_makeflags", True)
 
         # afterok emulation: SGE -hold_jid is afterany, so each job publishes
         # its exit code to a sentinel file and afterok dependents verify their
@@ -193,35 +194,43 @@ class SGEScheduler(BaseScheduler):
     # Script Generation
     # =========================================================================
 
-    def preview(self, job: Job) -> str:
+    def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script :meth:`submit` would write for *job*.
 
         Rendered as with ``keep_script=True`` (no self-delete line), so it
         is byte-for-byte what ``submit(job, keep_script=True)`` writes.
         """
         if job.interactive:
-            return self._render_interactive(job, _PREVIEW_SCRIPT_PATH, keep_script=True)
-        return self._render_batch(job, _PREVIEW_SCRIPT_PATH, keep_script=True)
+            return self._render_interactive(
+                job, _PREVIEW_SCRIPT_PATH, keep_script=True, verbose=verbose
+            )
+        return self._render_batch(job, _PREVIEW_SCRIPT_PATH, keep_script=True, verbose=verbose)
 
-    def _render_batch(self, job: Job, script_path: str, keep_script: bool) -> str:
+    def _render_batch(
+        self, job: Job, script_path: str, keep_script: bool, verbose: bool = False
+    ) -> str:
         """Render the qsub script: every option is a ``#$`` directive."""
         afterok_ids = [d.job_id for d in job.dependencies if d.type is DependencyType.AFTEROK]
         return render_template(
             "sge/templates/batch.sh.j2",
             job=job,
             scheduler=self,
+            environment=self.environment_context(job, verbose=verbose),
             directives=self._build_directives(job),
             afterok_ids=afterok_ids,
             script_path=script_path,
             keep_script=keep_script,
         )
 
-    def _render_interactive(self, job: Job, script_path: str, keep_script: bool) -> str:
+    def _render_interactive(
+        self, job: Job, script_path: str, keep_script: bool, verbose: bool = False
+    ) -> str:
         """Render the wrapper script qrsh runs (no directives)."""
         return render_template(
             "sge/templates/interactive.sh.j2",
             job=job,
             scheduler=self,
+            environment=self.environment_context(job, verbose=verbose),
             script_path=script_path,
             keep_script=keep_script,
         )
@@ -270,19 +279,23 @@ class SGEScheduler(BaseScheduler):
     # Job Submission
     # =========================================================================
 
-    def submit(self, job: Job, *, keep_script: bool = False) -> JobResult:
+    def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
         """Submit a job to SGE: qrsh when ``job.interactive``, else qsub.
 
         Args:
             job: Job to submit.
             keep_script: If True, don't delete the job script after submission.
                          Useful for debugging.
+            verbose: If True, module commands in the script print their
+                output rather than only on failure.
         """
         if job.interactive:
-            return self._submit_interactive(job, keep_script=keep_script)
-        return self._submit_batch(job, keep_script=keep_script)
+            return self._submit_interactive(job, keep_script=keep_script, verbose=verbose)
+        return self._submit_batch(job, keep_script=keep_script, verbose=verbose)
 
-    def _submit_batch(self, job: Job, keep_script: bool = False) -> JobResult:
+    def _submit_batch(
+        self, job: Job, keep_script: bool = False, verbose: bool = False
+    ) -> JobResult:
         """Submit via ``qsub <script>``; all options are in the script."""
         # Determine script path first (needed for self-deletion in template)
         script_dir = get_script_dir()
@@ -290,7 +303,7 @@ class SGEScheduler(BaseScheduler):
         script_path = script_dir / script_name
 
         # Generate script with cleanup instruction
-        script = self._render_batch(job, str(script_path), keep_script=keep_script)
+        script = self._render_batch(job, str(script_path), keep_script=keep_script, verbose=verbose)
 
         script_path.write_text(script)
         script_path.chmod(0o755)
@@ -312,7 +325,9 @@ class SGEScheduler(BaseScheduler):
             return ArrayJobResult(scheduler=self, job_id=job_id, job=job, array=job.array)
         return JobResult(scheduler=self, job_id=job_id, job=job)
 
-    def _submit_interactive(self, job: Job, keep_script: bool = False) -> JobResult:
+    def _submit_interactive(
+        self, job: Job, keep_script: bool = False, verbose: bool = False
+    ) -> JobResult:
         """Run via qrsh and wait for it.
 
         Creates a wrapper script with full environment setup (modules, venv, etc.)
@@ -328,7 +343,9 @@ class SGEScheduler(BaseScheduler):
         script_path = script_dir / script_name
 
         # Generate wrapper script with the actual path (for self-deletion)
-        script = self._render_interactive(job, str(script_path), keep_script=keep_script)
+        script = self._render_interactive(
+            job, str(script_path), keep_script=keep_script, verbose=verbose
+        )
 
         # Write script to shared filesystem
         script_path.write_text(script)
@@ -360,6 +377,9 @@ class SGEScheduler(BaseScheduler):
         """
         cmd = ["qrsh"]
         cmd.extend(self._render_interactive_args(job))
+        # Without -V, variables named in env_passthrough are passed one by one.
+        for name, value in job.env_passthrough.items():
+            cmd.extend(["-v", f"{name}={value}"])
         cmd.extend(self._passthrough_args(job))
         cmd.append(script_path)
         return cmd

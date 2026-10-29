@@ -292,10 +292,10 @@ class TestPipelineConfig:
         assert spec.name is None
 
     def test_host_used_for_resolution(self):
-        p = Pipeline("p", config=HPCConfig(), host=make_host(env={"VIRTUAL_ENV": "/v"}))
-        p.add("echo hi", name="s")
+        p = Pipeline("p", config=HPCConfig(), host=make_host(env={"V": "from-host"}))
+        p.add(JobSpec("echo hi", env_vars={"X": "$V"}), name="s")
         (job,) = _submitted_jobs(p)
-        assert job.venv == "/v"
+        assert job.env_vars["X"] == "from-host"
 
 
 class TestPipelinePerJobDependencyType:

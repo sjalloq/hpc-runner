@@ -1,5 +1,7 @@
 """Tests for resolve(spec, config, host)."""
 
+from pathlib import Path
+
 import pytest
 
 from hpc_runner.core.array import ArrayRange
@@ -104,31 +106,68 @@ class TestName:
         assert job.provenance["name"] == "defaults"
 
 
+def _venv(root, name="venv"):
+    """A directory that passes the bin/activate check."""
+    venv = root / name
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "activate").write_text("")
+    return str(venv)
+
+
 class TestVenv:
-    def test_captured_from_host(self):
-        job = make_job(host=make_host(env={"VIRTUAL_ENV": "/venvs/a"}))
-        assert job.venv == "/venvs/a"
-        assert job.provenance["venv"] == "host"
+    """D4: unset captures VIRTUAL_ENV, a path is used, False is none."""
+
+    def test_captured_from_host(self, tmp_path):
+        venv = _venv(tmp_path)
+        job = make_job(host=make_host(env={"VIRTUAL_ENV": venv}))
+        assert job.venv == venv
+        assert job.provenance["venv"] == "captured from VIRTUAL_ENV"
 
     def test_none_without_host_venv(self):
         job = make_job()
         assert job.venv is None
+        assert job.provenance["venv"] == "package"
 
-    def test_explicit_path(self):
-        job = make_job(venv="/venvs/b", host=make_host(env={"VIRTUAL_ENV": "/venvs/a"}))
-        assert job.venv == "/venvs/b"
-
-    def test_false_disables_capture(self):
-        job = make_job(venv=False, host=make_host(env={"VIRTUAL_ENV": "/venvs/a"}))
-        assert job.venv is None
+    def test_explicit_path(self, tmp_path):
+        a, b = _venv(tmp_path, "a"), _venv(tmp_path, "b")
+        job = make_job(venv=b, host=make_host(env={"VIRTUAL_ENV": a}))
+        assert job.venv == b
         assert job.provenance["venv"] == "spec"
 
-    def test_config_beats_capture(self):
+    def test_false_disables_capture(self, tmp_path):
+        job = make_job(venv=False, host=make_host(env={"VIRTUAL_ENV": _venv(tmp_path)}))
+        assert job.venv is None
+        assert job.provenance["venv"] == "spec (disabled)"
+
+    def test_config_beats_capture(self, tmp_path):
+        cfg_venv = _venv(tmp_path, "cfg")
         job = make_job(
-            config=_config(defaults={"venv": "/venvs/cfg"}),
-            host=make_host(env={"VIRTUAL_ENV": "/venvs/a"}),
+            "python x.py",
+            config=_config(tools={"python": {"venv": cfg_venv}}),
+            host=make_host(env={"VIRTUAL_ENV": _venv(tmp_path, "a")}),
         )
-        assert job.venv == "/venvs/cfg"
+        assert job.venv == cfg_venv
+        assert job.provenance["venv"] == "tools.python"
+
+    def test_type_disables(self, tmp_path):
+        cfg = _config(defaults={"venv": _venv(tmp_path)}, types={"lint": {"venv": False}})
+        job = make_job("make lint", type="lint", config=cfg)
+        assert job.venv is None
+        assert job.provenance["venv"] == "types.lint (disabled)"
+
+    def test_path_is_expanded(self, tmp_path):
+        _venv(tmp_path, ".venv")
+        job = make_job(venv="${PROJ}/.venv", host=make_host(env={"PROJ": str(tmp_path)}))
+        assert job.venv == f"{tmp_path}/.venv"
+
+    def test_missing_activate_is_error(self, tmp_path):
+        with pytest.raises(ConfigError, match=r"has no bin/activate \(stale VIRTUAL_ENV\?\)"):
+            make_job(venv=str(tmp_path / "gone"))
+
+    def test_stale_captured_venv_is_error(self, tmp_path):
+        host = make_host(env={"VIRTUAL_ENV": str(tmp_path / "gone")})
+        with pytest.raises(ConfigError, match="captured from VIRTUAL_ENV has no bin/activate"):
+            make_job(host=host)
 
 
 class TestConfigLayers:
@@ -421,7 +460,7 @@ class TestSchedulerArgs:
 
 
 class TestEnvVarExpansion:
-    """$VAR in env_* values is expanded from host.env; undefined passes through."""
+    """D5: $VAR in env_* values is resolved from host.env; undefined is an error."""
 
     def _job(self, field, value, env):
         return make_job(config=_config(defaults={field: value}), host=make_host(env=env))
@@ -434,13 +473,13 @@ class TestEnvVarExpansion:
         job = self._job("env_vars", {"H": "${TEST_HPC_VAR}/sub"}, {"TEST_HPC_VAR": "/p"})
         assert job.env_vars["H"] == "/p/sub"
 
-    def test_undefined_passthrough(self):
-        job = self._job("env_vars", {"H": "$UNDEFINED_VAR_XYZ"}, {})
-        assert job.env_vars["H"] == "$UNDEFINED_VAR_XYZ"
+    def test_undefined_is_error(self):
+        with pytest.raises(ConfigError, match=r"defaults: env_vars.H: undefined variable \$UNDEF"):
+            self._job("env_vars", {"H": "$UNDEF_XYZ"}, {})
 
-    def test_braced_undefined_passthrough(self):
-        job = self._job("env_vars", {"H": "${UNDEFINED_VAR_XYZ}"}, {})
-        assert job.env_vars["H"] == "${UNDEFINED_VAR_XYZ}"
+    def test_braced_undefined_is_error(self):
+        with pytest.raises(ConfigError, match=r"undefined variable \$UNDEF_XYZ"):
+            self._job("env_vars", {"H": "${UNDEF_XYZ}"}, {})
 
     def test_env_prepend_expanded(self):
         job = self._job("env_prepend", {"PATH": "$T/bin"}, {"T": "/tools"})
@@ -458,14 +497,135 @@ class TestEnvVarExpansion:
         job = self._job("env_vars", {"C": "$TEST_A/$TEST_B"}, {"TEST_A": "foo", "TEST_B": "bar"})
         assert job.env_vars["C"] == "foo/bar"
 
-    def test_mixed_defined_and_undefined(self):
-        job = self._job("env_vars", {"M": "$TEST_DEFINED:$NONEXISTENT"}, {"TEST_DEFINED": "r"})
-        assert job.env_vars["M"] == "r:$NONEXISTENT"
+    def test_dollar_dollar_is_literal(self):
+        job = self._job("env_vars", {"M": "$$HOME"}, {"HOME": "/home/a"})
+        assert job.env_vars["M"] == "$HOME"
+
+    def test_hpc_runtime_kept(self):
+        job = self._job("env_vars", {"MAKEFLAGS": "-j${hpc.cpus}"}, {})
+        assert job.env_vars["MAKEFLAGS"] == "-j${hpc.cpus}"
+
+    def test_runtime_variable_hint(self):
+        with pytest.raises(ConfigError, match=r"did you mean \$\{hpc.cpus\}\?"):
+            self._job("env_vars", {"MAKEFLAGS": "-j$NSLOTS"}, {})
 
     def test_not_read_from_process_environment(self, monkeypatch):
         monkeypatch.setenv("TEST_HPC_PROCESS_ONLY", "leak")
-        job = self._job("env_vars", {"X": "$TEST_HPC_PROCESS_ONLY"}, {})
-        assert job.env_vars["X"] == "$TEST_HPC_PROCESS_ONLY"
+        with pytest.raises(ConfigError, match="TEST_HPC_PROCESS_ONLY"):
+            self._job("env_vars", {"X": "$TEST_HPC_PROCESS_ONLY"}, {})
+
+    def test_resolver_variables(self):
+        host = make_host(cwd=Path("/work/proj"), user="bob")
+        job = make_job(env_vars={"A": "${CWD}:${USER}"}, host=host)
+        assert job.env_vars["A"] == "/work/proj:bob"
+
+    def test_resolver_variable_beats_host_env(self):
+        host = make_host(env={"USER": "root"}, user="bob")
+        assert make_job(env_vars={"U": "$USER"}, host=host).env_vars["U"] == "bob"
+
+    def test_config_dir_in_spec_is_error(self):
+        with pytest.raises(ConfigError, match=r"only defined for values set in a config file"):
+            make_job(env_vars={"P": "${CONFIG_DIR}/bin"})
+
+    def test_git_root(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "sub").mkdir()
+        job = make_job(env_vars={"R": "${GIT_ROOT}"}, host=make_host(cwd=tmp_path / "sub"))
+        assert job.env_vars["R"] == str(tmp_path.resolve())
+
+    def test_git_root_outside_repo_is_error(self, tmp_path):
+        with pytest.raises(ConfigError, match="not inside a git repository"):
+            make_job(env_vars={"R": "${GIT_ROOT}"}, host=make_host(cwd=tmp_path))
+
+
+class TestExpandedFields:
+    """D5.4: every string that reaches the script or the scheduler is expanded."""
+
+    ENV = {"V": "val"}
+
+    @pytest.mark.parametrize(
+        "field", ["name", "mem", "time", "queue", "project", "stdout", "stderr", "workdir"]
+    )
+    def test_scalar(self, field):
+        job = make_job(host=make_host(env=self.ENV), **{field: "x-$V"})
+        assert getattr(job, field) == "x-val"
+
+    @pytest.mark.parametrize("field", ["modules", "modules_path", "modules_path_append"])
+    def test_module_lists(self, field):
+        job = make_job(host=make_host(env=self.ENV), **{field: ["x/$V"]})
+        assert getattr(job, field) == ("x/val",)
+        assert job.provenance[field] == (("x/val", "spec"),)
+
+    @pytest.mark.parametrize("field", ["env_vars", "env_prepend", "env_append"])
+    def test_env_dicts(self, field):
+        job = make_job(host=make_host(env=self.ENV), **{field: {"K": "$V"}})
+        assert getattr(job, field) == {"K": "val"}
+
+    def test_scheduler_args(self):
+        job = make_job(host=make_host(env=self.ENV), scheduler_args={"sge": ["-l", "x=$V"]})
+        assert job.scheduler_args == {"sge": ("-l", "x=val")}
+        assert job.provenance["scheduler_args"][1] == (("sge", "x=val"), "spec")
+
+    def test_command_not_expanded(self):
+        job = make_job("echo $V", host=make_host(env=self.ENV))
+        assert job.command == "echo $V"
+
+    def test_env_unset_names_not_expanded(self):
+        assert make_job(env_unset=["http_proxy"]).env_unset == ("http_proxy",)
+
+    def test_error_names_the_layer(self):
+        with pytest.raises(ConfigError, match=r"^types.t: queue: undefined variable \$NOPE"):
+            make_job(type="t", config=_config(types={"t": {"queue": "$NOPE"}}))
+
+
+class TestEnvConflicts:
+    def test_same_key_set_and_prepend_in_spec_is_error(self):
+        with pytest.raises(ConfigError, match="PATH is both set"):
+            make_job(env_vars={"PATH": "/a"}, env_prepend={"PATH": "/b"})
+
+    def test_across_layers_allowed(self):
+        cfg = _config(defaults={"env_prepend": {"PATH": "/b"}})
+        job = make_job(config=cfg, env_vars={"PATH": "/a"})
+        assert (job.env_vars["PATH"], job.env_prepend["PATH"]) == ("/a", "/b")
+
+    def test_spec_env_name_validated(self):
+        with pytest.raises(ConfigError, match="not a valid environment variable name"):
+            make_job(env_vars={"A B": "x"})
+
+    def test_spec_env_unset_name_validated(self):
+        with pytest.raises(ConfigError, match="not a valid environment variable name"):
+            make_job(env_unset=Set(["a;rm"]))
+
+
+class TestEnvPassthrough:
+    """D3: inherit_env = false passes only the named submit-host variables."""
+
+    def test_resolved_from_host(self):
+        host = make_host(env={"DISPLAY": ":0", "OTHER": "x"})
+        job = make_job(inherit_env=False, env_passthrough=["DISPLAY"], host=host)
+        assert job.env_passthrough == {"DISPLAY": ":0"}
+        assert job.provenance["env_passthrough"] == (("DISPLAY", "spec"),)
+
+    def test_missing_is_error(self):
+        with pytest.raises(ConfigError, match="defaults: env_passthrough: DISPLAY is not set"):
+            make_job(
+                inherit_env=False,
+                config=_config(defaults={"env_passthrough": ["DISPLAY"]}),
+            )
+
+    def test_ignored_with_inherit_env(self):
+        job = make_job(env_passthrough=["DISPLAY"])  # not on the host: no error
+        assert job.inherit_env is True
+        assert job.env_passthrough == {}
+        assert job.provenance["env_passthrough"] == (("DISPLAY", "spec"),)
+
+    def test_merges_across_layers(self):
+        cfg = _config(defaults={"env_passthrough": ["DISPLAY"]})
+        host = make_host(env={"DISPLAY": ":0", "LM_LICENSE_FILE": "1@lic"})
+        job = make_job(
+            config=cfg, inherit_env=False, env_passthrough=["LM_LICENSE_FILE"], host=host
+        )
+        assert list(job.env_passthrough) == ["DISPLAY", "LM_LICENSE_FILE"]
 
 
 class TestModuleExpansion:

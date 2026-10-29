@@ -200,7 +200,7 @@ the whole flow. Scalars: the most specific layer wins. Tables (`env_vars`,
 `scheduler_args`, ...) merge by key.
 
 Lists (`modules`, `modules_path`, `modules_path_append`, `env_unset`,
-`resources`, `scheduler_args.<sched>`) **append** across layers with
+`env_passthrough`, `resources`, `scheduler_args.<sched>`) **append** across layers with
 duplicates dropped; `resources` match by `name`, later value wins. To do
 anything else, use a verb table:
 
@@ -224,6 +224,42 @@ Use a named job type:
 ```bash
 hpc run -t lint make lint
 ```
+
+### Variables and the job environment
+
+One rule: *every `$VAR` in config is resolved where you submit from; runtime
+values come from `${hpc.*}`; anything else is shell in your script or
+Makefile.* An undefined `$VAR` is an error; `$$` is a literal `$`.
+
+- Runtime values: `${hpc.cpus}`, `${hpc.job_id}`, `${hpc.task_id}`,
+  `${hpc.tmpdir}`, `${hpc.job_name}`, `${hpc.host}`, rendered by the
+  scheduler (SGE: `$NSLOTS`, `$JOB_ID`, `$SGE_TASK_ID`, `$TMPDIR`,
+  `$JOB_NAME`, `$HOSTNAME`). `MAKEFLAGS = "-j${hpc.cpus}"` works everywhere.
+- Resolver variables: `${CONFIG_DIR}` (directory of the config file that set
+  the value), `${GIT_ROOT}`, `${CWD}`, `${USER}`.
+
+The job inherits your environment (`inherit_env = true`, SGE `-V`), then its
+script always runs `module purge` and loads the configured modules: the
+modules the config names are the versions you get, whatever your shell had
+loaded. Nothing else in the inherited environment is reset. For a strict
+job, `inherit_env = false` drops `-V` and passes only the variables named in
+`env_passthrough`.
+
+```toml
+[tools.make]
+env_vars = { MAKEFLAGS = "-j${hpc.cpus}" }
+
+[types.regress]
+inherit_env = false
+env_passthrough = ["DISPLAY", "LM_LICENSE_FILE"]
+env_prepend = { PATH = "${CONFIG_DIR}/bin" }
+venv = "${CONFIG_DIR}/.venv"     # or false for none; unset = the active $VIRTUAL_ENV
+```
+
+After modules and venv the script applies, in order, `env_unset`,
+`env_prepend`, `env_append` (`:`-separated) and `env_vars`. Values are
+shell-quoted. Module commands are quiet unless they fail; `hpc --verbose run`
+shows their output.
 
 ### SGE Configuration
 
@@ -249,13 +285,9 @@ parallel_environment = "smp"    # PE name for CPU slots (some sites use "mpi", "
 memory_resource = "mem_free"    # Memory resource name (common alternatives: "h_vmem", "virtual_free")
 time_resource = "h_rt"          # Time limit resource name (commonly "h_rt")
 
-# Module system
-purge_modules = true            # Run 'module purge' before loading job modules
-silent_modules = false          # Suppress module command output (-s flag)
+# Module system ('module purge' always runs first)
 module_init_script = ""         # Path to module init script (auto-detected if empty)
-
-# Environment
-expand_makeflags = true         # Expand $NSLOTS in MAKEFLAGS for parallel make
+module_system = ""              # "modules" (exports MODULES_VERBOSITY=concise), "lmod" or ""
 ```
 
 Output is merged (`-j y`) unless a job sets `stderr`. Variables to unset in
@@ -281,14 +313,13 @@ resources = [
   { name = "scratch", value = "20G" }
 ]
 env_unset = ["https_proxy", "http_proxy"]   # unset in the job script
+env_prepend = { PATH = "${CONFIG_DIR}/tools/bin" }
 
 [schedulers.sge]
 parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
-purge_modules = true
-silent_modules = false
-expand_makeflags = true
+module_system = "modules"
 
 [tools.python]
 cpu = 4

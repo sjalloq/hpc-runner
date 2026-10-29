@@ -59,6 +59,8 @@ class JobSpec:
     env_prepend: dict[str, str] | None = None
     env_append: dict[str, str] | None = None
     env_unset: list[str] | Set | Edit | None = None
+    # Submit-host variables passed explicitly when inherit_env is false.
+    env_passthrough: list[str] | Set | Edit | None = None
 
     modules: list[str] | Set | Edit | None = None
     modules_path: list[str] | Set | Edit | None = None

@@ -37,6 +37,31 @@ class TestRunCommand:
         assert "Dry Run" in result.output
         assert "echo hello" in result.output
 
+    def test_dry_run_shows_no_venv(self, runner, monkeypatch):
+        monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
+        assert result.exit_code == 0, result.output
+        assert "venv: none" in result.output
+
+    def test_dry_run_shows_captured_venv(self, runner, monkeypatch, tmp_path):
+        venv = tmp_path / "v"
+        (venv / "bin").mkdir(parents=True)
+        (venv / "bin" / "activate").write_text("")
+        monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
+        assert result.exit_code == 0, result.output
+        assert f"venv: {venv}" in result.output.replace("\n", "")
+
+    def test_verbose_dry_run_shows_plain_module_lines(self, runner):
+        quiet = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
+        loud = runner.invoke(
+            cli, ["--verbose", "--scheduler", "local", "run", "--dry-run", "echo", "hi"]
+        )
+        assert "mktemp" in quiet.output
+        assert loud.exit_code == 0, loud.output
+        assert "mktemp" not in loud.output
+        assert "module purge" in loud.output
+
     def test_run_with_options(self, runner, temp_dir):
         """Test run with various options."""
         result = runner.invoke(

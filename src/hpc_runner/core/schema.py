@@ -77,10 +77,16 @@ def _venv(value: Any) -> str | bool:
     raise _Invalid(f"expected a path or false, got {_describe(value)}")
 
 
-def _str_dict(value: Any) -> dict[str, str]:
+#: An environment variable name, as the job script can set or unset it.
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _env_dict(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         raise _Invalid(f"expected a table of strings, got {_describe(value)}")
     for key, item in value.items():
+        if not ENV_NAME.fullmatch(key):
+            raise _Invalid("not a valid environment variable name", subkey=key)
         if not isinstance(item, str):
             raise _Invalid(f"expected a string, got {_describe(item)}", subkey=key)
     return dict(value)
@@ -144,7 +150,15 @@ def _resource_item(value: Any, index: int) -> dict[str, Any]:
     return {"name": value["name"], "value": val}
 
 
+def _env_name_item(value: Any, index: int) -> str:
+    name = _str_item(value, index)
+    if not ENV_NAME.fullmatch(name):
+        raise _Invalid(f"entry {index + 1}: {name!r} is not a valid environment variable name")
+    return name
+
+
 _str_list = _list_of(_str_item, "strings")
+_env_name_list = _list_of(_env_name_item, "environment variable names")
 _resources = _list_of(_resource_item, "{ name, value } tables")
 
 
@@ -179,10 +193,11 @@ FIELD_VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "shell": _str,
     "use_cwd": _bool,
     "venv": _venv,
-    "env_vars": _str_dict,
-    "env_prepend": _str_dict,
-    "env_append": _str_dict,
-    "env_unset": _str_list,
+    "env_vars": _env_dict,
+    "env_prepend": _env_dict,
+    "env_append": _env_dict,
+    "env_unset": _env_name_list,
+    "env_passthrough": _env_name_list,
     "modules": _str_list,
     "modules_path": _str_list,
     "modules_path_append": _str_list,
@@ -193,11 +208,57 @@ FIELD_VALIDATORS: dict[str, Callable[[Any], Any]] = {
 
 #: List-valued job settings, merged per D1.
 LIST_FIELDS = frozenset(
-    {"env_unset", "modules", "modules_path", "modules_path_append", "resources"}
+    {
+        "env_unset",
+        "env_passthrough",
+        "modules",
+        "modules_path",
+        "modules_path_append",
+        "resources",
+    }
+)
+
+#: Settings whose strings are expanded per D5 (:mod:`hpc_runner.core.expand`).
+#: ``command`` is deliberately absent: it is the user's shell.
+EXPANDED_FIELDS = frozenset(
+    {
+        "name",
+        "mem",
+        "time",
+        "queue",
+        "project",
+        "stdout",
+        "stderr",
+        "workdir",
+        "venv",
+        "env_vars",
+        "env_prepend",
+        "env_append",
+        "modules",
+        "modules_path",
+        "modules_path_append",
+        "scheduler_args",
+    }
 )
 
 #: Dict-valued job settings: keys merge across layers, later layer wins per key.
 DICT_FIELDS = frozenset({"env_vars", "env_prepend", "env_append"})
+
+
+def env_conflicts(layer: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """``(field, key)`` for each key a layer both sets and prepends/appends (D5).
+
+    Setting a variable and prepending or appending to it in the same layer
+    is contradictory; across layers it is allowed (the later layer's
+    ``env_vars`` simply wins, since sets render last).
+    """
+    sets = layer.get("env_vars") or {}
+    return [
+        (field, key)
+        for field in ("env_prepend", "env_append")
+        for key in (layer.get(field) or {})
+        if key in sets
+    ]
 
 
 def _type_tools(value: Any) -> list[str]:
@@ -325,6 +386,13 @@ def _validate_job_layer(
             result[key] = validator(value)
         except _Invalid as exc:
             c.error(section, key, exc.message, exc.subkey)
+    for field, key in env_conflicts(result):
+        c.error(
+            section,
+            field,
+            f"{key} is also set by env_vars in this section; set it or {field[4:]} to it, not both",
+            key,
+        )
     return result
 
 

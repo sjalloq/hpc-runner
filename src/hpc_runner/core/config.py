@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import shlex
 import sys
 from collections.abc import Mapping
@@ -18,8 +17,9 @@ else:
     import tomli as tomllib  # type: ignore[import-not-found]
 
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.core.merge import compose, is_list_value, key_for
-from hpc_runner.core.schema import find_line, validate_file
+from hpc_runner.core.expand import CONFIG_DIR, bind_config_dir, expand
+from hpc_runner.core.merge import Edit, Set, compose, is_list_value, key_for
+from hpc_runner.core.schema import EXPANDED_FIELDS, find_line, validate_file
 
 if TYPE_CHECKING:
     from hpc_runner.core.spec import JobSpec
@@ -169,29 +169,38 @@ def _merge(base: dict[str, Any], override: dict[str, Any], parent: str = "") -> 
     return result
 
 
-def _expand_env_vars(path_str: str, env: Mapping[str, str] | None = None) -> str:
-    """Expand environment variables in a path string.
+def _bind_config_dir(converted: dict[str, Any], config_dir: str) -> None:
+    """Bind ``${CONFIG_DIR}`` in one file's job layers to *config_dir*, in place.
 
-    Supports ${VAR} and $VAR syntax. Variables are looked up in *env*
-    (default ``os.environ``); undefined ones are left as written.
+    Done per file, before merging, because the merged config no longer
+    knows which file set a value (D5).
     """
-    lookup: Mapping[str, str] = os.environ if env is None else env
 
-    # Handle ${VAR} syntax
-    def replace_braced(match: re.Match[str]) -> str:
-        var_name = match.group(1)
-        return lookup.get(var_name, match.group(0))
+    def bind(value: Any) -> Any:
+        if isinstance(value, str):
+            return bind_config_dir(value, config_dir)
+        if isinstance(value, Set):
+            return Set([bind(v) for v in value.items])
+        if isinstance(value, Edit):
+            return Edit(remove=[bind(v) for v in value.remove], add=[bind(v) for v in value.add])
+        if isinstance(value, list):
+            return [bind(v) for v in value]
+        if isinstance(value, dict):
+            return {k: bind(v) for k, v in value.items()}
+        return value
 
-    result = re.sub(r"\$\{([^}]+)\}", replace_braced, path_str)
+    def bind_layer(layer: dict[str, Any]) -> None:
+        for key in EXPANDED_FIELDS & layer.keys():
+            layer[key] = bind(layer[key])
 
-    # Handle $VAR syntax (word characters only)
-    def replace_simple(match: re.Match[str]) -> str:
-        var_name = match.group(1)
-        return lookup.get(var_name, match.group(0))
-
-    result = re.sub(r"\$([A-Za-z_][A-Za-z0-9_]*)", replace_simple, result)
-
-    return result
+    if "defaults" in converted:
+        bind_layer(converted["defaults"])
+    for tool in converted.get("tools", {}).values():
+        bind_layer(tool)
+        for option in tool.get("options", {}).values():
+            bind_layer(option)
+    for job_type in converted.get("types", {}).values():
+        bind_layer(job_type)
 
 
 def _read_toml(path: Path) -> tuple[str, dict[str, Any]]:
@@ -235,8 +244,19 @@ def _resolve_extends(config_path: Path, chain: list[Path] | None = None) -> list
         # A non-string extends is reported by validation.
         return [config_path]
 
-    # Expand env vars and resolve relative to config file's directory
-    extends_path = Path(_expand_env_vars(extends))
+    # Expand per D5 and resolve relative to the config file's directory.
+    try:
+        expanded = expand(
+            extends,
+            host_env=os.environ,
+            extra={CONFIG_DIR: str(config_path.parent)},
+            where="extends",
+        )
+    except ConfigError as exc:
+        raise ConfigError(
+            exc.message, path=config_path, line=find_line(text, ["extends"])
+        ) from None
+    extends_path = Path(expanded)
     if not extends_path.is_absolute():
         extends_path = config_path.parent / extends_path
     extends_path = extends_path.resolve()
@@ -290,7 +310,9 @@ def find_config_files() -> list[Path]:
     # Otherwise fall back to <git-root>/hpc-runner.toml.
     env_config = os.environ.get(HPC_CONFIG_ENV_VAR)
     if env_config:
-        env_path = Path(_expand_env_vars(env_config))
+        env_path = Path(
+            expand(env_config, host_env=os.environ, extra={}, where=f"${HPC_CONFIG_ENV_VAR}")
+        )
         if env_path.exists():
             add_config(env_path)
     else:
@@ -372,6 +394,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         )
         errors.extend(file_errors)
         warnings.extend(file_warnings)
+        _bind_config_dir(converted, str(config_path.parent))
         for name, entry in converted.get("types", {}).items():
             if "tools" in entry:
                 type_tools_origin[name] = config_path

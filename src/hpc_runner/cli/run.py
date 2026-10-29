@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import rich_click as click
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 
@@ -172,11 +173,11 @@ def run(
     job = resolve(spec, ctx.config, Host.capture())
 
     if dry_run:
-        _show_dry_run(job, scheduler)
+        _show_dry_run(job, scheduler, verbose=ctx.verbose)
         return
 
     # Submit the job
-    result = scheduler.submit(job, keep_script=keep_script)
+    result = scheduler.submit(job, keep_script=keep_script, verbose=ctx.verbose)
 
     if job.interactive:
         if result.exit_code == 0:
@@ -238,15 +239,16 @@ def _parse_depend(text: str) -> list["Dependency"]:
     return [Dependency(job_id, dep_type) for job_id in ids]
 
 
-def _show_dry_run(job: "Job", scheduler: "BaseScheduler") -> None:
+def _show_dry_run(job: "Job", scheduler: "BaseScheduler", *, verbose: bool = False) -> None:
     """Display what would be submitted."""
-    script = scheduler.preview(job)  # raises before printing if unsupported
+    script = scheduler.preview(job, verbose=verbose)  # raises before printing if unsupported
     mode = "interactive" if job.interactive else "batch"
     lines = [
         f"[bold]Scheduler:[/bold] {scheduler.name}",
         f"[bold]Mode:[/bold] {mode}",
         f"[bold]Job name:[/bold] {job.name}",
         f"[bold]Command:[/bold] {job.command}",
+        f"[bold]venv:[/bold] {escape(job.venv) if job.venv else 'none'}",
     ]
     if job.array is not None:
         lines.append(f"[bold]Array job:[/bold] {job.array.range_str} ({job.array.count} tasks)")

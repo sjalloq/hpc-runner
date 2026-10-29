@@ -33,7 +33,7 @@ one-line fix); ``hpc config init`` writes it for you. The remaining
 top-level keys are:
 
 - ``extends = "path.toml"``: load another file first (relative to this
-  file; ``$VAR`` expanded). The target must exist, and a cycle is an error.
+  file; variables expanded as in :ref:`variable-expansion`). The target must exist, and a cycle is an error.
 - ``[defaults]``: baseline job settings applied to all jobs
 - ``[tools.<name>]``: settings keyed by tool name (e.g., ``python``, ``make``).
   Each tool entry can also contain an ``[tools.<name>.options]`` sub-table for
@@ -46,7 +46,7 @@ accept the same job settings: ``name``, ``cpu``, ``mem``, ``time``,
 ``queue``, ``priority``, ``project``, ``nodes``, ``tasks``, ``stdout``,
 ``stderr``, ``inherit_env``, ``workdir``, ``shell``, ``use_cwd``, ``venv``,
 ``interactive``, ``env_vars``, ``env_prepend``, ``env_append``,
-``env_unset``, ``modules``, ``modules_path``, ``modules_path_append``,
+``env_unset``, ``env_passthrough``, ``modules``, ``modules_path``, ``modules_path_append``,
 ``resources`` and ``scheduler_args``. In addition ``options`` is allowed only
 under ``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
 
@@ -113,7 +113,7 @@ Lists: append, set, remove
 --------------------------
 
 ``modules``, ``modules_path``, ``modules_path_append``, ``env_unset``,
-``resources`` and each scheduler's ``scheduler_args`` list follow one rule
+``env_passthrough``, ``resources`` and each scheduler's ``scheduler_args`` list follow one rule
 in every layer, including the spec:
 
 - A plain list **appends** to what the earlier layers built, dropping
@@ -205,18 +205,129 @@ SGE mapping notes
   resource names are configured under ``[schedulers.sge]``.
 
 
-Environment variables
----------------------
+.. _variable-expansion:
 
-Three dictionary fields control the job environment.  All values support
-``$VAR`` and ``${VAR}`` expansion — variables are expanded at job creation
-time, before the scheduler's ``module purge`` clears the environment.
+Variables in config values
+--------------------------
 
-- ``env_vars``: set variables to explicit values (overwrites any existing value)
-- ``env_prepend``: prepend to PATH-like variables (colon-separated)
-- ``env_append``: append to PATH-like variables (colon-separated)
+One rule: **every** ``$VAR`` **in config is resolved where you submit from;
+runtime values come from** ``${hpc.*}`` **; anything else is shell in your
+script or Makefile.**
 
-These can appear in ``[defaults]``, ``[tools.<name>]``, or ``[types.<name>]``.
+``$VAR`` and ``${VAR}`` are looked up on the submit host when the job is
+resolved. A variable that is not defined is an error, never a literal ``$``
+that silently reaches the job. This applies to every value that reaches the
+job script or the scheduler: ``env_vars``, ``env_prepend``, ``env_append``,
+``modules``, ``modules_path``, ``modules_path_append``, ``venv``,
+``stdout``, ``stderr``, ``workdir``, ``queue``, ``name``, ``project``,
+``mem``, ``time`` and ``scheduler_args``. The command itself is not
+expanded: it is your shell.
+
+**Runtime values.** Values only the scheduler knows when the job starts use
+the ``${hpc.*}`` namespace, which each scheduler renders in its own terms:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Name
+     - Meaning
+     - SGE
+     - local
+   * - ``${hpc.cpus}``
+     - slots / CPUs granted
+     - ``$NSLOTS``
+     - ``cpu`` (or 1)
+   * - ``${hpc.job_id}``
+     - job id
+     - ``$JOB_ID``
+     - the local id
+   * - ``${hpc.task_id}``
+     - array task index
+     - ``$SGE_TASK_ID``
+     - empty
+   * - ``${hpc.tmpdir}``
+     - job scratch directory
+     - ``$TMPDIR``
+     - ``$TMPDIR``
+   * - ``${hpc.job_name}``
+     - job name
+     - ``$JOB_NAME``
+     - the job name
+   * - ``${hpc.host}``
+     - execution host
+     - ``$HOSTNAME``
+     - ``$HOSTNAME``
+
+Any other ``${hpc.x}`` is an error. Writing a scheduler variable directly,
+such as ``-j$NSLOTS``, is an undefined variable on the submit host; the
+error suggests the ``${hpc.*}`` equivalent:
+
+.. code-block:: toml
+
+   [tools.make]
+   env_vars = { MAKEFLAGS = "-j${hpc.cpus}" }
+
+**Resolver variables.** These are always defined:
+
+- ``${CONFIG_DIR}``: the directory of the config file that set the value
+  (so a project can say ``venv = "${CONFIG_DIR}/.venv"``). It exists only
+  for values from a config file; in a value set on the CLI or a ``JobSpec``
+  it is an error.
+- ``${GIT_ROOT}``: the git repository containing the submit directory (an
+  error outside one).
+- ``${CWD}``: the submit directory.
+- ``${USER}``: the submitting user.
+
+They take precedence over environment variables of the same name.
+
+**Literal dollars.** ``$$`` is a literal ``$`` (as in Make and docker
+compose): ``"$$HOME"`` is the text ``$HOME``. A value that depends on a
+module (``XCELIUM_HOME=$CDS_INST_DIR`` after the load) is shell logic and
+belongs in the recipe or script.
+
+
+Environment
+-----------
+
+**The reproducibility contract.** By default a job inherits the submitting
+shell's environment (``inherit_env = true``, SGE ``-V``) and its script
+then always runs ``module purge`` followed by the configured ``module use``
+and ``module load`` commands. Tool versions come from modules: because the
+module system owns the ``PATH`` and library entries of what it loaded, the
+purge-and-load guarantees that every tool the config names is the version
+the config names, whatever the submitting shell had loaded. That is the
+whole contract. Everything else in the inherited environment (session
+variables, ``DISPLAY``, a tool a site put on ``PATH`` outside the module
+system) is carried through unchanged; the fix for the last of these is to
+put the tool in a module, not to reset variables in hpc-runner.
+
+**Strict mode.** ``inherit_env = false`` drops ``-V``: the job starts from
+the scheduler's clean environment. ``env_passthrough`` names submit-host
+variables to pass explicitly (SGE ``-v NAME=value``); each must be set
+where you submit, or resolution fails. With ``inherit_env = true``,
+``env_passthrough`` is ignored, since the variables arrive anyway.
+
+.. code-block:: toml
+
+   [types.regress]
+   inherit_env = false
+   env_passthrough = ["DISPLAY", "LM_LICENSE_FILE"]
+
+**Setting variables.** Four keys shape the job's environment, and render in
+a fixed order after the modules and venv, before the command:
+
+1. ``env_unset``: a list of variables to remove (for example proxies,
+   whether inherited or set by a module).
+2. ``env_prepend``: ``NAME = "value"`` puts ``value`` in front of the
+   current value, ``:``-separated.
+3. ``env_append``: the same, at the end.
+4. ``env_vars``: ``NAME = "value"`` sets the variable outright.
+
+The separator is always ``:``. Names must be valid shell identifiers and
+values are shell-quoted, so they arrive exactly as written. Setting a
+variable in ``env_vars`` and prepending or appending to it in the same
+section is an error; across layers it is allowed (the set wins, since it
+renders last).
 
 .. code-block:: toml
 
@@ -224,10 +335,40 @@ These can appear in ``[defaults]``, ``[tools.<name>]``, or ``[types.<name>]``.
    LICENSE_FILE = "/opt/licenses/myapp.lic"
 
    [tools.myapp.env_prepend]
-   PATH = "$HOME/.local/bin"
+   PATH = "${CONFIG_DIR}/bin"
 
    [types.gpu.env_append]
    LD_LIBRARY_PATH = "/opt/cuda/lib64"
+
+**Virtual environments.** ``venv`` has three states:
+
+- unset (the default): the submitting shell's ``$VIRTUAL_ENV`` is
+  activated in the job, if there is one;
+- a path: that venv (``venv = "${CONFIG_DIR}/.venv"``);
+- ``false``: no venv, whatever the submitting shell has active.
+
+A later layer wins, so ``[types.lint] venv = false`` beats the captured
+one. The venv's ``bin/activate`` must exist on the submit host (the
+filesystem is assumed shared), which catches a stale ``VIRTUAL_ENV``.
+``hpc config resolve`` reports where the value came from
+(``captured from VIRTUAL_ENV``, ``tools.python``, ``types.lint (disabled)``)
+and ``hpc run --dry-run`` shows ``venv: <path>`` or ``venv: none``.
+
+**Module output.** Module commands are quiet when they succeed and loud
+when they fail: each one's output is kept aside and printed, with a
+``hpc-runner: module load X failed`` line, only if it fails, which stops
+the job. ``hpc --verbose run`` shows module output as it happens. A site
+running Environment Modules (4.3 or later) can declare it to make the
+module system itself terser:
+
+.. code-block:: toml
+
+   [schedulers.sge]
+   module_system = "modules"     # "modules", "lmod" or "" (the default)
+   module_init_script = ""       # site module init; empty = auto-detect
+
+With ``module_system = "modules"`` the script exports
+``MODULES_VERBOSITY=concise``.
 
 
 .. _tool-option-specialisation:
@@ -319,8 +460,9 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    ]
 
    env_unset = ["https_proxy", "http_proxy"]   # unset in the job script
+   env_passthrough = ["DISPLAY"]               # used only with inherit_env = false
 
-   # Environment variable manipulation (values support $VAR / ${VAR} expansion)
+   # Environment variable manipulation ($VAR resolved on the submit host)
    [defaults.env_vars]
    # MY_VAR = "value"            # set variable to an explicit value
 
@@ -335,10 +477,8 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    memory_resource = "mem_free"
    time_resource = "h_rt"
 
-   purge_modules = true
-   silent_modules = false
    module_init_script = ""
-   expand_makeflags = true
+   module_system = "modules"
 
    [tools.python]
    cpu = 4

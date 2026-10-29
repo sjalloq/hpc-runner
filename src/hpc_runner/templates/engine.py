@@ -1,9 +1,31 @@
 """Jinja2 template engine for job scripts."""
 
+import shlex
 from pathlib import Path
 from typing import Any
 
 import jinja2
+
+
+class ShellWord(str):
+    """Text that is already one shell word, quoted as needed.
+
+    The ``sh`` filter passes it through unchanged. Schedulers build these
+    for values containing ``${hpc.*}``, whose rendering must stay a live
+    shell expansion inside otherwise quoted text.
+    """
+
+
+def sh(value: Any) -> str:
+    """Jinja filter: *value* as a single shell word (``shlex.quote``).
+
+    Every value a template interpolates goes through this, except the job
+    command, which is deliberately raw shell.
+    """
+    if isinstance(value, ShellWord):
+        return str(value)
+    return shlex.quote(str(value))
+
 
 # Template directories - schedulers and package templates
 _SCHEDULERS_DIR = Path(__file__).parent.parent / "schedulers"
@@ -22,6 +44,7 @@ def _get_env() -> jinja2.Environment:
             lstrip_blocks=True,
             keep_trailing_newline=True,
         )
+        _env.filters["sh"] = sh
     return _env
 
 

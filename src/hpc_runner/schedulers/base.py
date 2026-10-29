@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from hpc_runner.core.descriptors import SchedulerArg
+from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.job import RENDER_ORDER
 from hpc_runner.schedulers import _subprocess
+from hpc_runner.templates import ShellWord
 
 if TYPE_CHECKING:
     import subprocess
@@ -20,6 +24,17 @@ if TYPE_CHECKING:
     from hpc_runner.core.job import Job
     from hpc_runner.core.job_info import JobInfo
     from hpc_runner.core.result import JobResult, JobStatus
+
+
+# A ``${hpc.<name>}`` reference (names are checked by resolve()).
+_HPC_REF = re.compile(r"\$\{hpc\.([A-Za-z_][A-Za-z0-9_]*)\}")
+# Shell text that is a bare variable expansion, e.g. ``$NSLOTS``.
+_SHELL_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+
+#: Accepted values of ``[schedulers.<name>] module_system``.
+MODULE_SYSTEMS = ("modules", "lmod", "")
+
+RenderContext = Literal["script", "path"]
 
 
 class BaseScheduler(ABC):
@@ -48,8 +63,100 @@ class BaseScheduler(ABC):
     # Default timeout (seconds) for query and submit commands.
     COMMAND_TIMEOUT: float = 60.0
 
+    #: The shell text each ``${hpc.<name>}`` becomes inside the job script.
+    HPC_VARS: ClassVar[Mapping[str, str]] = {}
+    #: Overrides of :attr:`HPC_VARS` where the scheduler itself expands a
+    #: path (output file names), which can differ from the job's shell.
+    HPC_PATH_VARS: ClassVar[Mapping[str, str]] = {}
+
     def __init__(self, config: HPCConfig) -> None:
         self.config = config
+        settings = config.get_scheduler_config(self.name)
+        # Site module setup shared by every backend's environment block.
+        self.module_init_script: str = settings.get("module_init_script", "")
+        self.module_system: str = settings.get("module_system", "")
+        if self.module_system not in MODULE_SYSTEMS:
+            raise ConfigError(
+                f"[schedulers.{self.name}] module_system: expected one of "
+                f"{', '.join(repr(m) for m in MODULE_SYSTEMS)}, got {self.module_system!r}"
+            )
+
+    # =========================================================================
+    # ${hpc.*} and the shared environment block
+    # =========================================================================
+
+    def hpc_vars(self, job: Job, *, job_id: str | None = None) -> Mapping[str, str]:
+        """The shell text for each ``${hpc.*}`` name in *job*'s script.
+
+        Override when values are known literally (e.g. the local scheduler,
+        which allocates *job_id* itself before rendering).
+        """
+        return self.HPC_VARS
+
+    def render_hpc_vars(
+        self,
+        text: str,
+        *,
+        job: Job,
+        job_id: str | None = None,
+        context: RenderContext = "script",
+    ) -> str:
+        """*text* with each ``${hpc.x}`` replaced by this scheduler's rendering.
+
+        *context* ``"path"`` applies :attr:`HPC_PATH_VARS` (a path the
+        scheduler expands, such as ``-o``); ``"script"`` is the job shell.
+        """
+        mapping = dict(self.hpc_vars(job, job_id=job_id))
+        if context == "path":
+            mapping.update(self.HPC_PATH_VARS)
+        return _HPC_REF.sub(lambda m: mapping[m.group(1)], text)
+
+    def shell_word(self, text: str, *, job: Job, job_id: str | None = None) -> ShellWord:
+        """*text* as one shell word with its ``${hpc.*}`` references rendered live.
+
+        Literal parts are ``shlex``-quoted; each reference becomes this
+        scheduler's shell text (a variable is double-quoted so it neither
+        splits nor runs into the following text).
+        """
+        mapping = self.hpc_vars(job, job_id=job_id)
+        parts: list[str] = []
+        pos = 0
+        for match in _HPC_REF.finditer(text):
+            if match.start() > pos:
+                parts.append(shlex.quote(text[pos : match.start()]))
+            shell = mapping[match.group(1)]
+            parts.append(f'"{shell}"' if _SHELL_VAR.fullmatch(shell) else shell)
+            pos = match.end()
+        if pos < len(text) or not parts:
+            parts.append(shlex.quote(text[pos:]))
+        return ShellWord("".join(parts))
+
+    def environment_context(
+        self, job: Job, *, job_id: str | None = None, verbose: bool = False
+    ) -> dict[str, Any]:
+        """Template context for ``_environment.sh.j2``, the shared environment block.
+
+        Values that may contain ``${hpc.*}`` are pre-rendered
+        :class:`~hpc_runner.templates.ShellWord` objects; the template
+        passes every value through the ``sh`` filter.
+        """
+
+        def word(text: str) -> ShellWord:
+            return self.shell_word(text, job=job, job_id=job_id)
+
+        return {
+            "module_init_script": self.module_init_script,
+            "module_system": self.module_system,
+            "verbose": verbose,
+            "modules_path": [word(p) for p in job.modules_path],
+            "modules_path_append": [word(p) for p in job.modules_path_append],
+            "modules": [word(m) for m in job.modules],
+            "venv": word(job.venv) if job.venv else None,
+            "env_unset": list(job.env_unset),
+            "env_prepend": [(k, word(v)) for k, v in job.env_prepend.items()],
+            "env_append": [(k, word(v)) for k, v in job.env_append.items()],
+            "env_vars": [(k, word(v)) for k, v in job.env_vars.items()],
+        }
 
     # =========================================================================
     # Subprocess seam
@@ -132,7 +239,7 @@ class BaseScheduler(ABC):
     # =========================================================================
 
     @abstractmethod
-    def submit(self, job: Job, *, keep_script: bool = False) -> JobResult:
+    def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
         """Submit a job.
 
         Runs it attached (and returns once it has finished) when
@@ -141,10 +248,12 @@ class BaseScheduler(ABC):
         Args:
             job: Resolved job to submit.
             keep_script: If True, don't delete the job script after submission.
+            verbose: If True, module commands print their output instead of
+                showing it only when one fails.
         """
 
     @abstractmethod
-    def preview(self, job: Job) -> str:
+    def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script that :meth:`submit` would write for *job*."""
 
     @abstractmethod

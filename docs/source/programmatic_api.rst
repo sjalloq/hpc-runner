@@ -77,7 +77,14 @@ A list command is shell-quoted: ``JobSpec(["bash", "-c", "echo hi there"])``
 runs ``bash -c 'echo hi there'``. A string command is used as written.
 
 ``venv`` has three states: ``None`` (default) captures ``$VIRTUAL_ENV`` from
-the host, a path uses that venv, ``False`` uses none.
+the host, a path uses that venv, ``False`` uses none. ``resolve()`` checks
+the venv has ``bin/activate``.
+
+String values on a spec follow the same expansion rule as config
+(:ref:`variable-expansion`): ``$VAR`` is resolved from ``host.env`` (an
+undefined one raises ``ConfigError``), ``$$`` is a literal ``$`` and
+``${hpc.cpus}``-style runtime values are rendered by the scheduler. The
+command is not expanded.
 
 Raw scheduler flags with no hpc-runner equivalent go in ``scheduler_args``,
 keyed by scheduler. Each list is appended to config's ``scheduler_args``
@@ -104,8 +111,10 @@ name auto-detects; with no ``config`` it calls ``load_config()`` afresh.
    # The script submit() would write, for review or tests:
    print(scheduler.preview(job))
 
-Every scheduler has the same contract: ``submit(job, *, keep_script=False)``,
-``preview(job)``, ``cancel(job_id)``, ``get_status(job_id)``,
+Every scheduler has the same contract:
+``submit(job, *, keep_script=False, verbose=False)``,
+``preview(job, *, verbose=False)`` (``verbose`` shows module command output
+in the job instead of only on failure), ``cancel(job_id)``, ``get_status(job_id)``,
 ``get_exit_code(job_id)`` and ``result(job_id)``.
 
 Interactive or batch

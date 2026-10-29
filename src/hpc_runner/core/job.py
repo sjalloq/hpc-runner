@@ -44,8 +44,12 @@ class Job:
     - Scalar and dict fields map to the one layer name that supplied the
       value (for dicts, the most specific layer that set any key).
     - List fields (``modules``, ``modules_path``, ``modules_path_append``,
-      ``env_unset``, ``resources``) map to a tuple of ``(item, layer)``
-      pairs, one per item in order; a resource item is its ``Resource``.
+      ``env_unset``, ``env_passthrough``, ``resources``) map to a tuple of
+      ``(item, layer)`` pairs, one per item in order; a resource item is its
+      ``Resource``. ``env_passthrough`` lists the names even when
+      ``inherit_env`` makes them redundant and the field itself is empty.
+    - ``venv`` is ``"captured from VIRTUAL_ENV"``, the layer that set the
+      path, ``"<layer> (disabled)"`` for ``venv = false``, or ``"package"``.
     - ``scheduler_args`` maps to a tuple of ``((scheduler, arg), layer)``
       pairs, schedulers in first-seen order.
     """
@@ -74,6 +78,8 @@ class Job:
     env_prepend: Mapping[str, str]
     env_append: Mapping[str, str]
     env_unset: tuple[str, ...]
+    # NAME -> value captured from the submit host; empty with inherit_env.
+    env_passthrough: Mapping[str, str]
 
     modules: tuple[str, ...]
     modules_path: tuple[str, ...]

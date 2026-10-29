@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import shlex
 
 # Exempt from the scheduler subprocess seam (schedulers/_subprocess.py):
 # this scheduler runs the *job itself* as a child process; it never calls a
 # scheduler CLI, so there is no argv to log or scheduler error to convert.
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -43,27 +45,38 @@ class LocalScheduler(BaseScheduler):
 
     CONFIG_KEYS = {
         "module_init_script": str,
-        "purge_modules": bool,
-        "silent_modules": bool,
+        "module_system": str,
     }
+
+    # Shell-side values; cpus, job_id, task_id and job_name are literals
+    # known before the script runs (see hpc_vars).
+    HPC_VARS = {"tmpdir": "$TMPDIR", "host": "$HOSTNAME"}
 
     _job_counter: int = 0
 
     def __init__(self, config: HPCConfig) -> None:
         """Initialize local scheduler with config-driven settings."""
         super().__init__(config)
-        local_config = config.get_scheduler_config("local")
-
-        self.purge_modules = local_config.get("purge_modules", True)
-        self.silent_modules = local_config.get("silent_modules", False)
-        self.module_init_script = local_config.get("module_init_script", "")
-
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._exit_codes: dict[str, int] = {}
         self._output_paths: dict[str, dict[str, Path]] = {}
         self._script_paths: dict[str, Path] = {}
 
-    def submit(self, job: Job, *, keep_script: bool = False) -> JobResult:
+    def hpc_vars(self, job: Job, *, job_id: str | None = None) -> Mapping[str, str]:
+        """``${hpc.*}`` for a local run: literals, except tmpdir and host.
+
+        The id is the one :meth:`submit` allocates before rendering
+        (``<job_id>`` in a preview); there is no array task id.
+        """
+        return {
+            **self.HPC_VARS,
+            "cpus": shlex.quote(str(job.cpu or 1)),
+            "job_id": shlex.quote(job_id or "<job_id>"),
+            "task_id": "''",
+            "job_name": shlex.quote(job.name),
+        }
+
+    def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
         """Run job as a local subprocess; waits for it when ``job.interactive``.
 
         Raises:
@@ -75,10 +88,9 @@ class LocalScheduler(BaseScheduler):
         LocalScheduler._job_counter += 1
         job_id = f"local_{LocalScheduler._job_counter}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-        # Set up environment
-        env = os.environ.copy() if job.inherit_env else {}
-        if job.env_vars:
-            env.update(job.env_vars)
+        # The job's base environment: everything (-V), or only the named
+        # passthrough variables. The script sets env_* itself.
+        env = os.environ.copy() if job.inherit_env else dict(job.env_passthrough)
 
         workdir = Path(job.workdir).resolve() if job.workdir else Path.cwd()
 
@@ -90,7 +102,7 @@ class LocalScheduler(BaseScheduler):
             }
 
         # Generate and write script (template handles output redirection)
-        script = self._render(job, stdout_path, stderr_path)
+        script = self._render(job, job_id, stdout_path, stderr_path, verbose=verbose)
         script_path = Path(tempfile.gettempdir()) / f".hpc_local_{job_id}.sh"
         script_path.write_text(script)
         script_path.chmod(0o755)
@@ -114,7 +126,7 @@ class LocalScheduler(BaseScheduler):
         self._script_paths[job_id] = script_path
         return JobResult(scheduler=self, job_id=job_id, job=job)
 
-    def preview(self, job: Job) -> str:
+    def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script :meth:`submit` would write for *job*.
 
         Output file names contain the job id, which is only assigned at
@@ -123,7 +135,7 @@ class LocalScheduler(BaseScheduler):
         _check_supported(job)
         workdir = Path(job.workdir).resolve() if job.workdir else Path.cwd()
         stdout_path, stderr_path = self._resolve_output_paths(job, "<job_id>", workdir)
-        return self._render(job, stdout_path, stderr_path)
+        return self._render(job, None, stdout_path, stderr_path, verbose=verbose)
 
     @staticmethod
     def _resolve_output_paths(
@@ -196,12 +208,21 @@ class LocalScheduler(BaseScheduler):
             return self._output_paths[job_id].get(stream)
         return None
 
-    def _render(self, job: Job, stdout_path: Path | None, stderr_path: Path | None) -> str:
+    def _render(
+        self,
+        job: Job,
+        job_id: str | None,
+        stdout_path: Path | None,
+        stderr_path: Path | None,
+        *,
+        verbose: bool = False,
+    ) -> str:
         """Render the local execution script."""
         return render_template(
             "local/templates/job.sh.j2",
             job=job,
             scheduler=self,
+            environment=self.environment_context(job, job_id=job_id, verbose=verbose),
             stdout_path=stdout_path,
             stderr_path=stderr_path,
             merge_output=job.merge_output,

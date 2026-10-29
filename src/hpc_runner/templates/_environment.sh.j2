@@ -1,0 +1,90 @@
+{#- The job environment, shared by every scheduler's script template.
+    Context: `environment` (BaseScheduler.environment_context). Every value
+    goes through `sh`; ${hpc.*} references arrive pre-rendered. -#}
+{% set lb = '{' %}
+{% macro modcmd(cmd, verbose) %}
+{% if verbose %}
+{{ cmd }}
+{% else %}
+{{ cmd }} 2>"$_hpc_modlog" || { cat "$_hpc_modlog" >&2; echo {{ ("hpc-runner: " ~ cmd ~ " failed") | sh }} >&2; exit 1; }
+{% endif %}
+{% endmacro %}
+# --- hpc-runner environment ---
+# Module system initialization
+{% if environment.module_init_script %}
+. {{ environment.module_init_script | sh }}
+{% else %}
+if [ -f /etc/profile.d/modules.sh ]; then
+    . /etc/profile.d/modules.sh
+elif [ -f /usr/share/Modules/init/bash ]; then
+    . /usr/share/Modules/init/bash
+elif [ -f /etc/modules/init/bash ]; then
+    . /etc/modules/init/bash
+fi
+{% endif %}
+{% if environment.module_system == "modules" %}
+export MODULES_VERBOSITY=concise
+{% endif %}
+{% if not environment.verbose %}
+
+# Module commands are quiet on success; their output is shown if one fails.
+_hpc_modlog=$(mktemp)
+{% endif %}
+
+# Purge modules for a clean environment
+{{ modcmd("module purge", environment.verbose) -}}
+{% if environment.modules_path %}
+
+# Additional module paths
+{% for path in environment.modules_path %}
+{{ modcmd("module use " ~ (path | sh), environment.verbose) -}}
+{% endfor %}
+{% endif %}
+{% if environment.modules_path_append %}
+
+# Additional module paths, searched after the existing MODULEPATH
+{% for path in environment.modules_path_append %}
+{{ modcmd("module use --append " ~ (path | sh), environment.verbose) -}}
+{% endfor %}
+{% endif %}
+{% if environment.modules %}
+
+# Load modules
+{% for mod in environment.modules %}
+{{ modcmd("module load " ~ (mod | sh), environment.verbose) -}}
+{% endfor %}
+{% endif %}
+{% if environment.venv %}
+
+# Activate virtual environment
+source {{ environment.venv | sh }}/bin/activate
+{% endif %}
+{% if environment.env_unset %}
+
+# Unset environment variables
+{% for var in environment.env_unset %}
+unset {{ var | sh }}
+{% endfor %}
+{% endif %}
+{% if environment.env_prepend %}
+
+# Prepend to environment variables
+{% for key, value in environment.env_prepend %}
+export {{ key }}={{ value | sh }}${{ lb }}{{ key }}:+:${{ key }}}
+{% endfor %}
+{% endif %}
+{% if environment.env_append %}
+
+# Append to environment variables
+{% for key, value in environment.env_append %}
+export {{ key }}=${{ lb }}{{ key }}:+${{ key }}:}{{ value | sh }}
+{% endfor %}
+{% endif %}
+{% if environment.env_vars %}
+
+# Set environment variables
+{% for key, value in environment.env_vars %}
+export {{ key }}={{ value | sh }}
+{% endfor %}
+{% endif %}
+# --- end hpc-runner environment ---
