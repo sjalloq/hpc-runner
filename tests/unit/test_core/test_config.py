@@ -972,7 +972,7 @@ class TestSchema:
         assert set(FIELD_VALIDATORS) == settable
 
     def test_shipped_default_config_is_valid(self):
-        path = Path(__file__).parents[2] / "defaults" / "config.toml"
+        path = Path(__file__).parents[3] / "defaults" / "config.toml"
         config, errors = check_config(path)
         assert errors == []
 

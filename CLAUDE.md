@@ -55,7 +55,7 @@ source sourceme --clean   # Clean rebuild of .venv
 # Run tests
 pytest                    # All tests
 pytest -v                 # Verbose
-pytest tests/test_core/   # Specific directory
+pytest tests/unit/test_core/   # Specific directory
 pytest -k "test_job"      # By name pattern
 
 # Type checking and linting
@@ -67,7 +67,7 @@ ruff format src/hpc_runner tests
 make -C docs html SPHINXOPTS="-W --keep-going"
 
 # Regenerate golden job scripts after an intended template change
-pytest tests/test_golden.py --update-golden
+pytest tests/unit/test_golden.py --update-golden
 
 # CLI usage
 hpc --help
@@ -127,7 +127,7 @@ hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim # mixed
 
 ### Templates (`src/hpc_runner/templates/`)
 
-Jinja2 templates for job scripts. Each scheduler template (`schedulers/sge/templates/{batch,interactive}.sh.j2`, `schedulers/local/templates/job.sh.j2`) owns its directives and exec line and includes the shared `templates/_environment.sh.j2`. Every interpolated value goes through the `sh` filter. `tests/golden/` holds rendered scripts per scheduler, and every script rendered anywhere in the suite is checked with `bash -n`.
+Jinja2 templates for job scripts. Each scheduler template (`schedulers/sge/templates/{batch,interactive}.sh.j2`, `schedulers/local/templates/job.sh.j2`) owns its directives and exec line and includes the shared `templates/_environment.sh.j2`. Every interpolated value goes through the `sh` filter. `tests/unit/golden/` holds rendered scripts per scheduler, and every script rendered anywhere in the suite is checked with `bash -n`.
 
 ### TUI (`src/hpc_runner/tui/`)
 

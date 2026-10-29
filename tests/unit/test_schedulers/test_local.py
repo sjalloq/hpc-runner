@@ -11,7 +11,7 @@ from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.local import LocalScheduler
 from tests.fakes import make_job
 
-MODULEFILES_DIR = str(Path(__file__).parent.parent / "modulefiles")
+MODULEFILES_DIR = str(Path(__file__).parents[2] / "modulefiles")
 
 # The module init files the job script sources (templates/_environment.sh.j2).
 has_modules = any(

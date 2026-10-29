@@ -480,7 +480,7 @@ ruff check src/hpc_runner tests
 ruff format src/hpc_runner tests
 
 # Regenerate the golden job scripts after an intended template change
-pytest tests/test_golden.py --update-golden
+pytest tests/unit/test_golden.py --update-golden
 ```
 
 ## License

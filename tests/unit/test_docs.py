@@ -25,7 +25,7 @@ from hpc_runner.core.schema import FIELD_VALIDATORS
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
 DOCS = ROOT / "docs" / "source"
 RUN_MARKER = "# doctest: local"

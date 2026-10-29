@@ -18,7 +18,7 @@ def pytest_addoption(parser):
         "--update-golden",
         action="store_true",
         default=False,
-        help="Rewrite tests/golden/*.sh from the current templates instead of comparing",
+        help="Rewrite tests/unit/golden/*.sh from the current templates instead of comparing",
     )
 
 

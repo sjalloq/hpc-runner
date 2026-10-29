@@ -2,8 +2,8 @@
 
 Each case resolves a ``JobSpec`` against an in-memory ``HPCConfig`` and a
 fixed ``Host``, renders it with ``scheduler.preview(job)`` and compares the
-script to ``tests/golden/<case>.sh``. After an intended template change,
-regenerate with ``pytest tests/test_golden.py --update-golden`` and review
+script to ``tests/unit/golden/<case>.sh``. After an intended template change,
+regenerate with ``pytest tests/unit/test_golden.py --update-golden`` and review
 the diff.
 """
 
@@ -160,7 +160,7 @@ def test_golden_script(case, request, monkeypatch, tmp_path):
     assert path.exists(), f"missing {path}; run pytest --update-golden"
     assert script == path.read_text(), (
         f"{path.name} differs from the rendered script; if the change is intended, "
-        "run pytest tests/test_golden.py --update-golden and review the diff"
+        "run pytest tests/unit/test_golden.py --update-golden and review the diff"
     )
 
 
