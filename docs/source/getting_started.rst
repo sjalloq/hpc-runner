@@ -48,6 +48,10 @@ Use a named job type from the config:
 
    hpc run -t gpu --cpu 4 python train.py
 
+Pass the command as separate words, as you would type it. A quoted
+``"python train.py"`` is one word, so the job would look for a program with
+a space in its name.
+
 
 Pick a scheduler
 ----------------
@@ -56,7 +60,10 @@ By default, hpc-runner tries to auto-detect the scheduler. You can force it:
 
 .. code-block:: bash
 
-   hpc --scheduler sge run "python train.py"
+   hpc --scheduler sge run python train.py
+
+``hpc --scheduler local run ...`` runs the job on this machine, which is
+handy for trying a config without a cluster.
 
 Or use the environment variable:
 
@@ -68,17 +75,12 @@ Or use the environment variable:
 First config
 ------------
 
-Create a project-local config (safe to commit):
+Create a starter ``hpc-runner.toml`` in the current directory (put it at
+your git root to make it the project config; safe to commit):
 
 .. code-block:: bash
 
    hpc config init
-
-Create a user config:
-
-.. code-block:: bash
-
-   hpc config init --global
 
 Then open the file and set your site defaults, e.g. a default SGE queue:
 

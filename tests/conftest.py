@@ -2,12 +2,59 @@
 """Pytest configuration and fixtures."""
 
 import os
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
+import jinja2
 import pytest
 
 from tests.fakes import make_host, patch_seam
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="Rewrite tests/golden/*.sh from the current templates instead of comparing",
+    )
+
+
+# Every job script rendered anywhere in the suite is syntax-checked with
+# `bash -n` once (by content): a quoting bug in a template fails the test that
+# rendered it, not only the golden tests.
+_BASH = shutil.which("bash")
+_CHECKED_SCRIPTS: set[str] = set()
+
+
+def bash_syntax_error(script: str) -> str | None:
+    """`bash -n`'s complaint about *script*, or None when it parses."""
+    assert _BASH is not None
+    proc = subprocess.run([_BASH, "-n"], input=script, text=True, capture_output=True)
+    if proc.returncode == 0:
+        return None
+    return proc.stderr or f"exit {proc.returncode}"
+
+
+@pytest.fixture(autouse=True)
+def _bash_check_rendered_scripts(monkeypatch):
+    if _BASH is None:
+        yield
+        return
+    original = jinja2.Template.render
+
+    def render(self, *args, **kwargs):
+        text = original(self, *args, **kwargs)
+        if text.startswith("#!/bin/bash") and text not in _CHECKED_SCRIPTS:
+            error = bash_syntax_error(text)
+            assert error is None, f"rendered job script fails bash -n: {error}\n{text}"
+            _CHECKED_SCRIPTS.add(text)
+        return text
+
+    monkeypatch.setattr(jinja2.Template, "render", render)
+    yield
 
 
 @pytest.fixture

@@ -159,3 +159,54 @@ class TestQacctToJobInfo:
         assert info.job_id == ""
         assert info.name == ""
         assert info.status == JobStatus.UNKNOWN
+
+
+class TestParseQstatJXml:
+    """qstat -j -xml parsing for get_job_details (moved from the scheduler)."""
+
+    XML = """<?xml version='1.0'?>
+<detailed_job_info xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
+  <djob_info>
+    <element>
+      <JB_job_number>42</JB_job_number>
+      <JB_job_name>sim</JB_job_name>
+      <JB_owner>alice</JB_owner>
+      <JB_cwd>/work</JB_cwd>
+      <JB_stdout_path_list><path_list><PN_path>sim.out</PN_path></path_list></JB_stdout_path_list>
+      <JB_merge_stderr>true</JB_merge_stderr>
+      <JB_hard_resource_list>
+        <qstat_l_requests><CE_name>gpu</CE_name><CE_stringval>2</CE_stringval></qstat_l_requests>
+      </JB_hard_resource_list>
+      <JB_pe>smp</JB_pe>
+      <JB_pe_range><ranges><RN_min>4</RN_min><RN_max>4</RN_max></ranges></JB_pe_range>
+      <JB_jid_predecessor_list><job_predecessors><JRE_job_number>41</JRE_job_number></job_predecessors></JB_jid_predecessor_list>
+    </element>
+  </djob_info>
+</detailed_job_info>
+"""
+
+    def test_fields(self):
+        from pathlib import Path
+
+        from hpc_runner.schedulers.sge.parser import parse_qstat_j_xml
+
+        data = parse_qstat_j_xml("noise before\n" + self.XML)
+        assert data["name"] == "sim"
+        assert data["user"] == "alice"
+        assert data["stdout_path"] == Path("/work/sim.out")
+        assert data["stderr_path"] == Path("/work/sim.out")  # merged
+        assert data["resources"] == {"gpu": "2"}
+        assert (data["pe_name"], data["pe_range"]) == ("smp", "4")
+        assert data["dependencies"] == ["41"]
+
+    def test_garbage_is_empty(self):
+        from hpc_runner.schedulers.sge.parser import parse_qstat_j_xml
+
+        assert parse_qstat_j_xml("not xml") == {}
+
+    def test_task_job_id(self, monkeypatch, tmp_path):
+        from hpc_runner.core.config import HPCConfig
+        from hpc_runner.schedulers.sge import SGEScheduler
+
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        assert SGEScheduler(HPCConfig()).task_job_id("42", 7) == "42.7"

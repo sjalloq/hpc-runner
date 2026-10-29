@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from hpc_runner.core.dependency import DependencyType, dependency_on
@@ -51,7 +52,7 @@ class Pipeline:
         # Auto-submitted on exit; results available on the pipeline
         for name, result in p.results.items():
             print(f"{name}: {result.job_id}")
-        p.wait()
+        statuses = p.wait()  # {step name: JobStatus}
 
     Or used without a context manager for explicit control::
 
@@ -75,6 +76,8 @@ class Pipeline:
         self.config = config
         self.jobs: list[PipelineJob] = []
         self._name_map: dict[str, PipelineJob] = {}
+        self._results: dict[str, JobResult] = {}
+        self._results_view: Mapping[str, JobResult] = MappingProxyType(self._results)
         self._scheduler = scheduler
         self._host = host
 
@@ -124,14 +127,14 @@ class Pipeline:
         return pipeline_job
 
     @property
-    def results(self) -> dict[str, JobResult]:
-        """Results for all submitted jobs.
+    def results(self) -> Mapping[str, JobResult]:
+        """Results of the submitted steps, by step name, in submission order.
 
-        Returns:
-            Dict mapping job names to results (only jobs that have been
-            submitted are included).
+        A read-only live view: the same object on every access, updated as
+        steps are submitted. Steps not (yet) submitted are absent, so
+        ``results[name]`` raises ``KeyError`` for them.
         """
-        return {pj.name: pj.result for pj in self.jobs if pj.result is not None}
+        return self._results_view
 
     def submit(
         self,
@@ -191,6 +194,7 @@ class Pipeline:
             result = scheduler.submit(job)
             pjob.result = result
             results[pjob.name] = result
+            self._results[pjob.name] = result
 
         return results
 
@@ -228,16 +232,19 @@ class Pipeline:
         poll_interval: float = 5.0,
         timeout: float | None = None,
         unknown_after: float = 60.0,
-    ) -> dict[str, JobResult]:
-        """Wait for all submitted jobs to complete.
+    ) -> dict[str, JobStatus]:
+        """Wait for all submitted jobs to finish; return each step's final status.
 
         Each tick makes one ``get_statuses`` call per scheduler for every
         outstanding job (each task of an array step). *timeout* and
         *unknown_after* are as for :meth:`JobResult.wait`: a job UNKNOWN for
         *unknown_after* seconds stops being waited for.
 
+        An array step's status is its tasks' common status when they agree;
+        otherwise the first task (in index order) that did not complete.
+
         Returns:
-            Dict mapping job names to results
+            Dict mapping step names to their final :class:`JobStatus`.
 
         Raises:
             NotSubmittedError: If no jobs have been submitted.
@@ -257,11 +264,12 @@ class Pipeline:
             )
 
         schedulers: dict[str, BaseScheduler] = {}
-        for result in submitted.values():
+        step_ids: dict[str, list[str]] = {}
+        for name, result in submitted.items():
             ids = result.task_ids() if isinstance(result, ArrayJobResult) else [result.job_id]
-            for job_id in ids:
-                if job_id is not None:  # None: an interactive run, already finished
-                    schedulers[job_id] = result.scheduler
+            step_ids[name] = [job_id for job_id in ids if job_id is not None]
+            for job_id in step_ids[name]:
+                schedulers[job_id] = result.scheduler
 
         def poll(job_ids: list[str]) -> dict[str, JobStatus]:
             by_scheduler: dict[int, tuple[BaseScheduler, list[str]]] = {}
@@ -273,7 +281,7 @@ class Pipeline:
                 statuses.update(scheduler.get_statuses(ids))
             return statuses
 
-        wait_for_statuses(
+        final = wait_for_statuses(
             poll,
             list(schedulers),
             poll_interval=poll_interval,
@@ -281,11 +289,25 @@ class Pipeline:
             unknown_after=unknown_after,
             label=f"Pipeline {self.name}",
         )
-        return submitted
+        statuses: dict[str, JobStatus] = {}
+        for name, result in submitted.items():
+            ids = step_ids[name]
+            if not ids:  # an interactive run: already finished
+                statuses[name] = result.status
+            else:
+                statuses[name] = _step_status([final[job_id] for job_id in ids])
+        return statuses
 
-    def get_job(self, name: str) -> PipelineJob | None:
-        """Get a job by name."""
-        return self._name_map.get(name)
+    def get_job(self, name: str) -> PipelineJob:
+        """The step called *name*.
+
+        Raises:
+            UnknownStepError: No step has that name.
+        """
+        try:
+            return self._name_map[name]
+        except KeyError:
+            raise UnknownStepError(f"Unknown step: {name}") from None
 
     def __enter__(self) -> Pipeline:
         return self
@@ -299,3 +321,14 @@ class Pipeline:
 
     def __iter__(self) -> Iterator[PipelineJob]:
         return iter(self.jobs)
+
+
+def _step_status(task_statuses: list[JobStatus]) -> JobStatus:
+    """One status for a step from its tasks' final statuses (one for a plain job)."""
+    # Interim rule until the pipeline lifecycle work (D16): the common
+    # status when every task agrees, else the first task (index order) that
+    # did not complete.
+    first = task_statuses[0]
+    if all(status is first for status in task_statuses):
+        return first
+    return next(status for status in task_statuses if status is not JobStatus.COMPLETED)

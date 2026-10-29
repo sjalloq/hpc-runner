@@ -140,7 +140,8 @@ class TestPipeline:
         step1 = p.add("echo hello", name="step1")
 
         assert p.get_job("step1") is step1
-        assert p.get_job("nonexistent") is None
+        with pytest.raises(UnknownStepError, match="nonexistent"):
+            p.get_job("nonexistent")
 
     def test_context_manager_auto_submits(self):
         """Context manager auto-submits on clean exit."""
@@ -495,6 +496,7 @@ class TestPipelineDependenciesAndWait:
         p.add(JobSpec("sim", array="1-2"), name="sims")
         p.add("merge", name="merge", depends_on=["sims"])
         scheduler = MagicMock()
+        scheduler.task_job_id.side_effect = lambda base, index: f"{base}.{index}"
         ticks = iter(
             [
                 {"10.1": JobStatus.RUNNING, "10.2": JobStatus.COMPLETED, "11": JobStatus.PENDING},
@@ -510,7 +512,10 @@ class TestPipelineDependenciesAndWait:
 
         scheduler.submit.side_effect = submit
         p.submit(scheduler=scheduler)
-        p.wait(poll_interval=0)
+        assert p.wait(poll_interval=0) == {
+            "sims": JobStatus.COMPLETED,
+            "merge": JobStatus.COMPLETED,
+        }
         calls = [c.args[0] for c in scheduler.get_statuses.call_args_list]
         assert calls == [["10.1", "10.2", "11"], ["10.1", "11"]]
         scheduler.get_status.assert_not_called()
@@ -529,4 +534,56 @@ class TestPipelineDependenciesAndWait:
             p.wait(poll_interval=0, timeout=0)
 
         scheduler.get_statuses.side_effect = lambda ids: {"1": JobStatus.UNKNOWN}
-        assert p.wait(poll_interval=0, unknown_after=0) == p.results
+        assert p.wait(poll_interval=0, unknown_after=0) == {"a": JobStatus.UNKNOWN}
+
+
+class TestPipelineResultsAndStatuses:
+    def _submitted(self, statuses):
+        from hpc_runner.core.result import ArrayJobResult, JobResult
+
+        p = _pipeline()
+        p.add(JobSpec("sim", array="1-3"), name="sims")
+        p.add("report", name="report")
+        scheduler = MagicMock()
+        scheduler.task_job_id.side_effect = lambda base, index: f"{base}.{index}"
+        scheduler.get_statuses.side_effect = lambda ids: {i: statuses[i] for i in ids}
+
+        def submit(job):
+            if job.array is not None:
+                return ArrayJobResult(scheduler=scheduler, job_id="10", job=job, array=job.array)
+            return JobResult(scheduler=scheduler, job_id="11", job=job)
+
+        scheduler.submit.side_effect = submit
+        p.submit(scheduler=scheduler)
+        return p
+
+    def test_results_is_one_read_only_live_mapping(self):
+        from collections.abc import Mapping
+
+        p = _pipeline()
+        p.add("a", name="a")
+        view = p.results
+        assert isinstance(view, Mapping) and len(view) == 0
+        assert p.results is view
+        with pytest.raises(TypeError):
+            view["a"] = None  # type: ignore[index]
+        scheduler = MagicMock()
+        scheduler.submit.return_value = MagicMock(job_id="1")
+        p.submit(scheduler=scheduler)
+        assert view["a"].job_id == "1"
+
+    def test_wait_returns_statuses(self):
+        from hpc_runner.core.result import JobStatus
+
+        done = JobStatus.COMPLETED
+        p = self._submitted({"10.1": done, "10.2": done, "10.3": done, "11": JobStatus.FAILED})
+        assert p.wait(poll_interval=0) == {"sims": done, "report": JobStatus.FAILED}
+
+    def test_array_step_reports_first_task_not_completed(self):
+        from hpc_runner.core.result import JobStatus
+
+        done = JobStatus.COMPLETED
+        p = self._submitted(
+            {"10.1": done, "10.2": JobStatus.SKIPPED, "10.3": JobStatus.FAILED, "11": done}
+        )
+        assert p.wait(poll_interval=0)["sims"] is JobStatus.SKIPPED

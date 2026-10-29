@@ -298,8 +298,8 @@ class ArrayJobResult(JobResult):
         return self.job_id
 
     def task_id(self, index: int) -> str:
-        """Get job ID for specific array task."""
-        return f"{self._base_id()}.{index}"
+        """The scheduler's job id for task *index* (``scheduler.task_job_id``)."""
+        return self.scheduler.task_job_id(self._base_id(), index)
 
     def task_status(self, index: int) -> JobStatus:
         """The status of task *index* itself (not of the array as a whole)."""

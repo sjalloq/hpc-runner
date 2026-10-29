@@ -1,12 +1,12 @@
 """Tests for DetailPanel and ButtonBar components."""
 
 import pytest
+from textual.app import App, ComposeResult
+from textual.widgets import Button
 
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus
 from hpc_runner.tui.components.detail_panel import ButtonBar, DetailPanel
-from textual.app import App, ComposeResult
-from textual.widgets import Button
 
 
 def make_job(
@@ -168,7 +168,7 @@ class TestDetailPanel:
                 yield DetailPanel(id="detail")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             panel = app.query_one(DetailPanel)
             assert panel is not None
 
@@ -181,7 +181,7 @@ class TestDetailPanel:
                 yield DetailPanel(id="detail")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             panel = app.query_one(DetailPanel)
             no_selection = panel.query_one("#no-selection")
             assert "hidden" not in no_selection.classes

@@ -60,8 +60,14 @@ pytest -k "test_job"      # By name pattern
 
 # Type checking and linting
 mypy src/hpc_runner
-ruff check src/hpc_runner
-ruff format src/hpc_runner
+ruff check src/hpc_runner tests
+ruff format src/hpc_runner tests
+
+# Docs (warnings are errors)
+make -C docs html SPHINXOPTS="-W --keep-going"
+
+# Regenerate golden job scripts after an intended template change
+pytest tests/test_golden.py --update-golden
 
 # CLI usage
 hpc --help
@@ -75,19 +81,25 @@ hpc --scheduler sge run --batch --cpu 4 --mem 8G python script.py
 
 ### Core Abstractions (`src/hpc_runner/core/`)
 
-- **JobSpec** - What the caller asked for (`None` = unspecified); **resolve(spec, config, host)** is the only place merge rules live and returns a frozen **Job**
-- **Host** - Submit-side facts (env, cwd, user) injected into `resolve`
-- **JobResult/ArrayJobResult** - Returned from submission, provides status polling and output access
-- **JobStatus** - Unified enum: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, TIMEOUT, UNKNOWN
+A job is three values: `JobSpec` → `resolve(spec, config, host)` → `Job`.
+
+- **JobSpec** (`spec.py`) - What the caller asked for (`None` = unspecified); no config or environment access. `after()` appends per-parent dependencies
+- **resolve()** (`resolve.py`) - The only place merge rules live: the fixed layer chain, the list rule (`merge.py`: append, `Set`, `Edit`), `$VAR`/`${hpc.*}` expansion (`expand.py`), `mem`/`time` parsing (`units.py`), provenance
+- **Job** (`job.py`) - Frozen and fully resolved; schedulers render it and never mutate it
+- **Host** (`host.py`) - Submit-side facts (env, cwd, user) passed explicitly to `resolve`; `Host.capture()` snapshots the process
+- **JobResult/ArrayJobResult** (`result.py`) - A handle: status, `wait()`, `result()`, output paths recorded at submit; `scheduler.result(job_id)` rebuilds one from an id
+- **JobStatus** - Unified enum: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, TIMEOUT, SKIPPED, UNKNOWN
 - **ResourceSet** - Collection of named resources (gpu, licenses, etc.)
-- **HPCConfig** - TOML-based config with two-level discovery: $HPC_RUNNER_CONFIG or <git-root>/hpc-runner.toml (project), then ./hpc-runner.toml (local override)
+- **HPCConfig** (`config.py`, schema in `schema.py`) - Typed, validated TOML (`config_version = 1`; unknown keys are errors) with two-level discovery: $HPC_RUNNER_CONFIG or <git-root>/hpc-runner.toml (project), then ./hpc-runner.toml (local override). Always passed explicitly; no global cache
 
 ### Scheduler System (`src/hpc_runner/schedulers/`)
 
-- **BaseScheduler** - ABC defining submit(job), preview(job), cancel(), get_status(), get_exit_code(), result(job_id)
+- **BaseScheduler** - ABC defining submit(job), preview(job), cancel(), get_statuses() (batched), get_exit_code(), result(job_id), task_job_id(base, index)
+- **The seam** (`_subprocess.py`) - `run_command()` is the only place a scheduler CLI is run: it logs argv and converts failures to `SchedulerError` subclasses. Tests patch it (`tests/fakes.py`), never `subprocess.run`
+- **sge/parser.py** - All qstat/qacct/qsub output parsing; `sge/scheduler.py` is submit/status/cancel
 - **SGEScheduler** - Sun Grid Engine (qsub/qstat/qdel). All SGE-specific settings (PE name, resource names) are configurable via `[schedulers.sge]` config section
 - **LocalScheduler** - Runs jobs as local subprocesses (for testing without cluster)
-- **detection.py** - Auto-detects scheduler: HPC_SCHEDULER env > SGE_ROOT > sbatch > PBS > local fallback
+- **detection.py** - Auto-detects scheduler: HPC_SCHEDULER env > SGE (SGE_ROOT or `qstat -help`) > sbatch > PBS (PBS_CONF_FILE or `qsub --version`) > local fallback
 - **Registry** - `get_scheduler(name)` with lazy imports, `register_scheduler()` for custom schedulers
 
 ### CLI (`src/hpc_runner/cli/`)
@@ -98,7 +110,7 @@ Uses `rich-click` for styled output. One entry point, **`hpc`** (group), with su
 
 **Short-option namespace rule**: any short flag click does not recognise is forwarded verbatim to the scheduler, so a short flag `hpc run` defines *shadows* the scheduler's flag of the same letter. Only claim a short flag when hpc-runner already owns that meaning through a long option. Currently claimed: `-t/--type` (shadows qsub/sbatch `-t` = array/time, covered by `--array`/`--time`) and `-b/--batch` (shadows qsub `-b` = binary, irrelevant since jobs always run via a generated script). Unknown *long* options are rejected, as is a single-dash flag that appears without a `--` separator, so a typo can never be silently forwarded or submitted as the command.
 
-**Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, extra-module) stay.
+**Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, env, resource) stay. `--wait` needs `--batch` (or `--array`); run locally with `hpc --scheduler local run`.
 
 **Scheduler passthrough on `hpc run`**: Use `--` to pass raw scheduler arguments. Everything before `--` is scheduler passthrough (set on `JobSpec.scheduler_args[<active scheduler>]`), everything after is the command. Without `--`, all args are the command (no heuristic).
 ```bash
@@ -111,11 +123,11 @@ hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim # mixed
 
 ### Workflow (`src/hpc_runner/workflow/`)
 
-**Pipeline** - Job dependency graphs with topological sorting. Jobs reference other jobs by name; dependencies are resolved at submit time.
+**Pipeline** - Job dependency graphs with topological sorting. Steps are `JobSpec`s that reference other steps by name; each is resolved and its dependencies injected at submit time. `results` is a read-only mapping, `wait()` returns statuses. The lifecycle design (D16) is parked.
 
 ### Templates (`src/hpc_runner/templates/`)
 
-Jinja2 templates for job scripts. Each scheduler has its own template in `schedulers/{name}/templates/job.sh.j2`.
+Jinja2 templates for job scripts. Each scheduler template (`schedulers/sge/templates/{batch,interactive}.sh.j2`, `schedulers/local/templates/job.sh.j2`) owns its directives and exec line and includes the shared `templates/_environment.sh.j2`. Every interpolated value goes through the `sh` filter. `tests/golden/` holds rendered scripts per scheduler, and every script rendered anywhere in the suite is checked with `bash -n`.
 
 ### TUI (`src/hpc_runner/tui/`)
 

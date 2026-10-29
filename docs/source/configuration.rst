@@ -41,14 +41,211 @@ top-level keys are:
 - ``[types.<name>]``: named flows that compose tools (see :ref:`job-types`)
 - ``[schedulers.<name>]``: site facts for one scheduler (e.g., SGE resource names)
 
-``[defaults]``, ``[tools.*]``, ``[tools.*.options.*]`` and ``[types.*]`` all
-accept the same job settings: ``name``, ``cpu``, ``mem``, ``time``,
-``queue``, ``priority``, ``project``, ``nodes``, ``tasks``, ``stdout``,
-``stderr``, ``inherit_env``, ``workdir``, ``shell``, ``use_cwd``, ``venv``,
-``interactive``, ``env_vars``, ``env_prepend``, ``env_append``,
-``env_unset``, ``env_passthrough``, ``modules``, ``modules_path``, ``modules_path_append``,
-``resources`` and ``scheduler_args``. In addition ``options`` is allowed only
-under ``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
+``[defaults]``, ``[tools.*]``, ``[tools.*.options.*]`` and ``[types.*]`` are
+*job layers*: they all accept the same job settings, listed in
+:ref:`job-settings`. In addition ``options`` is allowed only under
+``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
+
+
+.. _job-settings:
+
+Job settings reference
+----------------------
+
+Every key a job layer accepts. They are the fields of ``JobSpec`` (the
+Python API) except the per-invocation ones, ``command``, ``type``,
+``dependencies`` and ``array``, which only the command line or the spec
+can set. *Merge* says how a key combines across layers
+(:ref:`how-jobs-pick-up-config`): **scalar** (most specific layer wins),
+**table** (keys merge, later layer wins per key) or **list**
+(:ref:`list-merging`). Keys marked *expanded* have ``$VAR`` resolved on
+the submit host (:ref:`variable-expansion`).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 18 10 54
+
+   * - Key
+     - Type
+     - Merge
+     - Meaning
+   * - ``name``
+     - string
+     - scalar
+     - Job name; expanded. Default ``<user>_<first command word>``.
+   * - ``cpu``
+     - integer
+     - scalar
+     - CPUs / slots (SGE ``-pe <parallel_environment> <cpu>``).
+   * - ``mem``
+     - string
+     - scalar
+     - Memory for the whole job (:ref:`memory-and-time`); expanded.
+   * - ``time``
+     - string
+     - scalar
+     - Run-time limit (:ref:`memory-and-time`); expanded.
+   * - ``queue``
+     - string
+     - scalar
+     - Queue / partition (SGE ``-q``); expanded.
+   * - ``priority``
+     - integer
+     - scalar
+     - Scheduler priority (SGE ``-p``).
+   * - ``project``
+     - string
+     - scalar
+     - Project / account charged (SGE ``-P``); expanded.
+   * - ``nodes``
+     - integer
+     - scalar
+     - Number of nodes for MPI jobs (not used by SGE).
+   * - ``tasks``
+     - integer
+     - scalar
+     - Number of tasks for MPI jobs (not used by SGE); ``--ntasks`` on the CLI.
+   * - ``stdout``
+     - string
+     - scalar
+     - Output file pattern (:ref:`output-files`); expanded. Default
+       ``${hpc.job_name}.${hpc.job_id}.out``.
+   * - ``stderr``
+     - string
+     - scalar
+     - Separate stderr pattern; unset means merged into ``stdout``; expanded.
+   * - ``inherit_env``
+     - boolean
+     - scalar
+     - Inherit the submitting shell's environment (SGE ``-V``). Default
+       ``true``; see :ref:`environment`.
+   * - ``workdir``
+     - string
+     - scalar
+     - Working directory, relative to the submit directory; expanded.
+       Default: the submit directory.
+   * - ``shell``
+     - string
+     - scalar
+     - Shell the job script runs under (SGE ``-S``). Default ``/bin/bash``.
+   * - ``use_cwd``
+     - boolean
+     - scalar
+     - Run in ``workdir`` (SGE ``-cwd``). Default ``true``.
+   * - ``venv``
+     - path or ``false``
+     - scalar
+     - Virtualenv to activate; unset captures ``$VIRTUAL_ENV``, ``false``
+       means none (:ref:`environment`); expanded.
+   * - ``interactive``
+     - boolean
+     - scalar
+     - Run attached and wait (SGE ``qrsh``). Default ``false``; ``hpc run``
+       sets it unless ``--batch`` or ``--array`` is given.
+   * - ``env_vars``
+     - table of strings
+     - table
+     - Variables set in the job; expanded.
+   * - ``env_prepend``
+     - table of strings
+     - table
+     - Values prepended to variables, ``:``-separated; expanded.
+   * - ``env_append``
+     - table of strings
+     - table
+     - Values appended to variables, ``:``-separated; expanded.
+   * - ``env_unset``
+     - list of names
+     - list
+     - Variables unset in the job.
+   * - ``env_passthrough``
+     - list of names
+     - list
+     - Submit-host variables passed when ``inherit_env = false``.
+   * - ``modules``
+     - list of strings
+     - list
+     - ``module load`` each, after ``module purge``; expanded.
+   * - ``modules_path``
+     - list of strings
+     - list
+     - ``module use`` each (searched first); expanded.
+   * - ``modules_path_append``
+     - list of strings
+     - list
+     - ``module use --append`` each (searched last); expanded.
+   * - ``resources``
+     - list of ``{ name, value }``
+     - list (by ``name``)
+     - Scheduler resources and licences (SGE ``-l name=value``).
+   * - ``scheduler_args``
+     - table of lists of strings
+     - table of lists
+     - Raw per-scheduler arguments (:ref:`scheduler-args`); expanded.
+
+Structural keys:
+
+- ``options`` (``[tools.<name>]`` only): argument-specific sub-entries, see
+  :ref:`tool-option-specialisation`.
+- ``tools`` (``[types.<name>]`` only): the tools a type pulls in, in order,
+  see :ref:`job-types`.
+
+
+.. _scheduler-settings:
+
+Scheduler settings reference
+----------------------------
+
+``[schedulers.<name>]`` holds site facts for one scheduler. Each backend
+declares the keys it reads; any other key, or a value of the wrong type, is
+an error. A section for a scheduler this hpc-runner does not have (for
+example ``[schedulers.slurm]`` today) is a warning and is not checked.
+
+``[schedulers.sge]``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 12 14 50
+
+   * - Key
+     - Type
+     - Default
+     - Meaning
+   * - ``parallel_environment``
+     - string
+     - ``"smp"``
+     - PE used for ``cpu``: ``-pe <parallel_environment> <cpu>``.
+   * - ``memory_resource``
+     - string
+     - ``"mem_free"``
+     - Resource ``mem`` is requested as (``h_vmem``, ``virtual_free``, ...).
+   * - ``time_resource``
+     - string
+     - ``"h_rt"``
+     - Resource ``time`` is requested as.
+   * - ``memory_per``
+     - ``"slot"`` or ``"job"``
+     - ``"slot"``
+     - ``"slot"``: the memory resource is consumed per slot, so ``mem`` is
+       divided by ``cpu``; ``"job"``: requested as given.
+   * - ``module_init_script``
+     - string
+     - ``""``
+     - Script sourced to define ``module``; empty tries the standard
+       locations.
+   * - ``module_system``
+     - ``"modules"``, ``"lmod"`` or ``""``
+     - ``""``
+     - ``"modules"`` (Environment Modules 4.3+) exports
+       ``MODULES_VERBOSITY=concise``.
+   * - ``emulate_afterok``
+     - boolean
+     - ``true``
+     - Emulate afterok/afternotok with exit sentinels (:doc:`sge`); with
+       ``false`` only afterany dependencies are accepted.
+
+``[schedulers.local]`` (runs jobs as local subprocesses) reads
+``module_init_script`` and ``module_system`` with the same meaning.
 
 
 Validation
@@ -78,6 +275,8 @@ Two commands help:
   ``types.<name>``, ``spec``, ``package`` (built-in default) or ``host``
   (captured from the submitting shell).
 
+
+.. _how-jobs-pick-up-config:
 
 How jobs pick up config
 -----------------------
@@ -358,6 +557,8 @@ compose): ``"$$HOME"`` is the text ``$HOME``. A value that depends on a
 module (``XCELIUM_HOME=$CDS_INST_DIR`` after the load) is shell logic and
 belongs in the recipe or script.
 
+
+.. _environment:
 
 Environment
 -----------

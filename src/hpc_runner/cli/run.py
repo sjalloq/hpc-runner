@@ -60,6 +60,20 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
 )
 @click.option("--array", help="Array job specification (e.g., 1-100)")
 @click.option(
+    "--env",
+    "env",
+    multiple=True,
+    metavar="KEY=VALUE",
+    help="Set an environment variable in the job (repeatable)",
+)
+@click.option(
+    "--resource",
+    "resource",
+    multiple=True,
+    metavar="NAME=VALUE",
+    help="Request a scheduler resource or licence, e.g. gpu=2 (repeatable)",
+)
+@click.option(
     "--depend",
     multiple=True,
     help="Job dependency, repeatable: ID (afterok) or TYPE:ID[:ID...][,TYPE:ID...] "
@@ -71,9 +85,8 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
     is_flag=True,
     help="Submit as a batch job and return immediately (default: run interactively)",
 )
-@click.option("--local", is_flag=True, help="Run locally (no scheduler)")
 @click.option("--dry-run", "dry_run", is_flag=True, help="Show what would be submitted")
-@click.option("--wait", is_flag=True, help="Wait for job completion")
+@click.option("--wait", is_flag=True, help="With --batch: block until the job completes")
 @click.option("--keep-script", "keep_script", is_flag=True, help="Keep job script for debugging")
 @pass_context
 def run(
@@ -91,9 +104,10 @@ def run(
     stderr: str | None,
     stdout: str | None,
     array: str | None,
+    env: tuple[str, ...],
+    resource: tuple[str, ...],
     depend: tuple[str, ...],
     batch: bool,
-    local: bool,
     dry_run: bool,
     wait: bool,
     keep_script: bool,
@@ -151,11 +165,17 @@ def run(
             ArrayRange.parse(array)
         except ValueError as exc:
             raise click.BadParameter(str(exc), param_hint="--array") from exc
+    if wait and not batch and array is None:
+        raise click.UsageError(
+            "--wait needs --batch: an interactive run already waits for the command"
+        )
     dependencies = _parse_depend(depend)
+    env_vars = dict(_parse_pairs(env, "--env", "KEY=VALUE"))
+    resources = [
+        {"name": n, "value": v} for n, v in _parse_pairs(resource, "--resource", "NAME=VALUE")
+    ]
 
-    # Get scheduler
-    scheduler_name = "local" if local else ctx.scheduler
-    scheduler = get_scheduler(scheduler_name, config=ctx.config)
+    scheduler = get_scheduler(ctx.scheduler, config=ctx.config)
 
     # Array jobs can only be batch; everything else is interactive unless
     # --batch was given.
@@ -173,6 +193,8 @@ def run(
         stderr=stderr,
         stdout=stdout,
         array=array,
+        env_vars=env_vars or None,
+        resources=resources or None,
         dependencies=dependencies,
         scheduler_args={scheduler.name: passthrough} if passthrough else None,
         interactive=not batch and not array,
@@ -215,6 +237,21 @@ def run(
         else:
             final_status = result.wait()
             console.print(f"Job completed with status: [bold]{final_status.name}[/bold]")
+
+
+def _parse_pairs(values: tuple[str, ...], option: str, form: str) -> list[tuple[str, str]]:
+    """Split each ``NAME=VALUE`` in *values* at the first ``=``.
+
+    Raises:
+        click.BadParameter: A value has no ``=`` or an empty name.
+    """
+    pairs: list[tuple[str, str]] = []
+    for text in values:
+        name, sep, value = text.partition("=")
+        if not sep or not name:
+            raise click.BadParameter(f"expected {form}, got {text!r}", param_hint=option)
+        pairs.append((name, value))
+    return pairs
 
 
 def _parse_depend(values: tuple[str, ...]) -> list["Dependency"]:

@@ -3,9 +3,9 @@
 import os
 from unittest.mock import patch
 
-import pytest
-
+from hpc_runner.core.exceptions import SchedulerUnavailableError
 from hpc_runner.schedulers.detection import detect_scheduler
+from tests.fakes import patch_seam
 
 
 class TestSchedulerDetection:
@@ -54,3 +54,40 @@ class TestSchedulerDetection:
         with patch("shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/cmd"  # All commands exist
             assert detect_scheduler() == "sge"
+
+
+def _only_qsub(cmd):
+    return "/usr/bin/qsub" if cmd == "qsub" else None
+
+
+class TestPBSDetection:
+    """PBS: PBS_CONF_FILE, or `qsub --version` (through the seam) printing pbs_version."""
+
+    def test_pbs_conf_file(self, clean_env):
+        os.environ["PBS_CONF_FILE"] = "/etc/pbs.conf"
+        with patch("shutil.which", side_effect=_only_qsub), patch_seam(lambda argv: (1, "", "")):
+            assert detect_scheduler() == "pbs"
+
+    def test_qsub_version_pbs(self, clean_env):
+        def respond(argv):
+            if argv == ["qsub", "--version"]:
+                return 0, "pbs_version = 22.05.11\n", ""
+            return 1, "", ""  # qstat -help: not SGE
+
+        with patch("shutil.which", side_effect=_only_qsub), patch_seam(respond) as seam:
+            assert detect_scheduler() == "pbs"
+        assert ["qsub", "--version"] in [c.args[0] for c in seam.call_args_list]
+
+    def test_qsub_version_not_pbs(self, clean_env):
+        def respond(argv):
+            return 0, "Torque 6.1\n", ""
+
+        with patch("shutil.which", side_effect=_only_qsub), patch_seam(respond):
+            assert detect_scheduler() == "local"
+
+    def test_qsub_version_missing_binary(self, clean_env):
+        def respond(argv):
+            raise SchedulerUnavailableError(f"{argv[0]}: not found")
+
+        with patch("shutil.which", side_effect=_only_qsub), patch_seam(respond):
+            assert detect_scheduler() == "local"

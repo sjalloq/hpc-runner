@@ -19,7 +19,7 @@ To override per job:
 
 .. code-block:: bash
 
-   hpc run --queue gpu.q "python train.py"
+   hpc run --queue gpu.q python train.py
 
 Or using passthrough flags directly:
 
@@ -46,7 +46,7 @@ Example:
 
 .. code-block:: bash
 
-   hpc run --cpu 8 "python train.py"
+   hpc run --cpu 8 python train.py
 
 
 Memory and time resources
@@ -121,6 +121,9 @@ This renders as:
 
 - ``#$ -l gpu=1`` in the generated script
 
+On the command line, ``--resource gpu=1`` (repeatable) adds to the config's
+resources.
+
 
 Native qsub passthrough
 -----------------------
@@ -130,7 +133,12 @@ through:
 
 .. code-block:: bash
 
-   hpc run -P myproject -l exclusive=true -- python train.py
+   hpc run -l exclusive=true -binding linear:1 -- python train.py
+
+In config the same flags go in ``scheduler_args``
+(:ref:`scheduler-args`). The project is a job
+setting, ``project = "myproject"`` (rendered ``-P``), so it needs no
+passthrough.
 
 
 Environment and modules

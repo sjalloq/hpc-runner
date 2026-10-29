@@ -116,7 +116,7 @@ class TestRunCommand:
         with runner.isolated_filesystem(temp_dir=temp_dir):
             result = runner.invoke(
                 cli,
-                ["run", "--local", "--batch", "echo", "hello"],
+                ["--scheduler", "local", "run", "--batch", "echo", "hello"],
             )
             assert result.exit_code == 0
             assert "Submitted job" in result.output or "local_" in result.output
@@ -126,7 +126,7 @@ class TestRunCommand:
         with runner.isolated_filesystem(temp_dir=temp_dir):
             result = runner.invoke(
                 cli,
-                ["run", "--local", "echo", "hello"],
+                ["--scheduler", "local", "run", "echo", "hello"],
             )
             assert result.exit_code == 0
             assert "completed successfully" in result.output
@@ -232,8 +232,9 @@ class TestRunCommand:
         result = runner.invoke(
             cli,
             [
+                "--scheduler",
+                "local",
                 "run",
-                "--local",
                 "--batch",
                 "--wait",
                 "--directory",
@@ -253,8 +254,9 @@ class TestRunCommand:
         result = runner.invoke(
             cli,
             [
+                "--scheduler",
+                "local",
                 "run",
-                "--local",
                 "--batch",
                 "--wait",
                 "--directory",
@@ -280,8 +282,9 @@ class TestRunCommand:
         result = runner.invoke(
             cli,
             [
+                "--scheduler",
+                "local",
                 "run",
-                "--local",
                 "--batch",
                 "--wait",
                 "--directory",
@@ -307,8 +310,9 @@ class TestRunCommand:
             result = runner.invoke(
                 cli,
                 [
+                    "--scheduler",
+                    "local",
                     "run",
-                    "--local",
                     "--batch",
                     "--wait",
                     "--directory",
@@ -781,3 +785,52 @@ class TestPassthroughDirectives:
         )
         assert result.exit_code == 0, result.output
         assert "#$ -q batch.q -l gpu=2" in result.output
+
+
+class TestEnvResourceWaitOptions:
+    """--env and --resource reach the spec; --wait needs --batch; --local is gone."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def _dry(self, runner, *args):
+        result = runner.invoke(cli, ["--scheduler", "sge", "run", "--dry-run", "-b", *args])
+        assert result.exit_code == 0, result.output
+        return result.output
+
+    def test_env_sets_variables(self, runner, sge_dirs):
+        out = self._dry(runner, "--env", "A=1", "--env", "B=x=y z", "--env", "A=2", "echo")
+        assert "export A=2" in out
+        assert "export B='x=y z'" in out
+
+    def test_env_bad_form(self, runner):
+        result = runner.invoke(cli, ["--scheduler", "local", "run", "--env", "NOVALUE", "echo"])
+        assert result.exit_code == 2
+        assert "KEY=VALUE" in result.output
+
+    def test_resource_requests(self, runner, sge_dirs):
+        out = self._dry(runner, "--resource", "gpu=2", "--resource", "xcelium_lic=1", "echo")
+        assert "#$ -l gpu=2" in out
+        assert "#$ -l xcelium_lic=1" in out
+
+    def test_resource_bad_form(self, runner):
+        result = runner.invoke(cli, ["--scheduler", "local", "run", "--resource", "=2", "echo"])
+        assert result.exit_code == 2
+        assert "NAME=VALUE" in result.output
+
+    def test_wait_without_batch_is_usage_error(self, runner):
+        result = runner.invoke(cli, ["--scheduler", "local", "run", "--wait", "echo"])
+        assert result.exit_code == 2
+        assert "--wait needs --batch" in result.output
+
+    def test_wait_with_array_is_allowed(self, runner, sge_dirs):
+        result = runner.invoke(
+            cli, ["--scheduler", "sge", "run", "--dry-run", "--wait", "--array", "1-2", "echo"]
+        )
+        assert result.exit_code == 0, result.output
+
+    def test_local_option_removed(self, runner):
+        result = runner.invoke(cli, ["run", "--local", "echo", "hi"])
+        assert result.exit_code != 0
+        assert "No such option" in result.output

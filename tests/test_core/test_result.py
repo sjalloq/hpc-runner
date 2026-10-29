@@ -236,13 +236,16 @@ class TestArrayJobResult:
         scheduler = MagicMock()
         scheduler.get_statuses.side_effect = lambda ids: {i: statuses[i] for i in ids}
         scheduler.get_status.side_effect = lambda job_id: statuses[job_id]
+        scheduler.task_job_id.side_effect = lambda base, index: f"{base}.{index}"
         return ArrayJobResult(scheduler=scheduler, job_id="7", array=ArrayRange(1, 3))
 
     def test_is_a_job_result(self):
         assert isinstance(self._array({}), JobResult)
 
-    def test_task_id(self):
-        assert self._array({}).task_id(2) == "7.2"
+    def test_task_id_delegates_to_scheduler(self):
+        res = self._array({})
+        assert res.task_id(2) == "7.2"
+        res.scheduler.task_job_id.assert_called_once_with("7", 2)
 
     def test_wait_returns_per_task_statuses(self):
         res = self._array(

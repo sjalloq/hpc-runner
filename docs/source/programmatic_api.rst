@@ -20,6 +20,7 @@ Quick start
 
 .. code-block:: python
 
+   # doctest: local
    from hpc_runner import Host, JobSpec, get_scheduler, load_config, resolve
 
    config = load_config()
@@ -56,6 +57,7 @@ A job goes through three values, each with one job:
 
 .. code-block:: python
 
+   # doctest: local
    from hpc_runner import Host, JobSpec, load_config, resolve
 
    spec = JobSpec(
@@ -136,7 +138,9 @@ Every scheduler has the same contract:
 ``preview(job, *, verbose=False)`` (``verbose`` shows module command output
 in the job instead of only on failure), ``cancel(job_id)``,
 ``get_statuses(job_ids)`` (one bulk query, a dict of id to status),
-``get_status(job_id)``, ``get_exit_code(job_id)`` and ``result(job_id)``.
+``get_status(job_id)``, ``get_exit_code(job_id)``, ``result(job_id)`` and
+``task_job_id(base, index)`` (the id of one array task: ``<base>.<index>``
+on SGE; schedulers without arrays raise ``NotSupportedError``).
 
 Interactive or batch
 ^^^^^^^^^^^^^^^^^^^^
@@ -179,7 +183,8 @@ the job has aged out of accounting), ``wait()`` returns ``UNKNOWN`` rather
 than polling forever; ``timeout`` raises ``TimeoutError``.
 ``ArrayJobResult.wait()`` takes the same arguments, returns each task's
 status by index, and polls all tasks with one ``get_statuses`` call per
-tick; ``task_status(n)`` is that task's own status.
+tick; ``task_status(n)`` is that task's own status and ``task_id(n)`` its
+id (from the scheduler's ``task_job_id``).
 
 ``SKIPPED`` means the job did not run because a dependency was not
 satisfied (see below).
@@ -313,7 +318,8 @@ whose dependency is not satisfied exits with the reserved code 113 and
 reports ``JobStatus.SKIPPED``; ``returncode`` is 113. See :doc:`sge`.
 
 ``Pipeline.wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` polls
-every step with one ``get_statuses`` call per tick.
+every step with one ``get_statuses`` call per tick and returns each step's
+final ``JobStatus`` by name (see below).
 
 
 Pipelines (multi-step workflows)
@@ -341,7 +347,7 @@ manager, the pipeline auto-submits on exit and results are available via the
    for name, result in p.results.items():
        print(name, result.job_id, result.status)
 
-   p.wait()
+   statuses = p.wait()           # {step name: JobStatus}
 
 Without a context manager, call ``submit()`` explicitly:
 
@@ -352,7 +358,14 @@ Without a context manager, call ``submit()`` explicitly:
    p.add("make test", name="test", depends_on=["build"])
 
    results = p.submit()          # must call manually
-   p.wait()
+   statuses = p.wait()
+
+``p.results`` is a read-only mapping of step name to ``JobResult`` for the
+steps submitted so far; it is the same live object on every access.
+``p.get_job(name)`` returns the step and raises ``UnknownStepError`` for a
+name the pipeline does not have. ``p.wait()`` returns each step's final
+status; an array step reports its tasks' common status, or the first task
+(in index order) that did not complete.
 
 Each step's job name is ``<pipeline>_<step>``. The host defaults to
 ``Host.capture()`` at submit time; pass ``host=`` to fix it.
@@ -495,7 +508,7 @@ else is a bug. All classes are importable from ``hpc_runner``.
    │   └── AccountingNotAvailable      job history (qacct/sacct) is not available
    └── PipelineError              pipeline misuse ("no jobs", "already submitted")
        ├── DuplicateStepError         step name already used
-       ├── UnknownStepError           depends_on names an unknown step
+       ├── UnknownStepError           depends_on or get_job() names an unknown step
        ├── DependencyCycleError       the steps form a cycle
        └── NotSubmittedError          wait() before (all of) the pipeline was submitted
 

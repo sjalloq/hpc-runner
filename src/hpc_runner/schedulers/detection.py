@@ -18,6 +18,17 @@ def _check_sge_via_qstat() -> bool:
     return "SGE" in output or "Grid Engine" in output
 
 
+def _check_pbs_via_qsub() -> bool:
+    """Check if qsub is PBS by examining its ``--version`` output."""
+    try:
+        result = _subprocess.run_command(["qsub", "--version"], timeout=5, check=False)
+    except (SchedulerError, OSError):
+        return False
+    # PBS Pro / OpenPBS print "pbs_version = 19.1.3".
+    output = (result.stdout or "") + (result.stderr or "")
+    return "pbs_version" in output
+
+
 def detect_scheduler() -> str:
     """Auto-detect available scheduler.
 
@@ -25,7 +36,7 @@ def detect_scheduler() -> str:
     1. HPC_SCHEDULER environment variable
     2. SGE (check for SGE_ROOT or qstat -help output)
     3. Slurm (check for sbatch)
-    4. PBS (check for qsub with PBS_CONF_FILE)
+    4. PBS (qsub with PBS_CONF_FILE set, or ``qsub --version`` printing pbs_version)
     5. Local fallback
     """
     # Environment override
@@ -42,7 +53,7 @@ def detect_scheduler() -> str:
         return "slurm"
 
     # Check for PBS/Torque
-    if shutil.which("qsub") and os.environ.get("PBS_CONF_FILE"):
+    if shutil.which("qsub") and (os.environ.get("PBS_CONF_FILE") or _check_pbs_via_qsub()):
         return "pbs"
 
     # Fallback to local

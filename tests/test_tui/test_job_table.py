@@ -39,7 +39,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             table = app.query_one(JobTable)
             assert table is not None
             assert table.is_empty
@@ -54,7 +54,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             table = app.query_one(JobTable)
 
             # Check column count
@@ -80,7 +80,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             table = app.query_one(JobTable)
 
             # Add some jobs
@@ -105,7 +105,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             table = app.query_one(JobTable)
 
             # Add initial jobs
@@ -163,7 +163,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             table = app.query_one(JobTable)
 
             # Check status formatting
@@ -184,7 +184,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             table = app.query_one(JobTable)
 
             # Add job with no queue
@@ -254,7 +254,7 @@ class TestJobTable:
                 yield JobTable(id="jobs")
 
         app = TestApp()
-        async with app.run_test(size=(120, 25)) as pilot:
+        async with app.run_test(size=(120, 25)):
             table = app.query_one(JobTable)
 
             # Create a job with a very long name

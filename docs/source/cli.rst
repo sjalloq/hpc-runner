@@ -43,13 +43,17 @@ Options:
 - ``--stdout TEXT`` (stdout file pattern, batch only; default
   ``${hpc.job_name}.${hpc.job_id}.out``; see :ref:`output-files`)
 - ``--stderr TEXT`` (separate stderr file pattern; default: merged into stdout)
-- ``--array TEXT`` (e.g. ``1-100``)
+- ``--array TEXT`` (e.g. ``1-100``, ``1-100:10%5``; implies batch)
+- ``--env KEY=VALUE`` (repeatable; sets ``KEY`` in the job, added to the
+  config's ``env_vars``; ``$VAR`` is resolved where you submit)
+- ``--resource NAME=VALUE`` (repeatable; requests a scheduler resource or
+  licence, added to the config's ``resources``; SGE ``-l NAME=VALUE``)
 - ``--depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
   e.g. ``afterok:123:124,afterany:125``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
-- ``--local`` (run as local subprocess)
 - ``--dry-run`` (print the mode and the rendered script, don’t submit)
-- ``--wait`` (wait for completion)
+- ``--wait`` (with ``--batch`` or ``--array``: block until the job completes;
+  without them it is a usage error, since an interactive run already waits)
 - ``--keep-script`` (keep generated script; path is logged at debug level —
   use ``--verbose`` to see it)
 
@@ -94,10 +98,14 @@ Examples:
    hpc run -t xcelium make sim
    hpc run --batch --cpu 4 --mem 16G --time 2:00:00 python train.py
    hpc run --batch -t gpu python train.py
+   hpc run --batch --env OMP_NUM_THREADS=4 --resource xcelium_lic=1 make sim
    hpc run -q gpu.q -l gpu=1 -- python train.py
    hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim
 
 
+
+To run on the local machine instead of a cluster (for testing), use the
+global option: ``hpc --scheduler local run ...``.
 
 If a tool has ``[tools.<name>.options]`` entries in the config, the command
 arguments are matched automatically to apply option-specific overrides (see
@@ -128,10 +136,16 @@ Options:
 Other commands
 --------------
 
-- ``hpc cancel JOB_ID``: cancel a job
-- ``hpc monitor``: launch the TUI job monitor
-- ``hpc config show``: print the active config file contents
-- ``hpc config path``: print the active config file path
+- ``hpc cancel JOB_ID [--force]``: cancel a job (``--force`` skips the
+  confirmation)
+- ``hpc kill [-N PATTERN] [--all] [--pending] [--running] [--force]``: cancel
+  your active jobs whose name matches the regex ``PATTERN`` (or all of them
+  with ``--all``), optionally only pending or only running ones
+- ``hpc monitor [--refresh SECONDS]``: launch the TUI job monitor
+- ``hpc config show [--raw]``: print the active configuration (merged, or the
+  raw file contents)
+- ``hpc config path [--all]``: print the active config file path (``--all``
+  lists the whole merge chain)
 - ``hpc config init``: create a starter ``hpc-runner.toml`` in the current directory
 - ``hpc config check [PATH]``: validate the config (or ``PATH``), print every
   error and warning, exit 1 on any error

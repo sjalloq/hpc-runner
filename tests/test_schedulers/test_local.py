@@ -369,3 +369,25 @@ class TestLocalEnvUnset:
         result = scheduler.submit(job)
         result.wait(poll_interval=0.05)
         assert result.read_stdout().strip() == "[gone]"
+
+
+class TestLocalJobIds:
+    """The id counter is per instance; ids stay unique across instances."""
+
+    def test_ids_unique_within_and_across_instances(self, temp_dir):
+        first, second = LocalScheduler(HPCConfig()), LocalScheduler(HPCConfig())
+        results = [
+            sched.submit(make_job("true", workdir=str(temp_dir)))
+            for sched in (first, second, first, second)
+        ]
+        for result in results:
+            result.wait(poll_interval=0.01)
+        ids = [result.job_id for result in results]
+        assert len(set(ids)) == 4
+        assert all(i.startswith("local_") for i in ids)
+        assert ids[0].startswith("local_1_") and ids[2].startswith("local_2_")
+        assert ids[1].startswith("local_1_")  # its own counter
+
+    def test_no_array_task_ids(self):
+        with pytest.raises(NotSupportedError, match="array"):
+            LocalScheduler(HPCConfig()).task_job_id("1", 2)

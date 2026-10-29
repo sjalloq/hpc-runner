@@ -352,13 +352,24 @@ class BaseScheduler(ABC):
     def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
         """The status of each job in *job_ids*, from one bulk query.
 
-        Ids may be array task ids (``<base>.<index>``); each reports its own
-        task's state. Every id in *job_ids* is a key of the result.
+        Ids may be array task ids (see :meth:`task_job_id`); each reports
+        its own task's state. Every id in *job_ids* is a key of the result.
         """
 
     def get_status(self, job_id: str) -> JobStatus:
         """The status of one job (see :meth:`get_statuses`)."""
         return self.get_statuses([job_id])[job_id]
+
+    def task_job_id(self, base: str, index: int) -> str:
+        """The id this scheduler uses for task *index* of array job *base*.
+
+        Each backend that supports arrays defines its own form (SGE and PBS
+        ``<base>.<index>``, Slurm ``<base>_<index>``).
+
+        Raises:
+            NotSupportedError: This scheduler has no array jobs.
+        """
+        raise NotSupportedError(f"the {self.name} scheduler does not support array jobs")
 
     @abstractmethod
     def get_exit_code(self, job_id: str) -> int | None:

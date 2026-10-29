@@ -11,15 +11,11 @@ class Resource:
     Examples:
         Resource("gpu", 2)              # 2 GPUs
         Resource("xilinx", 1)           # 1 Xilinx license
-        Resource("mem", "16G")          # Memory
+        Resource("scratch", "20G")      # Site consumable
     """
 
     name: str
     value: int | str
-
-    # Scheduler-specific mappings (populated by scheduler)
-    _sge_resource: str | None = field(default=None, repr=False)
-    _slurm_gres: str | None = field(default=None, repr=False)
 
 
 @dataclass

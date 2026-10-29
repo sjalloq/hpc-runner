@@ -46,8 +46,12 @@ hpc run --batch --wait python long_job.py
 # Preview the generated script without submitting
 hpc run --dry-run --cpu 8 make -j8
 
-# Array job (always batch)
-hpc run --array 1-100 "python process.py --task-id \$SGE_TASK_ID"
+# Array job (always batch); the command is passed as words, so use bash -c
+# for shell expansion inside the job
+hpc run --array 1-100 bash -c 'python process.py --task-id "$SGE_TASK_ID"'
+
+# Environment variables and resources/licences for one run
+hpc run --batch --env OMP_NUM_THREADS=4 --resource xcelium_lic=1 make sim
 
 # Raw scheduler flags go before --, the command after
 hpc run -q gpu.q -l gpu=1 -- python train.py
@@ -59,6 +63,7 @@ A `JobSpec` holds what you asked for; `resolve()` applies config and returns
 a frozen `Job`; a scheduler submits it and returns a `JobResult` handle.
 
 ```python
+# doctest: local
 from hpc_runner import Host, JobSpec, get_scheduler, load_config, resolve
 
 config = load_config()
@@ -149,7 +154,7 @@ with Pipeline("ml_workflow", config=load_config()) as p:
 # Results are accessible on the pipeline object.
 for name, result in p.results.items():
     print(name, result.job_id, result.status)
-p.wait()
+statuses = p.wait()   # {step name: JobStatus}
 ```
 
 ## Scheduler Support
@@ -164,10 +169,13 @@ p.wait()
 ### Auto-detection Priority
 
 1. `HPC_SCHEDULER` environment variable
-2. SGE (`SGE_ROOT` or `qstat` available)
-3. Slurm (`sbatch` available)
-4. PBS (`qsub` with PBS)
+2. SGE (`qsub` on `PATH` and `SGE_ROOT` set, or `qstat -help` reporting Grid Engine)
+3. Slurm (`sbatch` and `squeue` on `PATH`)
+4. PBS (`qsub` on `PATH` and `PBS_CONF_FILE` set, or `qsub --version` reporting `pbs_version`)
 5. Local fallback
+
+Force one with `hpc --scheduler NAME` (`hpc --scheduler local run ...` runs
+on this machine, for testing).
 
 ## Configuration
 
@@ -425,20 +433,28 @@ Options:
   -t, --type TEXT       Job type from config
   --stdout TEXT         Stdout file pattern (default: ${hpc.job_name}.${hpc.job_id}.out)
   --stderr TEXT         Separate stderr file pattern (default: merged into stdout)
-  --array TEXT          Array spec (e.g., 1-100, 1-100%5)
+  --array TEXT          Array spec (e.g., 1-100, 1-100%5); implies batch
+  --env KEY=VALUE       Set an environment variable in the job (repeatable)
+  --resource NAME=VALUE Request a scheduler resource or licence (repeatable)
   --depend TEXT         Job dependency, repeatable: ID or TYPE:ID[:ID...][,TYPE:ID...]
   -b, --batch           Submit as a batch job (default: interactive via qrsh/srun)
-  --local               Run locally (no scheduler)
   --dry-run             Show script without submitting
-  --wait                Block until a batch job completes
+  --wait                With --batch: block until the job completes
   --keep-script         Keep job script for debugging
   -h, --help            Show help
+
+Global options (before the subcommand):
+  --config PATH         Use this config file (bypasses discovery)
+  --scheduler NAME      Force a scheduler (sge, slurm, pbs, local)
+  --verbose             Log every scheduler command; full scheduler errors
 
 Other commands:
   hpc status [JOB_ID]   Check job status (--history, --watch, --json)
   hpc cancel JOB_ID     Cancel a job
+  hpc kill -N PATTERN   Cancel your jobs whose name matches (or --all)
   hpc monitor           Interactive TUI
   hpc config show       Show active configuration
+  hpc config path       Show the active config file(s)
   hpc config init       Create starter config
   hpc config check      Validate configuration (exit 1 on any error)
   hpc config resolve    Show a command's resolved job and each value's source
@@ -460,8 +476,11 @@ pytest -k "test_job"
 mypy src/hpc_runner
 
 # Linting
-ruff check src/hpc_runner
-ruff format src/hpc_runner
+ruff check src/hpc_runner tests
+ruff format src/hpc_runner tests
+
+# Regenerate the golden job scripts after an intended template change
+pytest tests/test_golden.py --update-golden
 ```
 
 ## License

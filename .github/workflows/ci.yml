@@ -2,8 +2,7 @@ name: CI
 
 on:
   push:
-    tags:
-      - 'v*'
+  pull_request:
 
 jobs:
   lint:
@@ -22,13 +21,18 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Ruff lint
-        run: ruff check src/hpc_runner
+        run: ruff check src/hpc_runner tests
 
       - name: Ruff format
-        run: ruff format --check src/hpc_runner
+        run: ruff format --check src/hpc_runner tests
 
       - name: Mypy
         run: mypy src/hpc_runner
+
+      # The docs build is part of lint: warnings (broken references, bad
+      # markup) fail the build, as in the Pages workflow.
+      - name: Docs
+        run: make -C docs html SPHINXOPTS="-W --keep-going"
 
   test:
     runs-on: ubuntu-latest
@@ -54,3 +58,26 @@ jobs:
 
       - name: Run tests
         run: pytest -v
+
+  # Placeholder: end-to-end tests against a real scheduler (an SGE container
+  # running the submit/status/cancel/dependency paths). Disabled until the
+  # test cluster exists; see TESTBED_PLAN.md for the plan.
+  integration:
+    if: false
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run integration tests
+        run: echo "integration tests not yet implemented; see TESTBED_PLAN.md" && exit 1

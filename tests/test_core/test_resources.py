@@ -1,7 +1,5 @@
 """Tests for Resource and ResourceSet."""
 
-import pytest
-
 from hpc_runner.core.resources import Resource, ResourceSet
 
 

@@ -10,6 +10,7 @@ import shlex
 # scheduler CLI, so there is no argv to log or scheduler error to convert.
 import subprocess
 import tempfile
+import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -53,11 +54,14 @@ class LocalScheduler(BaseScheduler):
     # known before the script runs (see hpc_vars).
     HPC_VARS = {"tmpdir": "$TMPDIR", "host": "$HOSTNAME"}
 
-    _job_counter: int = 0
-
     def __init__(self, config: HPCConfig) -> None:
         """Initialize local scheduler with config-driven settings."""
         super().__init__(config)
+        # Job ids are local_<n>_<timestamp>_<token>: the counter keeps one
+        # instance's ids unique, the per-instance token keeps two instances
+        # in the same process (or second) apart.
+        self._job_counter = 0
+        self._token = uuid.uuid4().hex[:6]
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._exit_codes: dict[str, int] = {}
         self._results: dict[str, JobResult] = {}
@@ -86,8 +90,9 @@ class LocalScheduler(BaseScheduler):
         """
         _check_supported(job)
 
-        LocalScheduler._job_counter += 1
-        job_id = f"local_{LocalScheduler._job_counter}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self._job_counter += 1
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        job_id = f"local_{self._job_counter}_{stamp}_{self._token}"
 
         # The job's base environment: everything (-V), or only the named
         # passthrough variables. The script sets env_* itself.
