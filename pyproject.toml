@@ -35,10 +35,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
+test = [
     "pytest>=7.0",
     "pytest-cov",
     "pytest-asyncio",
+]
+dev = [
+    "hpc-runner[test]",
     "mypy>=1.19",
     "ruff>=0.15",
     "sphinx>=7.0",
@@ -81,5 +84,8 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: needs a live scheduler testbed (see TESTBED_PLAN.md)"]
+markers = [
+    "integration: needs a live scheduler testbed (see TESTBED_PLAN.md)",
+    "flavour(*names): only holds on the listed scheduler flavours; skipped elsewhere",
+]
 addopts = "-m 'not integration'"

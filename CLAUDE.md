@@ -69,6 +69,12 @@ make -C docs html SPHINXOPTS="-W --keep-going"
 # Regenerate golden job scripts after an intended template change
 pytest tests/unit/test_golden.py --update-golden
 
+# Integration tests against a real SGE in Docker (testbed/README.md)
+make -C testbed sge-up            # build image, start master/exec1/exec2/login, wait for ready.sh (~20 s)
+make -C testbed sge-test          # pytest tests/integration inside login as tester; PY=3.11 to change
+make -C testbed sge-shell         # shell in login; `pytest tests/integration -m integration --pdb`
+make -C testbed sge-down          # remove containers, network and volumes
+
 # CLI usage
 hpc --help
 hpc run --dry-run echo hello
@@ -124,6 +130,17 @@ hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim # mixed
 ### Workflow (`src/hpc_runner/workflow/`)
 
 **Pipeline** - Job dependency graphs with topological sorting. Steps are `JobSpec`s that reference other steps by name; each is resolved and its dependencies injected at submit time. `results` is a read-only mapping, `wait()` returns statuses. The lifecycle design (D16) is parked.
+
+### Tests (`tests/`)
+
+`tests/unit/` is the suite plain `pytest` runs (`addopts` deselects the
+`integration` marker). `tests/integration/` runs only inside the testbed's
+`login` container through the `cluster` fixture (`tests/integration/cluster.py`,
+plan in `TESTBED_PLAN.md` §4.2); it skips when no scheduler is reachable and
+`--require-cluster` fails instead. The testbed itself lives in `testbed/`, one
+directory per scheduler implementation (`testbed/sge/soge/` = Debian trixie
+gridengine 8.1.9); every divergence from the plan is in `TESTBED_REVIEW.md`.
+Nothing captured from a real work cluster ever goes into the repo.
 
 ### Templates (`src/hpc_runner/templates/`)
 
