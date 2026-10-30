@@ -1,6 +1,5 @@
 """Tests for CLI run command."""
 
-import re
 from functools import partialmethod
 
 import pytest
@@ -9,13 +8,6 @@ from click.testing import CliRunner
 from hpc_runner.cli.main import cli
 from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.result import JobResult
-
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def plain(text: str) -> str:
-    """Strip ANSI styling: rich-click forces colour under CI (GITHUB_ACTIONS, FORCE_COLOR)."""
-    return _ANSI.sub("", text)
 
 
 @pytest.fixture
@@ -701,7 +693,7 @@ class TestDepend:
             cli, ["--scheduler", "local", "run", "--dry-run", "--batch", "--depend", text, "echo"]
         )
         assert result.exit_code == 2, result.output
-        assert "Invalid --depend" in plain(result.output)
+        assert "Invalid --depend" in result.output
 
     def test_unknown_type_lists_valid_ones(self, runner):
         result = runner.invoke(
@@ -830,7 +822,7 @@ class TestEnvResourceWaitOptions:
     def test_wait_without_batch_is_usage_error(self, runner):
         result = runner.invoke(cli, ["--scheduler", "local", "run", "--wait", "echo"])
         assert result.exit_code == 2
-        assert "--wait needs --batch" in plain(result.output)
+        assert "--wait needs --batch" in result.output
 
     def test_wait_with_array_is_allowed(self, runner, sge_dirs):
         result = runner.invoke(

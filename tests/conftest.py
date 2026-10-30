@@ -39,6 +39,18 @@ def bash_syntax_error(script: str) -> str | None:
 
 
 @pytest.fixture(autouse=True)
+def _plain_terminal(monkeypatch):
+    """Make CLI output plain text.
+
+    rich-click forces styled output whenever FORCE_COLOR, PY_COLORS or
+    GITHUB_ACTIONS is set (so CI logs are coloured), and rich keeps bold/dim
+    even under NO_COLOR. A dumb terminal is the one setting that yields no
+    escape codes at all, so substring assertions on CLI output hold everywhere.
+    """
+    monkeypatch.setenv("TERM", "dumb")
+
+
+@pytest.fixture(autouse=True)
 def _bash_check_rendered_scripts(monkeypatch):
     if _BASH is None:
         yield
