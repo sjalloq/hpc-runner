@@ -1,0 +1,10 @@
+# hpc-runner configuration used by the integration suite inside the `login`
+# container (HPC_RUNNER_CONFIG points here). The names match cell/*.conf.
+config_version = 1
+
+[schedulers.sge]
+parallel_environment = "smp"     # cell/pe-smp.conf
+memory_resource = "mem_free"     # cell/complexes.conf (requestable)
+time_resource = "h_rt"
+memory_per = "slot"
+emulate_afterok = true

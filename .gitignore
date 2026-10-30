@@ -38,6 +38,7 @@ env/
 *~
 
 # Testing
+testbed/junit-*.xml
 .pytest_cache/
 .coverage
 htmlcov/

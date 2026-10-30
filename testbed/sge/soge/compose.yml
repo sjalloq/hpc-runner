@@ -1,0 +1,137 @@
+# SGE testbed, `soge` flavour (Debian trixie gridengine 8.1.9). Run through
+# testbed/Makefile, which passes `-p hpc-testbed-soge`. Compose features are
+# limited to those in Compose 2.38 (the CI runners' version).
+#
+# Name resolution: a user-defined network with static IPs plus extra_hosts on
+# every service (TESTBED_REVIEW.md D-T2). Compose's own DNS reverse-resolves a
+# peer to `<container>.<network>`, which SGE's commlib rejects as not matching
+# the connect-time name; /etc/hosts entries resolve both ways to the bare name.
+
+x-image: &image hpc-testbed-soge:local
+
+x-hosts: &hosts
+  - "master:10.77.0.10"
+  - "exec1:10.77.0.11"
+  - "exec2:10.77.0.12"
+  - "login:10.77.0.13"
+
+x-node: &node
+  image: *image
+  extra_hosts: *hosts
+  volumes:
+    - home:/home
+    - cell:/var/lib/gridengine
+    - work:/work
+    - ../../../tests/modulefiles:/opt/modulefiles:ro
+
+services:
+  master:
+    <<: *node
+    build:
+      context: ../../..
+      dockerfile: testbed/sge/soge/Dockerfile
+    hostname: master
+    container_name: master
+    environment:
+      SGE_ROLE: master
+      # Only the slow-accounting variant changes this (D-T6): `make sge-up
+      # SLOW_ACCOUNTING=1` exports ACCOUNTING_FLUSH=00:00:15.
+      ACCOUNTING_FLUSH: ${ACCOUNTING_FLUSH:-00:00:01}
+    volumes:
+      - home:/home
+      - cell:/var/lib/gridengine
+      - spool:/var/spool/gridengine
+      - work:/work
+      - ../../../tests/modulefiles:/opt/modulefiles:ro
+    networks:
+      sge: { ipv4_address: 10.77.0.10 }
+    # qmaster needs ~9 s for a controlled shutdown (D-T5).
+    stop_grace_period: 30s
+    healthcheck:
+      # Passes only once the post-start qconf step has run, so exec/login
+      # start against a fully configured master (D-T3).
+      test: ["CMD-SHELL", "test -f /run/hpc-testbed/configured && qping -info master 6444 qmaster 1"]
+      interval: 1s
+      timeout: 5s
+      retries: 90
+      start_period: 20s
+      start_interval: 1s
+
+  exec1:
+    <<: *node
+    hostname: exec1
+    container_name: exec1
+    environment: { SGE_ROLE: exec }
+    networks:
+      sge: { ipv4_address: 10.77.0.11 }
+    depends_on:
+      master: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "qping -info exec1 6445 execd 1"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+      start_interval: 1s
+
+  exec2:
+    <<: *node
+    hostname: exec2
+    container_name: exec2
+    environment: { SGE_ROLE: exec }
+    networks:
+      sge: { ipv4_address: 10.77.0.12 }
+    depends_on:
+      master: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "qping -info exec2 6445 execd 1"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+      start_interval: 1s
+
+  login:
+    <<: *node
+    hostname: login
+    container_name: login
+    # tini as PID 1 so `sleep infinity` receives SIGTERM on `compose down`.
+    init: true
+    environment:
+      SGE_ROLE: login
+      HPC_SCHEDULER: sge
+      HPC_RUNNER_CONFIG: /src/testbed/sge/soge/hpc-runner-testbed.toml
+      HPC_SCRIPT_DIR: /work/cache/scripts
+      HPC_EXIT_DIR: /work/cache/exit
+    volumes:
+      - home:/home
+      - cell:/var/lib/gridengine
+      - work:/work
+      - ../../../tests/modulefiles:/opt/modulefiles:ro
+      - ../../..:/src:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      sge: { ipv4_address: 10.77.0.13 }
+    depends_on:
+      exec1: { condition: service_healthy }
+      exec2: { condition: service_healthy }
+    healthcheck:
+      # The marker is written after the venvs have the editable install.
+      test: ["CMD-SHELL", "test -f /run/hpc-testbed/configured && qstat -f >/dev/null"]
+      interval: 1s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
+      start_interval: 1s
+
+networks:
+  sge:
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24
+
+volumes:
+  home: {}
+  cell: {}
+  spool: {}
+  work: {}

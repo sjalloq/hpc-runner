@@ -1,0 +1,7 @@
+# Build context is the repo root (so pyproject.toml can be copied); send only
+# what the Dockerfile uses. BuildKit reads <Dockerfile>.dockerignore.
+*
+!pyproject.toml
+!testbed/common/
+!testbed/sge/soge/
+testbed/sge/soge/junit-*.xml
