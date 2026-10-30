@@ -59,25 +59,75 @@ jobs:
       - name: Run tests
         run: pytest -v
 
-  # Placeholder: end-to-end tests against a real scheduler (an SGE container
-  # running the submit/status/cancel/dependency paths). Disabled until the
-  # test cluster exists; see TESTBED_PLAN.md for the plan.
+  # End-to-end tests against a real SGE cluster: the Docker Compose stack in
+  # testbed/sge/soge (TESTBED_PLAN.md section 7, testbed/README.md "CI").
+  # The image is built in the job; there is no registry. If the build ever
+  # hurts, the first step up is docker/build-push-action with
+  # cache-from/to: type=gha, still with no registry.
+  #
+  # Pull requests run Python 3.12 only; pushes to main run the full
+  # 3.10-3.12 matrix. Each cell runs the suite twice: once on the default
+  # stack and once with SLOW_ACCOUNTING=1 for the one test that needs it
+  # (TESTBED_REVIEW.md D-T22). The tests run inside the login container, so
+  # no Python is set up on the runner.
   integration:
-    if: false
-    needs: test
+    needs: [lint, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && '["3.10", "3.11", "3.12"]' || '["3.12"]') }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Start the SGE stack
+        run: make -C testbed sge-up
+
+      - name: Integration tests (Python ${{ matrix.python }})
+        run: make -C testbed sge-test PY=${{ matrix.python }} PYTEST_ARGS="--require-cluster"
+
+      # sge-test always writes testbed/junit-<PY>.xml; keep the first run's
+      # report out of the way of the second.
+      - name: Keep the default-stack report
+        run: mv testbed/junit-${{ matrix.python }}.xml testbed/junit-${{ matrix.python }}-default.xml
+
+      - name: Restart the stack with slow accounting
+        run: |
+          make -C testbed sge-down
+          make -C testbed sge-up SLOW_ACCOUNTING=1
+
+      - name: Slow-accounting tests (Python ${{ matrix.python }})
+        run: make -C testbed sge-test PY=${{ matrix.python }} PYTEST_ARGS="--require-cluster -k slow_accounting"
+
+      - name: Upload JUnit reports
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          python-version: '3.12'
+          name: junit-${{ matrix.python }}
+          path: testbed/junit-*.xml
+          if-no-files-found: ignore
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Collect cluster logs
+        if: failure()
+        run: |
+          mkdir -p testbed-logs
+          make -C testbed sge-logs > testbed-logs/compose.log 2>&1 || true
+          for c in master exec1 exec2 login; do
+            docker cp "$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
+          done
 
-      - name: Run integration tests
-        run: echo "integration tests not yet implemented; see TESTBED_PLAN.md" && exit 1
+      - name: Upload cluster logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testbed-logs-${{ matrix.python }}
+          path: testbed-logs/
+          if-no-files-found: ignore
+
+      - name: Tear down the stack
+        if: always()
+        run: make -C testbed sge-down
