@@ -498,7 +498,9 @@ class SGEScheduler(BaseScheduler):
         qrsh has no directives, so options go on its command line; flags
         qrsh rejects are skipped via ``interactive_ok``.
         """
-        cmd = ["qrsh"]
+        # -now no: queue until a slot is free instead of failing at once
+        # (qrsh's default -now yes).  A later passthrough -now overrides it.
+        cmd = ["qrsh", "-now", "no"]
         cmd.extend(self._render_interactive_args(job))
         # Without -V, variables named in env_passthrough are passed one by one.
         for name, value in job.env_passthrough.items():

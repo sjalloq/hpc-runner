@@ -945,7 +945,7 @@ class TestSGESubmissionContract:
         assert result.exit_code == 3
         assert result.job is job
         argv = calls[0]
-        assert argv[0] == "qrsh"
+        assert argv[:3] == ["qrsh", "-now", "no"]
         # qrsh rejects -N/-o/-e/-j/-S; those are skipped
         for flag in ("-N", "-o", "-e", "-j", "-S"):
             assert flag not in argv

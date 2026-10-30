@@ -190,6 +190,10 @@ absent after the bounded wait, every ``<id>.*.rc`` that exists (at least one
 is required), applying the parent's test to each. ``-hold_jid`` guarantees
 every task has exited and published first, so that set is complete.
 
+Interactive jobs always pass ``qrsh -now no`` so the request queues until a
+slot is free; ``qrsh`` on its own fails immediately when none is. Pass
+``-- -now y`` to get that back.
+
 An interactive job (``qrsh``) cannot honour dependencies, so one with any
 raises ``NotSupportedError`` ("interactive jobs cannot have dependencies;
 use --batch"); the local scheduler does the same.
