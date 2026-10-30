@@ -59,11 +59,12 @@ class HPCConfig:
 
         Each entry is ``(layer name, table)``. The chain is fixed (D2)::
 
-            no spec.type:  defaults -> tools.<argv0> -> tools.<argv0>.options.<first match>
+            no spec.type:  defaults -> tools.<tool> -> tools.<tool>.options.<first match>
             spec.type=T:   defaults -> tools.<each of types.T.tools> -> types.T
 
-        With a type named, the tool inferred from the command is not
-        consulted and referenced tools' ``options`` are not applied.
+        ``<tool>`` is the entry :meth:`tool_for` finds for the command's
+        first word. With a type named, the tool inferred from the command is
+        not consulted and referenced tools' ``options`` are not applied.
 
         Raises:
             ConfigError: *spec* names a type that is not defined, or the
@@ -81,17 +82,17 @@ class HPCConfig:
                     raise ConfigError(
                         f"[types.{spec.type}] tools: no tool '{tool}' is defined under [tools]"
                     )
-                layers.append((f"tools.{tool}", _without(self.tools[tool], "options")))
+                layers.append((f"tools.{tool}", _without(self.tools[tool], "options", "commands")))
             layers.append((f"types.{spec.type}", _without(entry, "tools")))
             return layers
 
         command = spec.command if isinstance(spec.command, str) else shlex.join(spec.command)
         parts = command.split()
-        tool = Path(parts[0]).name if parts else ""
-        tool_section = self.tools.get(tool)
-        if tool_section is None:
+        tool = self.tool_for(Path(parts[0]).name) if parts else None
+        if tool is None:
             return layers
-        layers.append((f"tools.{tool}", _without(tool_section, "options")))
+        tool_section = self.tools[tool]
+        layers.append((f"tools.{tool}", _without(tool_section, "options", "commands")))
 
         # Option specialisation: first matching key wins.
         options = tool_section.get("options")
@@ -104,13 +105,26 @@ class HPCConfig:
 
         return layers
 
+    def tool_for(self, command: str) -> str | None:
+        """The ``[tools.<name>]`` entry that matches *command* (a bare name), or None.
+
+        An entry with a ``commands`` list matches exactly those names (and
+        its own only if listed); one without matches its own name. Files
+        are checked at load so that no name belongs to two entries; a config
+        built directly takes the first entry, in definition order.
+        """
+        for name, entry in self.tools.items():
+            if command in entry.get("commands", [name]):
+                return name
+        return None
+
     def get_scheduler_config(self, scheduler: str) -> dict[str, Any]:
         """Get scheduler-specific configuration."""
         return self.schedulers.get(scheduler, {})
 
 
-def _without(table: dict[str, Any], key: str) -> dict[str, Any]:
-    return {k: v for k, v in table.items() if k != key}
+def _without(table: dict[str, Any], *keys: str) -> dict[str, Any]:
+    return {k: v for k, v in table.items() if k not in keys}
 
 
 def _normalise_tokens(args: str | list[str]) -> list[str]:
@@ -383,8 +397,10 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
     errors: list[ConfigError] = []
     warnings: list[str] = []
     texts: dict[Path, str] = {}
-    # Which file last set [types.T] tools, for locating structural errors.
+    # Which file last set [types.T] tools / [tools.X] commands, for locating
+    # structural errors.
     type_tools_origin: dict[str, Path] = {}
+    tool_commands_origin: dict[str, Path] = {}
 
     for config_path in config_files:
         text, data = _read_toml(config_path)
@@ -398,6 +414,9 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         for name, entry in converted.get("types", {}).items():
             if "tools" in entry:
                 type_tools_origin[name] = config_path
+        for name, entry in converted.get("tools", {}).items():
+            if "commands" in entry:
+                tool_commands_origin[name] = config_path
         for key in merged:
             if key in converted:
                 merged[key] = _merge(merged[key], converted[key])
@@ -414,6 +433,32 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
                         line=find_line(texts[origin], ["types", name, "tools"]),
                     )
                 )
+
+    # Structural: a command name belongs to one tool entry. An entry without
+    # `commands` owns its own name. The error is reported at the `commands`
+    # line that caused the clash.
+    owner: dict[str, str] = {}
+    for name, entry in merged["tools"].items():
+        for command in entry.get("commands", [name]):
+            other = owner.setdefault(command, name)
+            if other == name:
+                continue
+            listed = name if "commands" in entry else other
+            rival = other if listed == name else name
+            how = (
+                f"is also listed by [tools.{rival}]"
+                if "commands" in merged["tools"][rival]
+                else f"is also [tools.{rival}]"
+            )
+            origin = tool_commands_origin[listed]
+            errors.append(
+                ConfigError(
+                    f"[tools.{listed}] commands: '{command}' {how}; "
+                    "a command name belongs to one tool entry",
+                    path=origin,
+                    line=find_line(texts[origin], ["tools", listed, "commands"]),
+                )
+            )
 
     config = HPCConfig(
         defaults=merged["defaults"],

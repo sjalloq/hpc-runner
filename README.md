@@ -216,6 +216,10 @@ resources = [{ name = "xcelium_lic", value = 1 }]
 [tools.slang]
 modules = ["slang/0.9"]
 
+[tools.vcs]
+commands = ["vcs", "simv", "verdi"]   # one entry for a suite of commands
+modules = ["vcs/2024.09", "verdi/2024.09"]
+
 [tools.xterm]
 queue = "interactive"
 time = "8:00:00"
@@ -234,8 +238,9 @@ hpc run CMD ...        defaults -> tools.<CMD> -> tools.<CMD>.options.<first mat
 hpc run -t T CMD ...   defaults -> tools.<each of types.T.tools> -> types.T -> command line
 ```
 
-With `-t`, the tool inferred from the command is not consulted: the type is
-the whole flow. Scalars: the most specific layer wins. Tables (`env_vars`,
+`tools.<CMD>` is the entry named after the command's first word, or the one
+whose `commands` list contains it. With `-t`, the tool inferred from the
+command is not consulted: the type is the whole flow. Scalars: the most specific layer wins. Tables (`env_vars`,
 `scheduler_args`, ...) merge by key.
 
 Lists (`modules`, `modules_path`, `modules_path_append`, `env_unset`,

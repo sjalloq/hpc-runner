@@ -3,8 +3,10 @@
 The keys allowed in a job layer (``[defaults]``, ``[tools.x]``,
 ``[tools.x.options."..."]``, ``[types.x]``) are the :class:`JobSpec` fields
 minus the per-invocation ones; :data:`FIELD_VALIDATORS` gives each its
-expected TOML type. Validation converts as it checks: verb tables become
-:class:`~hpc_runner.core.merge.Set` / :class:`~hpc_runner.core.merge.Edit`.
+expected TOML type. Three structural keys sit beside them: ``options`` and
+``commands`` under ``[tools.x]``, ``tools`` under ``[types.x]``. Validation
+converts as it checks: verb tables become :class:`~hpc_runner.core.merge.Set`
+/ :class:`~hpc_runner.core.merge.Edit`.
 """
 
 from __future__ import annotations
@@ -293,6 +295,21 @@ def env_conflicts(layer: Mapping[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
+def _tool_commands(value: Any) -> list[str]:
+    # The command names a tool entry matches instead of its own name. Merged
+    # across files like every other list (D1).
+    if not isinstance(value, list):
+        raise _Invalid(f"expected a list of command names, got {_describe(value)}")
+    names = [_str_item(v, i) for i, v in enumerate(value)]
+    for i, name in enumerate(names):
+        if name == "" or "/" in name or any(ch.isspace() for ch in name):
+            raise _Invalid(
+                f"entry {i + 1}: {name!r} is not a command name (the first word of a "
+                'command with any path stripped, e.g. "xrun")'
+            )
+    return names
+
+
 def _type_tools(value: Any) -> list[str]:
     # Two config files both setting [types.T] tools follow the D1 list rule
     # (append + dedupe; `{ set = [...] }` to replace), like every other list.
@@ -497,7 +514,9 @@ def validate_file(
                 for pattern, opt in value.items()
             }
 
-        return _validate_job_layer(c, section, entry, structural={"options": options})
+        return _validate_job_layer(
+            c, section, entry, structural={"options": options, "commands": _tool_commands}
+        )
 
     def job_type(name: str, entry: Any) -> dict[str, Any]:
         return _validate_job_layer(c, ("types", name), entry, structural={"tools": _type_tools})

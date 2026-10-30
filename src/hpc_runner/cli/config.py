@@ -145,9 +145,14 @@ parallel_environment = "smp"
 memory_resource = "mem_free"
 time_resource = "h_rt"
 
-# Tool-specific configurations
+# Tool-specific configurations, matched on the command's first word
 # [tools.python]
 # modules = ["python/3.11"]
+
+# One entry can stand for several commands
+# [tools.xcelium]
+# commands = ["xrun", "xmvlog", "xmelab"]
+# modules = ["xcelium/23.09"]
 
 # Job type configurations: a type pulls in tools, then adds its own keys
 # [types.gpu]

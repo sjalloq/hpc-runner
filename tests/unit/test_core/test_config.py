@@ -1091,3 +1091,118 @@ class TestFindLine:
     )
     def test_lookup(self, path, line):
         assert find_line(self.TEXT, path) == line
+
+
+class TestToolCommands:
+    """`[tools.x] commands`: one tool entry matching several command names."""
+
+    XCELIUM = {
+        "commands": ["xrun", "xmvlog", "xmelab"],
+        "modules": ["xcelium/23.09"],
+        "options": {"-gui": {"queue": "interactive"}},
+    }
+
+    def test_listed_commands_match_the_entry(self):
+        config = HPCConfig(tools={"xcelium": self.XCELIUM})
+        for command in ("xrun top.f", "xmvlog a.sv", "/opt/cadence/bin/xmelab top"):
+            assert _layer_names(config, command) == ["defaults", "tools.xcelium"]
+        assert make_job("xmvlog a.sv", config=config).modules == ("xcelium/23.09",)
+
+    def test_own_name_not_matched_unless_listed(self):
+        config = HPCConfig(tools={"xcelium": self.XCELIUM})
+        assert _layer_names(config, "xcelium") == ["defaults"]
+        listed = HPCConfig(tools={"xcelium": {**self.XCELIUM, "commands": ["xcelium", "xrun"]}})
+        assert _layer_names(listed, "xcelium") == ["defaults", "tools.xcelium"]
+
+    def test_entry_without_commands_matches_its_name(self):
+        config = HPCConfig(tools={"xrun": {"cpu": 2}})
+        assert config.tool_for("xrun") == "xrun"
+        assert config.tool_for("xmvlog") is None
+
+    def test_options_apply_under_an_alias(self):
+        config = HPCConfig(tools={"xcelium": self.XCELIUM})
+        names = _layer_names(config, "xmelab -gui top")
+        assert names == ["defaults", "tools.xcelium", "tools.xcelium.options.-gui"]
+        assert make_job("xmelab -gui top", config=config).queue == "interactive"
+
+    def test_commands_and_options_are_not_job_settings(self):
+        config = HPCConfig(tools={"xcelium": self.XCELIUM})
+        (_, table) = config.layers_for(JobSpec("xrun"))[1]
+        assert set(table) == {"modules"}
+
+    def test_type_references_the_entry_by_name(self):
+        config = HPCConfig(tools={"xcelium": self.XCELIUM}, types={"sim": {"tools": ["xcelium"]}})
+        assert _layer_names(config, "make sim", type="sim") == [
+            "defaults",
+            "tools.xcelium",
+            "types.sim",
+        ]
+
+    def test_loaded_from_file(self, tmp_path):
+        path = _write(
+            tmp_path,
+            'config_version = 1\n[tools.xcelium]\ncommands = ["xrun", "xmvlog"]\ncpu = 2\n',
+        )
+        config = load_config(path)
+        assert config.tools["xcelium"]["commands"] == ["xrun", "xmvlog"]
+        assert config.tool_for("xmvlog") == "xcelium"
+
+    def test_commands_merge_across_files(self, tmp_path):
+        _write(
+            tmp_path, 'config_version = 1\n[tools.xcelium]\ncommands = ["xrun"]\n', name="base.toml"
+        )
+        path = _write(
+            tmp_path,
+            'config_version = 1\nextends = "base.toml"\n[tools.xcelium]\ncommands = ["xmvlog"]\n',
+        )
+        assert load_config(path).tools["xcelium"]["commands"] == ["xrun", "xmvlog"]
+
+    def test_commands_under_type_rejected(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[types.t]\ncommands = ["xrun"]\n')
+        (err,) = _errors(path)
+        assert "[types.t] commands: unknown key" in str(err)
+
+    @pytest.mark.parametrize(
+        ("value", "message"),
+        [
+            ('"xrun"', "expected a list of command names, got string"),
+            ("[1]", "entry 1: expected a string"),
+            ('["bin/xrun"]', "entry 1: 'bin/xrun' is not a command name"),
+            ('["x run"]', "entry 1: 'x run' is not a command name"),
+            ('[""]', "entry 1: '' is not a command name"),
+        ],
+    )
+    def test_bad_commands(self, tmp_path, value, message):
+        path = _write(tmp_path, f"config_version = 1\n[tools.x]\ncommands = {value}\n")
+        (err,) = _errors(path)
+        assert "[tools.x] commands: " + message in str(err)
+
+    def test_command_listed_by_two_tools(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "config_version = 1\n"
+            '[tools.a]\ncommands = ["xrun"]\n'
+            '[tools.b]\ncommands = ["xmvlog", "xrun"]\n',
+        )
+        (err,) = _errors(path)
+        assert (err.path, err.line) == (path.resolve(), 5)
+        assert "[tools.b] commands: 'xrun' is also listed by [tools.a]" in str(err)
+
+    @pytest.mark.parametrize("section_first", [True, False])
+    def test_command_clashes_with_a_tool_section(self, tmp_path, section_first):
+        section = "[tools.xrun]\ncpu = 1\n"
+        listed = '[tools.xcelium]\ncommands = ["xrun"]\n'
+        body = section + listed if section_first else listed + section
+        path = _write(tmp_path, "config_version = 1\n" + body)
+        (err,) = _errors(path)
+        assert "[tools.xcelium] commands: 'xrun' is also [tools.xrun]" in str(err)
+        assert err.line == (5 if section_first else 3)
+
+    def test_clash_across_files_points_at_the_listing_file(self, tmp_path):
+        _write(tmp_path, "config_version = 1\n[tools.xrun]\ncpu = 1\n", name="base.toml")
+        path = _write(
+            tmp_path,
+            'config_version = 1\nextends = "base.toml"\n[tools.xcelium]\ncommands = ["xrun"]\n',
+        )
+        (err,) = _errors(path)
+        assert (err.path, err.line) == (path.resolve(), 4)

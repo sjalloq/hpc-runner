@@ -139,6 +139,16 @@ with -t T:   defaults → tools.<each of types.T.tools, in order> → types.T �
 
 ---
 
+**Addendum (2026-10-30): `[tools.x] commands`.** Tool detection matched
+the command's first word against the section name only, so a suite with
+many executables (Xcelium: `xrun`, `xmvlog`, `xmelab`, ...) needed one copy
+of the entry per command, or a `-t` on every run. A tool entry may now list
+the `commands` it matches; its own name becomes a label (what `types.T.tools`
+refers to) and matches only if listed. One command name belongs to one
+entry, checked at load with file and line. Explicit lists only: a glob such
+as `x*` would also catch `xterm` and `xargs` and would need a matching
+order.
+
 ## D3. Does a job inherit the submitting shell's environment?
 
 **Today:** `inherit_env = true` by default, rendered as `qsub -V`, then

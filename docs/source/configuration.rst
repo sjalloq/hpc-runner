@@ -36,15 +36,16 @@ top-level keys are:
   file; variables expanded as in :ref:`variable-expansion`). The target must exist, and a cycle is an error.
 - ``[defaults]``: baseline job settings applied to all jobs
 - ``[tools.<name>]``: settings keyed by tool name (e.g., ``python``, ``make``).
-  Each tool entry can also contain an ``[tools.<name>.options]`` sub-table for
-  argument-specific specialisation (see :ref:`tool-option-specialisation`).
+  A tool entry can list the ``commands`` it matches (see :ref:`tool-commands`)
+  and can contain an ``[tools.<name>.options]`` sub-table for argument-specific
+  specialisation (see :ref:`tool-option-specialisation`).
 - ``[types.<name>]``: named flows that compose tools (see :ref:`job-types`)
 - ``[schedulers.<name>]``: site facts for one scheduler (e.g., SGE resource names)
 
 ``[defaults]``, ``[tools.*]``, ``[tools.*.options.*]`` and ``[types.*]`` are
 *job layers*: they all accept the same job settings, listed in
-:ref:`job-settings`. In addition ``options`` is allowed only under
-``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
+:ref:`job-settings`. In addition ``options`` and ``commands`` are allowed
+only under ``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
 
 
 .. _job-settings:
@@ -185,6 +186,8 @@ the submit host (:ref:`variable-expansion`).
 
 Structural keys:
 
+- ``commands`` (``[tools.<name>]`` only): the command names the entry
+  matches instead of its own name, see :ref:`tool-commands`.
 - ``options`` (``[tools.<name>]`` only): argument-specific sub-entries, see
   :ref:`tool-option-specialisation`.
 - ``tools`` (``[types.<name>]`` only): the tools a type pulls in, in order,
@@ -287,13 +290,14 @@ specific first, then the spec (the CLI options or the fields set on the
 
 .. code-block:: text
 
-   no type:      defaults -> tools.<argv0> -> tools.<argv0>.options.<first match> -> spec
+   no type:      defaults -> tools.<tool> -> tools.<tool>.options.<first match> -> spec
    with -t T:    defaults -> tools.<each of types.T.tools, in order> -> types.T -> spec
 
-``<argv0>`` is the command's first word with any path stripped. With a type
-named, the tool inferred from the command is **not** consulted, and the
-``options`` of the type's tools are not applied: the type is the whole
-specification.
+``<tool>`` is the entry whose name, or whose ``commands`` list
+(:ref:`tool-commands`), matches the command's first word with any path
+stripped. With a type named, the tool inferred from the command is **not**
+consulted, and the ``options`` of the type's tools are not applied: the type
+is the whole specification.
 
 - **Scalars** (``cpu``, ``queue``, ...): the most specific layer that sets
   one wins.
@@ -643,6 +647,40 @@ module system itself terser:
 
 With ``module_system = "modules"`` the script exports
 ``MODULES_VERBOSITY=concise``.
+
+
+.. _tool-commands:
+
+One tool, several commands
+--------------------------
+
+A tool entry matches the command whose first word is its name. A suite that
+installs many executables would need one copy of the entry per command, so
+an entry can instead list the ``commands`` it stands for:
+
+.. code-block:: toml
+
+   [tools.xcelium]
+   commands = ["xrun", "xmvlog", "xmelab", "xmsim", "simvision"]
+   modules = ["xcelium/23.09"]
+   resources = [{ name = "xcelium_lic", value = 1 }]
+
+``hpc run xmvlog -sv top.sv`` and ``hpc run xrun -f top.f`` both get the
+``tools.xcelium`` layer, and ``hpc config resolve xmvlog`` reports it under
+that name. The rules:
+
+- An entry with ``commands`` matches exactly those names. Its own name is a
+  label (what a type's ``tools`` list refers to) and is matched only if it
+  is listed too.
+- An entry without ``commands`` matches its own name, as before.
+- A command name belongs to one entry. Two entries listing the same name,
+  or an entry listing a name that is also a ``[tools.<name>]`` section, is a
+  config error reported at the ``commands`` line.
+- ``options`` sub-entries apply under every listed command. A command that
+  needs different settings is its own entry or a type.
+- Names are bare commands (no path, no whitespace); patterns such as ``x*``
+  are not accepted. Across files the list merges like every other list
+  (:ref:`list-merging`).
 
 
 .. _tool-option-specialisation:
