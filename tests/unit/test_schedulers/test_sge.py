@@ -167,8 +167,8 @@ class TestSGEScheduler:
         script = scheduler.preview(job)
         scheduler.submit(job)
 
-        # mem is per job; mem_free is per slot by default, so 16G / 4 slots.
-        for directive in ("#$ -N test_job", "#$ -pe smp 4", "#$ -l mem_free=4G", "#$ -q batch"):
+        # mem is per job and requested as given (memory_per = "job" by default).
+        for directive in ("#$ -N test_job", "#$ -pe smp 4", "#$ -l mem_free=16G", "#$ -q batch"):
             assert directive in script
         qsub = [c.args[0] for c in mock_sge_commands.call_args_list if c.args[0][0] == "qsub"]
         assert len(qsub) == 1
@@ -250,7 +250,7 @@ class TestSGEScheduler:
         assert scheduler.mem_resource == "h_vmem"
         script = scheduler.preview(make_job(cpu=2, mem="1G"))
         assert "#$ -pe mpi 2" in script
-        assert "#$ -l h_vmem=512M" in script  # 1G per job over 2 slots
+        assert "#$ -l h_vmem=1G" in script  # requested as given (memory_per = "job")
 
     def test_list_active_jobs(self, mock_sge_commands):
         """Test listing active jobs."""
@@ -1099,18 +1099,23 @@ class TestSGEUnits:
     def _script(self, job, **sge):
         return SGEScheduler(HPCConfig(schedulers={"sge": sge})).preview(job)
 
-    def test_per_slot_divides_by_cpu(self):
-        assert "#$ -l mem_free=4G" in self._script(make_job(cpu=4, mem="16G"))
-
-    def test_per_slot_rounds_up(self):
-        assert "#$ -l mem_free=342M" in self._script(make_job(cpu=3, mem="1G"))
-
-    def test_per_slot_single_cpu_unchanged(self):
-        assert "#$ -l mem_free=16G" in self._script(make_job(mem="16G"))
+    def test_per_job_is_the_default(self):
+        assert "#$ -l mem_free=16G" in self._script(make_job(cpu=4, mem="16G"))
 
     def test_per_job_not_divided(self):
         script = self._script(make_job(cpu=4, mem="16G"), memory_per="job")
         assert "#$ -l mem_free=16G" in script
+
+    def test_per_slot_divides_by_cpu(self):
+        script = self._script(make_job(cpu=4, mem="16G"), memory_per="slot")
+        assert "#$ -l mem_free=4G" in script
+
+    def test_per_slot_rounds_up(self):
+        script = self._script(make_job(cpu=3, mem="1G"), memory_per="slot")
+        assert "#$ -l mem_free=342M" in script
+
+    def test_per_slot_single_cpu_unchanged(self):
+        assert "#$ -l mem_free=16G" in self._script(make_job(mem="16G"), memory_per="slot")
 
     def test_bad_memory_per(self):
         from hpc_runner.core.exceptions import ConfigError
@@ -1119,9 +1124,9 @@ class TestSGEUnits:
             SGEScheduler(HPCConfig(schedulers={"sge": {"memory_per": "node"}}))
 
     def test_qrsh_gets_divided_mem(self):
-        cmd = SGEScheduler(HPCConfig())._build_qrsh_command(
-            make_job(cpu=2, mem="8G", interactive=True), "/s.sh"
-        )
+        cmd = SGEScheduler(
+            HPCConfig(schedulers={"sge": {"memory_per": "slot"}})
+        )._build_qrsh_command(make_job(cpu=2, mem="8G", interactive=True), "/s.sh")
         assert cmd[cmd.index("-l") + 1] == "mem_free=4G"
 
     def test_time_rendered_h_rt(self):

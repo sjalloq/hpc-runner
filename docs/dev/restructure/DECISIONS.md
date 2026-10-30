@@ -533,6 +533,12 @@ Pass-through remains available via `raw_args`.
    memory_resource = "mem_free"`, `memory_per = "slot" | "job"`, and the
    renderer divides by `cpu` when the site convention is per slot. Slurm
    renders `--mem`; `--mem-per-cpu` only if a site config asks.
+   **Default (2026-10-30): `memory_per = "job"`**, the request is passed
+   as given. A stock SGE `mem_free` is a requestable, not a consumable, so
+   SGE does not multiply it by the slots; dividing would under-request.
+   Only a site with a per-slot consumable (typically `h_vmem`) sets
+   `"slot"`. (The implementation first defaulted to `"slot"` to preserve
+   the old rendering; that was a mistake and was reversed.)
 
 ---
 

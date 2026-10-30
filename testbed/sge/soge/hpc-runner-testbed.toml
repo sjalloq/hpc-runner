@@ -4,7 +4,7 @@ config_version = 1
 
 [schedulers.sge]
 parallel_environment = "smp"     # cell/pe-smp.conf
-memory_resource = "mem_free"     # cell/complexes.conf (requestable)
+memory_resource = "mem_free"     # cell/complexes.conf (requestable, not consumable)
 time_resource = "h_rt"
-memory_per = "slot"
+memory_per = "job"               # SGE does not multiply a requestable by slots
 emulate_afterok = true

@@ -221,6 +221,10 @@ assumption.
 - **`memory_per` defaults to `"slot"`** for SGE, which is today's behaviour
   (the value went straight to `-l mem_free=` and SGE multiplies by slots).
   `mem` means per job, so the renderer divides by `cpu`.
+  *Reversed 2026-10-30:* the default is `"job"`. The premise was wrong: a
+  stock `mem_free` is a requestable, which SGE does not multiply by slots,
+  so the division under-requested memory on a default site (including the
+  testbed). D10 records the corrected default.
 - **`${hpc.host}` in an output pattern** makes `stdout_path` `None` (the
   node is unknown at submit) and `read_stdout()` raises with a clear
   message; `${hpc.cpus}`/`${hpc.tmpdir}` in a path are config errors.

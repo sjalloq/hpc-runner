@@ -28,12 +28,12 @@ def _job_id(result: JobResult) -> str:
 
 
 def test_pe_mem_time(cluster: Cluster) -> None:
-    """D10: cpu/mem/time become -pe smp 2, mem_free (per slot: 2G/2 = 1G) and h_rt."""
+    """D10: cpu/mem/time become -pe smp 2, mem_free (per job, as given) and h_rt."""
     spec = JobSpec("true", name="res", cpu=2, mem="2G", time="10m", scheduler_args={"sge": ["-h"]})
     job = resolve(spec, cluster.config(), cluster.host())
     preview = cluster.scheduler().preview(job)
     assert "#$ -pe smp 2" in preview.splitlines()
-    assert "#$ -l mem_free=1G" in preview.splitlines()
+    assert "#$ -l mem_free=2G" in preview.splitlines()
     assert "#$ -l h_rt=0:10:00" in preview.splitlines()
 
     job_id = _job_id(cluster.scheduler().submit(job))
@@ -43,9 +43,9 @@ def test_pe_mem_time(cluster: Cluster) -> None:
     assert details.get("pe_name") == "smp"
     assert details.get("pe_range") == "2"
     # SGE canonicalises a TIME request to seconds, so 0:10:00 reads back as 600.
-    assert details.get("resources") == {"mem_free": "1G", "h_rt": "600"}
+    assert details.get("resources") == {"mem_free": "2G", "h_rt": "600"}
     raw = cluster.run(["qstat", "-j", job_id]).stdout
-    assert "mem_free=1G" in raw and "h_rt=600" in raw and "smp" in raw
+    assert "mem_free=2G" in raw and "h_rt=600" in raw and "smp" in raw
 
 
 def test_h_rt_kill(cluster: Cluster) -> None:

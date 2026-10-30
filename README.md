@@ -324,8 +324,8 @@ section lets you match your site's conventions without touching job definitions.
 parallel_environment = "smp"    # PE name for CPU slots (some sites use "mpi", "threaded", etc.)
 memory_resource = "mem_free"    # Memory resource name (common alternatives: "h_vmem", "virtual_free")
 time_resource = "h_rt"          # Time limit resource name (commonly "h_rt")
-memory_per = "slot"             # mem is per job; "slot" divides it by cpu (SGE multiplies
-                                # a consumable by the slots), "job" passes it as given
+memory_per = "job"              # mem is per job and passed as given; "slot" divides it by
+                                # cpu for a per-slot consumable (SGE multiplies by the slots)
 
 # Module system ('module purge' always runs first)
 module_init_script = ""         # Path to module init script (auto-detected if empty)

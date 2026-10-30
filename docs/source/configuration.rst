@@ -224,10 +224,10 @@ example ``[schedulers.slurm]`` today) is a warning and is not checked.
      - ``"h_rt"``
      - Resource ``time`` is requested as.
    * - ``memory_per``
-     - ``"slot"`` or ``"job"``
-     - ``"slot"``
-     - ``"slot"``: the memory resource is consumed per slot, so ``mem`` is
-       divided by ``cpu``; ``"job"``: requested as given.
+     - ``"job"`` or ``"slot"``
+     - ``"job"``
+     - ``"job"``: ``mem`` is requested as given; ``"slot"``: the memory
+       resource is a per-slot consumable, so ``mem`` is divided by ``cpu``.
    * - ``module_init_script``
      - string
      - ``""``
@@ -403,9 +403,9 @@ SGE mapping notes
 - ``queue`` maps to SGE ``qsub -q <queue>``.
 - ``cpu`` maps to SGE parallel environment slots: ``qsub -pe <parallel_environment> <cpu>``.
 - ``mem`` and ``time`` map to SGE hard resources via ``-l <resource>=<value>``, where the
-  resource names are configured under ``[schedulers.sge]``. ``mem`` is per job;
-  with ``memory_per = "slot"`` (the default) it is divided by ``cpu`` (see
-  :doc:`sge`).
+  resource names are configured under ``[schedulers.sge]``. ``mem`` is per job
+  and requested as given; ``memory_per = "slot"`` divides it by ``cpu`` for a
+  site whose resource is a per-slot consumable (see :doc:`sge`).
 - ``stdout``/``stderr`` map to ``-o``/``-e``; without ``stderr``, ``-j y``.
 
 
@@ -750,7 +750,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    parallel_environment = "smp"
    memory_resource = "mem_free"
    time_resource = "h_rt"
-   memory_per = "slot"         # mem is per job; divided by cpu for a per-slot resource
+   memory_per = "job"          # mem is per job; "slot" divides it by cpu for a per-slot consumable
 
    module_init_script = ""
    module_system = "modules"

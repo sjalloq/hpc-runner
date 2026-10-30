@@ -177,10 +177,12 @@ class SGEScheduler(BaseScheduler):
         self.pe_name = sge_config.get("parallel_environment", "smp")
         self.mem_resource = sge_config.get("memory_resource", "mem_free")
         self.time_resource = sge_config.get("time_resource", "h_rt")
-        # How the site's memory resource is consumed: per slot (SGE
-        # multiplies a consumable by the slots) or per job. ``mem`` is
-        # always per job (D10); per slot, the request is divided by cpu.
-        self.memory_per: str = sge_config.get("memory_per", "slot")
+        # How the site's memory resource is consumed. ``mem`` is always per
+        # job (D10) and is requested as given by default: a stock SGE
+        # ``mem_free`` is a requestable, not a consumable, so SGE does not
+        # multiply it by the slots. A site whose resource is a per-slot
+        # consumable sets "slot" and the request is divided by cpu.
+        self.memory_per: str = sge_config.get("memory_per", "job")
         if self.memory_per not in MEMORY_PER:
             raise ConfigError(
                 "[schedulers.sge] memory_per: expected one of "

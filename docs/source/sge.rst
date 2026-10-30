@@ -58,20 +58,23 @@ hpc-runner renders ``mem`` and ``time`` using SGE hard resources:
 - config: ``[schedulers.sge].time_resource`` (default: ``h_rt``)
 - SGE: ``qsub -l <memory_resource>=<mem> -l <time_resource>=<time>``
 
-``mem`` is the memory for the **whole job** (see :ref:`memory-and-time`).
-SGE multiplies a consumable such as ``mem_free`` or ``h_vmem`` by the
-number of slots, so by default hpc-runner divides ``mem`` by ``cpu``
-(rounded up) before rendering: ``cpu = 4, mem = "16G"`` renders
-``-l mem_free=4G``. A site whose memory resource is per job sets
-``memory_per = "job"`` and the value is passed as given.
+``mem`` is the memory for the **whole job** (see :ref:`memory-and-time`)
+and is requested as given: ``cpu = 4, mem = "16G"`` renders
+``-l mem_free=16G``. That is right for a stock SGE ``mem_free``, which is a
+requestable load value that SGE compares against the host and does not
+multiply by the slot count. A site whose memory resource is a per-slot
+*consumable* (SGE multiplies the request by the slots; ``h_vmem`` is
+usually configured this way) sets ``memory_per = "slot"`` and hpc-runner
+divides ``mem`` by ``cpu`` (rounded up) before rendering, so the same job
+renders ``-l h_vmem=4G``.
 
-- config: ``[schedulers.sge].memory_per`` (``"slot"``, the default, or ``"job"``)
+- config: ``[schedulers.sge].memory_per`` (``"job"``, the default, or ``"slot"``)
 
 ``mem`` renders in the largest exact binary unit (``16G``; ``1.5G`` becomes
 ``1536M``) and ``time`` as ``H:MM:SS`` with unbounded hours (``2d`` becomes
 ``48:00:00``).
 
-Example (site using ``h_vmem`` and ``h_rt``):
+Example (site using a per-slot ``h_vmem`` consumable and ``h_rt``):
 
 .. code-block:: toml
 

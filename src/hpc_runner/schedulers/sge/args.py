@@ -177,12 +177,13 @@ class SGEMemArg(SchedulerArg[Memory]):
     """Memory request: -l <resource>=<value>
 
     The resource name is configurable (e.g., 'mem_free', 'h_vmem', 'mem').
-    ``mem`` is per job (D10); with ``memory_per = "slot"`` (the site's
-    resource is consumed per slot, as SGE multiplies a consumable by the
-    slot count) :meth:`for_job` divides it by the job's slots.
+    ``mem`` is per job (D10) and is requested as given. With
+    ``memory_per = "slot"`` (the site's resource is a consumable that SGE
+    multiplies by the slot count) :meth:`for_job` divides it by the job's
+    slots instead.
     """
 
-    def __init__(self, resource_name: str = "mem_free", memory_per: str = "slot"):
+    def __init__(self, resource_name: str = "mem_free", memory_per: str = "job"):
         super().__init__("l", doc=f"Memory ({resource_name}, per {memory_per})")
         self.resource_name = resource_name
         self.memory_per = memory_per
