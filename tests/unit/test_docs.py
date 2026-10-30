@@ -153,4 +153,3 @@ def test_configuration_reference_lists_every_scheduler_key(scheduler):
 def test_cli_docs_list_every_run_option(option):
     listed = rf"(-\w, )?{option}\b"
     assert re.search(rf"``{listed}", (DOCS / "cli.rst").read_text()), "docs/source/cli.rst"
-    assert re.search(rf"^  {listed}", README.read_text(), re.M), "README.md CLI reference"

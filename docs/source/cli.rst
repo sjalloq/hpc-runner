@@ -12,7 +12,8 @@ Global options
 These options come before the subcommand:
 
 - ``--config PATH``: use an explicit config file (bypasses discovery)
-- ``--scheduler NAME``: force a scheduler (``sge``, ``slurm``, ``pbs``, ``local``)
+- ``--scheduler NAME``: force a scheduler (``sge`` or ``local``; see the
+  compatibility table on the :doc:`index` page)
 - ``--verbose``: log every scheduler command (argv) to stderr, and on a
   scheduler error print the failing command and its full stderr (e.g. also
   shows script paths when ``--keep-script`` is used)

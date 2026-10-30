@@ -46,7 +46,17 @@ def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -
 
     # Lazy import
     module_path, class_name = _SCHEDULERS[name].rsplit(":", 1)
-    module = importlib.import_module(module_path)
+    try:
+        module = importlib.import_module(module_path)
+    except ModuleNotFoundError as exc:
+        if exc.name is None or not module_path.startswith(exc.name):
+            raise  # the backend exists but one of its own imports failed
+        implemented = ", ".join(
+            n for n, path in _SCHEDULERS.items() if importlib.util.find_spec(path.rsplit(":", 1)[0])
+        )
+        raise ConfigError(
+            f"scheduler '{name}' is not implemented in this hpc-runner; implemented: {implemented}"
+        ) from None
     scheduler_class = getattr(module, class_name)
 
     if config is None:
