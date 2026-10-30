@@ -1,7 +1,7 @@
 # Scheduler testbed
 
 Real schedulers in Docker Compose, used by `tests/integration`. Design:
-`TESTBED_PLAN.md`; decisions and deviations: `TESTBED_REVIEW.md`. Only Docker
+`docs/dev/testbed/TESTBED_PLAN.md`; decisions and deviations: `docs/dev/testbed/TESTBED_REVIEW.md`. Only Docker
 (29 locally, 28 on CI) and Compose 2.38 features are used; no registry, the
 image is built locally each time (Docker's layer cache makes a rebuild free).
 
@@ -79,7 +79,7 @@ pushes to `main` run 3.10, 3.11 and 3.12, one matrix cell each. A cell is:
    skip); the report is kept as `testbed/junit-<ver>-default.xml`.
 2. `sge-down`, `sge-up SLOW_ACCOUNTING=1`, then `sge-test` again with
    `-k slow_accounting` for the one test that needs the 15 s flush
-   (TESTBED_REVIEW.md D-T22); its report is `testbed/junit-<ver>.xml`.
+   (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its report is `testbed/junit-<ver>.xml`.
 
 Artefacts: `junit-<ver>` (both XML reports, always uploaded) and, on failure,
 `testbed-logs-<ver>` with `compose.log` (`make sge-logs`) and each container's
@@ -142,7 +142,7 @@ wait` never forwards SIGTERM (the entrypoint traps and forwards; master
   `qsub -sync y` readiness probe).
 - `make sge-down`: **8.4 s** (login 0.3 s under tini, execd 0.9 s, qmaster
   6.9 s controlled shutdown); `make sge-up` again: **19.6 s**. The plan's
-  20 s combined target was a guess (TESTBED_REVIEW.md D-T20); 28 s is the
+  20 s combined target was a guess (docs/dev/testbed/TESTBED_REVIEW.md D-T20); 28 s is the
   recorded number.
 - `qsub -b y hostname` as alice twice: exec2 then exec1; `qacct -j` had the
   record 0.98 s and 0.70 s after the job left `qstat`.

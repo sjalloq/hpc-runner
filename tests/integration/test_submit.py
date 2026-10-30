@@ -1,4 +1,7 @@
-"""Submission through ``resolve`` + ``scheduler.submit`` (TESTBED_PLAN.md section 5)."""
+"""Submission through ``resolve`` + ``scheduler.submit``.
+
+See docs/dev/testbed/TESTBED_PLAN.md section 5.
+"""
 
 from __future__ import annotations
 
@@ -74,7 +77,7 @@ def test_rejected_resource(cluster: Cluster) -> None:
     Note: an oversubscribed consumable (``-l gpu=2`` against complex_values
     gpu=1) is *accepted* at submit and queues forever; SGE only verifies
     satisfiability with ``qsub -w e``, which hpc-runner does not pass
-    (TESTBED_REVIEW.md D-T27).
+    (docs/dev/testbed/TESTBED_REVIEW.md D-T27).
     """
     with pytest.raises(SubmissionError) as excinfo:
         _submit(cluster, JobSpec("true", name="badres", scheduler_args={"sge": ["-l", "nosuch=1"]}))

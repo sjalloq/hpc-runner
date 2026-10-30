@@ -148,7 +148,10 @@ def test_cwd(cluster: Cluster) -> None:
 
 @pytest.mark.xfail(
     strict=True,
-    reason="BUG-T1: #$ -o path with a space is split by the directive parser (TESTBED_REVIEW.md)",
+    reason=(
+        "BUG-T1: #$ -o path with a space is split by the directive parser "
+        "(docs/dev/testbed/TESTBED_REVIEW.md)"
+    ),
 )
 def test_cwd_with_space(cluster: Cluster) -> None:
     """BUG-T1: a workdir containing a space is submitted and used as-is."""

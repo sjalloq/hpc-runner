@@ -2,7 +2,7 @@
 
 Each vendor implementation of the SGE lineage is a *flavour*: a self-contained
 directory with its own image, compose file, cell configuration and testbed
-config, tested on its own and never grouped with another (TESTBED_PLAN.md
+config, tested on its own and never grouped with another (docs/dev/testbed/TESTBED_PLAN.md
 section 1). The fixture (`tests/integration/cluster.py`) and the test files
 are shared; `--flavour <name>` selects the stack that is up.
 
@@ -18,7 +18,7 @@ Candidates for later phases (plan section 6, phase 5): Open Cluster Scheduler
 One row per integration test, grouped by file (tests/integration/). The
 `soge` column is the result of `make -C testbed sge-test` on 2026-10-29:
 `pass`; `xfail(BUG-Tn)` for a strict expected failure pinning a bug listed
-in TESTBED_REVIEW.md ("Phase 3 findings"), which flips to a hard pass when
+in docs/dev/testbed/TESTBED_REVIEW.md ("Phase 3 findings"), which flips to a hard pass when
 fixed; `skip(reason)` for a test this flavour or stack cannot run. A test
 skipped for a flavour with `@pytest.mark.flavour` would also appear here
 (none so far).
@@ -62,7 +62,7 @@ skipped for a flavour with `@pytest.mark.flavour` would also appear here
 ### Manual checks
 
 - **Shared filesystem missing on an exec node** (plan section 5, "shared FS
-  missing"; TESTBED_REVIEW.md D-T23). Not automated: the `/work` volume is
+  missing"; docs/dev/testbed/TESTBED_REVIEW.md D-T23). Not automated: the `/work` volume is
   shared by every container and cannot be hidden on one node from inside
   `login`. By hand: start the stack with a compose override that omits the
   `work` volume from `exec1` (for example a `compose.override.yml` giving

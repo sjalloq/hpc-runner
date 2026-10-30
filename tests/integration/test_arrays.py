@@ -1,4 +1,7 @@
-"""Array jobs: per-task statuses and per-task output files (TESTBED_PLAN.md section 5)."""
+"""Array jobs: per-task statuses and per-task output files.
+
+See docs/dev/testbed/TESTBED_PLAN.md section 5.
+"""
 
 from __future__ import annotations
 

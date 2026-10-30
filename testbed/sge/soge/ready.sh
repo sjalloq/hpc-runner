@@ -1,5 +1,5 @@
 #!/bin/bash
-# Readiness probe for the `soge` stack; runs on `login` (TESTBED_PLAN.md
+# Readiness probe for the `soge` stack; runs on `login` (docs/dev/testbed/TESTBED_PLAN.md
 # section 3). Exits 0 when every check passes; otherwise prints the failing
 # check and the evidence and exits 1. The caller polls it (wait-for.sh / the
 # pytest fixture, 90 s cap).

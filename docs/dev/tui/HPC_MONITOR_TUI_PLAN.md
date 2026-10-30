@@ -173,7 +173,7 @@ class JobInfo:
     exit_code: int | None = None  # None for active jobs
     stdout_path: Path | None = None
     stderr_path: Path | None = None
-    
+
     # Optional extended info
     node: str | None = None
     dependencies: list[str] | None = None
@@ -199,7 +199,7 @@ from ..core.types import JobStatus
 
 class BaseScheduler(ABC):
     # ... existing methods ...
-    
+
     @abstractmethod
     def list_active_jobs(
         self,
@@ -208,17 +208,17 @@ class BaseScheduler(ABC):
         queue: str | None = None,
     ) -> list[JobInfo]:
         """List currently active (running/pending/held) jobs.
-        
+
         Args:
             user: Filter by username. None = all users.
             status: Filter by status set. None = all active statuses.
             queue: Filter by queue name. None = all queues.
-            
+
         Returns:
             List of JobInfo for matching active jobs.
         """
         ...
-    
+
     @abstractmethod
     def list_completed_jobs(
         self,
@@ -230,7 +230,7 @@ class BaseScheduler(ABC):
         limit: int = 100,
     ) -> list[JobInfo]:
         """List completed jobs from scheduler accounting.
-        
+
         Args:
             user: Filter by username. None = all users.
             since: Jobs completed after this time.
@@ -238,34 +238,34 @@ class BaseScheduler(ABC):
             exit_code: Filter by exit code. None = all.
             queue: Filter by queue name. None = all queues.
             limit: Maximum number of jobs to return.
-            
+
         Returns:
             List of JobInfo for matching completed jobs.
-            
+
         Raises:
             AccountingNotAvailable: If scheduler accounting is not enabled.
         """
         ...
-    
+
     @abstractmethod
     def has_accounting(self) -> bool:
         """Check if job accounting/history is available.
-        
+
         Returns:
             True if list_completed_jobs() will work, False otherwise.
         """
         ...
-    
+
     @abstractmethod
     def get_job_details(self, job_id: str) -> JobInfo:
         """Get detailed information for a single job.
-        
+
         Args:
             job_id: The job identifier.
-            
+
         Returns:
             JobInfo with all available details.
-            
+
         Raises:
             JobNotFoundError: If job doesn't exist.
         """
@@ -308,7 +308,7 @@ class BaseScheduler(ABC):
 1. Create `src/hpc_runner/cli/monitor.py`:
    ```python
    import click
-   
+
    @click.command()
    @click.option("--refresh", "-r", default=10, help="Refresh interval in seconds")
    def monitor(refresh: int):
@@ -322,12 +322,12 @@ class BaseScheduler(ABC):
    ```python
    from textual.app import App
    from textual.widgets import Static
-   
+
    class HpcMonitorApp(App):
        def __init__(self, refresh_interval: int = 10):
            super().__init__()
            self.refresh_interval = refresh_interval
-       
+
        def compose(self):
            yield Static("HPC Monitor - Coming Soon")
    ```
@@ -461,7 +461,7 @@ class BaseScheduler(ABC):
        def __init__(self, scheduler: BaseScheduler):
            self.scheduler = scheduler
            self._current_user = os.environ.get("USER")
-       
+
        async def get_active_jobs(
            self,
            user_filter: str | None = None,

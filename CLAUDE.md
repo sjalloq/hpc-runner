@@ -136,11 +136,32 @@ hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim # mixed
 `tests/unit/` is the suite plain `pytest` runs (`addopts` deselects the
 `integration` marker). `tests/integration/` runs only inside the testbed's
 `login` container through the `cluster` fixture (`tests/integration/cluster.py`,
-plan in `TESTBED_PLAN.md` §4.2); it skips when no scheduler is reachable and
+plan in `docs/dev/testbed/TESTBED_PLAN.md` §4.2); it skips when no scheduler is reachable and
 `--require-cluster` fails instead. The testbed itself lives in `testbed/`, one
 directory per scheduler implementation (`testbed/sge/soge/` = Debian trixie
-gridengine 8.1.9); every divergence from the plan is in `TESTBED_REVIEW.md`.
+gridengine 8.1.9); every divergence from the plan is in `docs/dev/testbed/TESTBED_REVIEW.md`.
 Nothing captured from a real work cluster ever goes into the repo.
+
+### Developer notes (`docs/dev/`)
+
+Planning, design and review documents live under `docs/dev/`, one
+sub-folder per piece of work, never at the repo root. They are working
+notes, not official documentation (that is `docs/source/`, README and the
+docstrings) and Sphinx does not build them.
+
+- `docs/dev/restructure/` - the core/scheduler restructure: `DECISIONS.md`
+  (the design decisions, one numbered item each), `QA_REVIEW.md` (the
+  review that prompted them), `SESSION_REVIEW.md` (judgement calls made
+  while implementing), `QUESTIONS.md`.
+- `docs/dev/testbed/` - the Docker scheduler testbed: `TESTBED_RESEARCH.md`
+  (prior art), `TESTBED_DESIGN.md`, `TESTBED_PLAN.md` (the phased plan),
+  `TESTBED_REVIEW.md` (every divergence from the plan and the bugs found).
+- `docs/dev/tui/` - `hpc monitor`: `HPC_MONITOR_TUI_PLAN.md`,
+  `TEXTUAL_STYLING_COOKBOOK.md`, `TUI_HORIZONTAL_SCROLLBAR.md`.
+
+New planning work gets a new folder here (`docs/dev/<topic>/`); a decision
+log for a piece of work records what was decided and why, so that commit
+messages can describe the change without citing it.
 
 ### Templates (`src/hpc_runner/templates/`)
 
@@ -151,7 +172,7 @@ Jinja2 templates for job scripts. Each scheduler template (`schedulers/sge/templ
 **HpcMonitorApp** - Textual-based terminal UI for monitoring HPC jobs. Entry point: `hpc monitor`.
 
 - **app.py** - Main application with custom Nord-inspired theme
-- **styles/monitor.tcss** - CSS styling following Rovr aesthetic (see `docs/TEXTUAL_STYLING_COOKBOOK.md`)
+- **styles/monitor.tcss** - CSS styling following Rovr aesthetic (see `docs/dev/tui/TEXTUAL_STYLING_COOKBOOK.md`)
 - **snapshot.py** - Visual review utility for development
 
 ## Key Design Decisions

@@ -85,7 +85,7 @@ strict = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "integration: needs a live scheduler testbed (see TESTBED_PLAN.md)",
+    "integration: needs a live scheduler testbed (see docs/dev/testbed/TESTBED_PLAN.md)",
     "flavour(*names): only holds on the listed scheduler flavours; skipped elsewhere",
 ]
 addopts = "-m 'not integration'"

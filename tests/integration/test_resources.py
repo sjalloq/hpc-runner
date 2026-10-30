@@ -1,4 +1,7 @@
-"""Resource requests as SGE sees them, and the limits it enforces (TESTBED_PLAN.md section 5)."""
+"""Resource requests as SGE sees them, and the limits it enforces.
+
+See docs/dev/testbed/TESTBED_PLAN.md section 5.
+"""
 
 from __future__ import annotations
 

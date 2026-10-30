@@ -60,7 +60,7 @@ jobs:
         run: pytest -v
 
   # End-to-end tests against a real SGE cluster: the Docker Compose stack in
-  # testbed/sge/soge (TESTBED_PLAN.md section 7, testbed/README.md "CI").
+  # testbed/sge/soge (docs/dev/testbed/TESTBED_PLAN.md section 7, testbed/README.md "CI").
   # The image is built in the job; there is no registry. If the build ever
   # hurts, the first step up is docker/build-push-action with
   # cache-from/to: type=gha, still with no registry.
@@ -68,7 +68,7 @@ jobs:
   # Pull requests run Python 3.12 only; pushes to main run the full
   # 3.10-3.12 matrix. Each cell runs the suite twice: once on the default
   # stack and once with SLOW_ACCOUNTING=1 for the one test that needs it
-  # (TESTBED_REVIEW.md D-T22). The tests run inside the login container, so
+  # (docs/dev/testbed/TESTBED_REVIEW.md D-T22). The tests run inside the login container, so
   # no Python is set up on the runner.
   integration:
     needs: [lint, test]

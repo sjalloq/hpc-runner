@@ -1,5 +1,5 @@
 #!/bin/bash
-# Per-test cleanup on `login` (TESTBED_PLAN.md section 3):
+# Per-test cleanup on `login` (docs/dev/testbed/TESTBED_PLAN.md section 3):
 #   clean.sh [<workdir-under-/work>]
 # Deletes every user's jobs, waits until the queue is empty (30 s cap, forced
 # deletion after 15 s), then removes the given /work subdirectory.

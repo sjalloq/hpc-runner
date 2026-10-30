@@ -15,7 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 #    (it would bake the build hostname in); the entrypoint runs it on the
 #    volumes instead.
 # 2. `ssmtp` + `bsd-mailx` satisfy gridengine-common's `mailx` dependency
-#    without an MTA daemon (TESTBED_REVIEW.md D-T1; `s-nail` no longer
+#    without an MTA daemon (docs/dev/testbed/TESTBED_REVIEW.md D-T1; `s-nail` no longer
 #    Provides: mailx on trixie).
 # 3. docker-cli: the login container drives `docker stop|start|kill <node>`
 #    through the mounted socket for the failure tests (D-T9).

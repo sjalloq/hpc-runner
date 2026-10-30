@@ -3,7 +3,7 @@
 # limited to those in Compose 2.38 (the CI runners' version).
 #
 # Name resolution: a user-defined network with static IPs plus extra_hosts on
-# every service (TESTBED_REVIEW.md D-T2). Compose's own DNS reverse-resolves a
+# every service (docs/dev/testbed/TESTBED_REVIEW.md D-T2). Compose's own DNS reverse-resolves a
 # peer to `<container>.<network>`, which SGE's commlib rejects as not matching
 # the connect-time name; /etc/hosts entries resolve both ways to the bare name.
 

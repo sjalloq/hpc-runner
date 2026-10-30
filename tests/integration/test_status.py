@@ -1,4 +1,7 @@
-"""Status reporting: qstat, qacct and the exit sentinel (TESTBED_PLAN.md section 5)."""
+"""Status reporting: qstat, qacct and the exit sentinel.
+
+See docs/dev/testbed/TESTBED_PLAN.md section 5.
+"""
 
 from __future__ import annotations
 
@@ -61,7 +64,10 @@ def test_slow_accounting_window(cluster: Cluster) -> None:
     """D-T6/D-T22: the exit sentinel resolves a finished job before qacct has its record."""
     sconf = cluster.run(["qconf", "-sconf"]).stdout
     if SLOW_FLUSH not in sconf:
-        pytest.skip(f"needs the slow-accounting stack ({SLOW_FLUSH}); see TESTBED_REVIEW.md D-T22")
+        pytest.skip(
+            f"needs the slow-accounting stack ({SLOW_FLUSH}); "
+            "see docs/dev/testbed/TESTBED_REVIEW.md D-T22"
+        )
 
     scheduler = cluster.scheduler()
     job_id = _job_id(_submit(cluster, JobSpec("echo done", name="slowacct")))

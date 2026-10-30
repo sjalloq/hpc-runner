@@ -1,4 +1,7 @@
-"""Infrastructure failures: qmaster stopped, an exec node killed (TESTBED_PLAN.md section 5)."""
+"""Infrastructure failures: qmaster stopped, an exec node killed.
+
+See docs/dev/testbed/TESTBED_PLAN.md section 5.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +19,7 @@ from tests.integration.cluster import Cluster
 #: BaseScheduler.COMMAND_TIMEOUT is 60 s; a failure must surface within that plus slack.
 FAIL_WITHIN = 90.0
 RECOVER_TIMEOUT = 90.0
-#: Statuses that say "did not finish normally" (TESTBED_REVIEW.md D-T24).
+#: Statuses that say "did not finish normally" (docs/dev/testbed/TESTBED_REVIEW.md D-T24).
 FAILED_FAMILY = {JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT}
 
 

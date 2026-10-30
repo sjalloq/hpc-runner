@@ -1,7 +1,7 @@
 #!/bin/bash
 # Entrypoint for every container of the `soge` stack; SGE_ROLE selects the
-# role (master | exec | login). See TESTBED_PLAN.md section 2.2 and the
-# Phase 0 decisions in TESTBED_REVIEW.md (D-T1..D-T9).
+# role (master | exec | login). See docs/dev/testbed/TESTBED_PLAN.md section 2.2 and the
+# Phase 0 decisions in docs/dev/testbed/TESTBED_REVIEW.md (D-T1..D-T9).
 set -euo pipefail
 
 exec > >(tee -a /var/log/testbed.log) 2>&1

@@ -1,5 +1,5 @@
 /* HPC Monitor TUI Stylesheet
- * Based on TEXTUAL_STYLING_COOKBOOK.md patterns
+ * Based on docs/dev/tui/TEXTUAL_STYLING_COOKBOOK.md patterns
  */
 
 /* Border Variables */

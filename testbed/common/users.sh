@@ -1,8 +1,8 @@
 #!/bin/bash
 # Fixed test users for every testbed image: alice 1001, bob 1002, tester 1003
-# (uid == gid). No host UID is involved anywhere (TESTBED_PLAN.md section 4).
+# (uid == gid). No host UID is involved anywhere (docs/dev/testbed/TESTBED_PLAN.md section 4).
 # tester has passwordless sudo: the fixture uses `sudo -u alice ...` and
-# `sudo docker ...` (TESTBED_REVIEW.md D-T9).
+# `sudo docker ...` (docs/dev/testbed/TESTBED_REVIEW.md D-T9).
 set -euo pipefail
 
 for spec in alice:1001 bob:1002 tester:1003; do

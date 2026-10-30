@@ -1,8 +1,8 @@
-"""Live-cluster handle for the integration suite (TESTBED_PLAN.md section 4.2).
+"""Live-cluster handle for the integration suite (docs/dev/testbed/TESTBED_PLAN.md section 4.2).
 
 Runs inside the testbed's ``login`` container as user ``tester``: scheduler
 CLIs are on PATH, ``sudo -u alice`` works passwordless, and node control goes
-through ``sudo docker stop|start|kill <container>`` (TESTBED_REVIEW.md D-T9).
+through ``sudo docker stop|start|kill <container>`` (docs/dev/testbed/TESTBED_REVIEW.md D-T9).
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ SRC_ROOT = Path("/src")
 WORK_ROOT = Path("/work")
 #: The qmaster's accounting file (shared volume; truncating needs root).
 ACCOUNTING_FILE = Path("/var/lib/gridengine/default/common/accounting")
-#: The stack's readiness probe (TESTBED_PLAN.md section 3); exit 0 when ready.
+#: The stack's readiness probe (docs/dev/testbed/TESTBED_PLAN.md section 3); exit 0 when ready.
 READY_SCRIPT = Path("/opt/testbed/ready.sh")
 READY_TIMEOUT = 90.0
 READY_POLL = 2.0
@@ -200,7 +200,7 @@ class SGECluster:
             out.append(f"{header}\n{proc.stdout}{proc.stderr}")
         return "".join(out)
 
-    # -- node control (TESTBED_REVIEW.md D-T9) ------------------------------
+    # -- node control (docs/dev/testbed/TESTBED_REVIEW.md D-T9) ------------------------------
 
     @cached_property
     def docker_available(self) -> bool:

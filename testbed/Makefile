@@ -1,4 +1,4 @@
-# Scheduler testbeds (TESTBED_PLAN.md). Every target takes FLAVOUR=<name>
+# Scheduler testbeds (docs/dev/testbed/TESTBED_PLAN.md). Every target takes FLAVOUR=<name>
 # (default soge) and the Python version PY=<ver> (default 3.12) where relevant.
 #
 #   make -C testbed sge-up          build the image, start the stack, wait for ready.sh
