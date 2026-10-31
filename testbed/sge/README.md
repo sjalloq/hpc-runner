@@ -59,8 +59,11 @@ appear here (none so far); nothing skips at run time.
 | | test_status_shows_the_schedulers_failure_reason (qdel: exit 137, `100: assumedly after job`) | pass |
 | | test_tool_alias_and_config_resolve (`[tools.sort] commands`, `hpc config resolve`) | pass |
 | test_goldens.py | test_qsub_verifies_the_golden[4 SGE batch goldens] (`qsub -w v`; two verify, two get the expected site rejection) | pass |
-| test_failures.py | test_master_stopped (BUG-T6 fixed; fails if the Docker socket is not mounted) | pass |
-| | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass |
+| test_failures.py | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass |
+| | qmaster stopped | not automated (D-T40): the `master_down` capture scenario and a unit test pin the error |
+| test_trace.py | test_flag_records_and_compares_clean (`hpc --trace`, `hpc trace compare --fixtures`) | pass |
+| | test_config_enabled_trace (`[trace] enabled`, dedupe across invocations) | pass |
+| | test_bundle_is_scrubbed_and_replays (`hpc trace bundle`) | pass |
 | | shared FS missing | not automated (D-T23); see "Manual checks" |
 
 ### Manual checks

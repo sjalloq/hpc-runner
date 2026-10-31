@@ -1,6 +1,9 @@
-"""Infrastructure failures: qmaster stopped, an exec node killed.
+"""Infrastructure failures: an exec node killed mid-job.
 
-See docs/dev/testbed/TESTBED_PLAN.md section 5.
+See docs/dev/testbed/TESTBED_PLAN.md section 5. The stopped-qmaster case is
+not here (D-T40): the capture's ``master_down`` scenario records qstat's
+failure and the unit suite pins the ``SchedulerUnavailableError`` it must
+become; a live test only measured commlib's give-up time.
 """
 
 from __future__ import annotations
@@ -10,17 +13,11 @@ from collections.abc import Iterator
 
 import pytest
 
-from hpc_runner.core.exceptions import SchedulerUnavailableError
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
-from hpc_runner.schedulers.base import BaseScheduler
 from tests.integration.cluster import Cluster
 
-#: Against a stopped master, qstat's commlib gives up after about 45 s (observed 43.5 s
-#: on gridengine 8.1.9). The error must come from qstat's own stderr, so it must
-#: land before BaseScheduler.COMMAND_TIMEOUT (60 s) turns it into a timeout.
-FAIL_WITHIN = BaseScheduler.COMMAND_TIMEOUT
 RECOVER_TIMEOUT = 90.0
 #: Statuses that say "did not finish normally" (docs/dev/testbed/TESTBED_REVIEW.md D-T24).
 FAILED_FAMILY = {JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT}
@@ -45,32 +42,6 @@ def _submit(cluster: Cluster, spec: JobSpec) -> JobResult:
 def _job_id(result: JobResult) -> str:
     assert result.job_id is not None
     return result.job_id
-
-
-def test_master_stopped(cluster: Cluster) -> None:
-    """qmaster down: get_status raises SchedulerUnavailableError; recovers after.
-
-    The oracle is the specific error built from qstat's stderr (BUG-T6): the
-    command-timeout path raises SchedulerTimeoutError and fails this test.
-    """
-    scheduler = cluster.scheduler()
-    job_id = _job_id(_submit(cluster, JobSpec("sleep 300", name="orphan")))
-    assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
-
-    cluster.stop_master()
-    try:
-        started = time.monotonic()
-        with pytest.raises(SchedulerUnavailableError, match="qmaster") as excinfo:
-            scheduler.get_status(job_id)
-        elapsed = time.monotonic() - started
-        assert elapsed < FAIL_WITHIN, elapsed
-        assert "unable to contact qmaster" in str(excinfo.value), excinfo.value
-    finally:
-        cluster.start_master()
-        cluster.wait_ready(RECOVER_TIMEOUT)
-
-    assert scheduler.get_status(job_id) in {JobStatus.RUNNING, JobStatus.PENDING}
-    assert scheduler.cancel(job_id)
 
 
 def test_node_killed(cluster: Cluster) -> None:

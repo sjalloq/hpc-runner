@@ -342,8 +342,22 @@ the suite is green now and the fix flips the test to a hard pass.
   string "unknown", which under `docker exec` (no `USER`) matched nobody's
   jobs; they now share `core.host.current_user()` with a `getpass`
   fallback, as `Host.capture` already did.
-- Suite time: about 4 min per Python on the default stack; the master-stop
-  (95 s, the 60 s command timeout) and `h_rt` (61 s) tests are inherent.
+- Suite time: about 4 min per Python on the default stack; the `h_rt`
+  (61 s) and node-kill tests are inherent (the master-stop test, 95 s, was
+  removed by D-T40).
+- **D-T40 no live stopped-qmaster test** (user, 2026-10-31 evening).
+  `test_master_stopped` was removed. What it protected (BUG-T6: an
+  unreachable qmaster raises `SchedulerUnavailableError`, never an empty
+  listing or UNKNOWN) is pinned by the `master_down` capture scenario and
+  the unit test over `qstat_master_down.json`, and a flavour whose qstat
+  words the error differently changes the fixture. What only the live test
+  added was commlib's give-up time against our 60 s command timeout
+  (observed 43.5 s, 45 s and twice over 60 s on the same stack: ARP and
+  retry schedule, not our code) and "status works again after restart",
+  which exercises Docker and SGE, not hpc-runner (each qstat is fresh).
+  Jobs keep running on the execds while the master is down; what stops is
+  answers, and the message for that is covered. `test_node_killed` stays:
+  a lost node is a real mid-job event and `failed 19` is our path.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does
@@ -356,8 +370,9 @@ the suite is green now and the fix flips the test to a hard pass.
   and `failed 37`.
 - **BUG-T6 an unreachable qmaster is reported as UNKNOWN, not an error.**
   *Fixed 2026-10-31: `_qstat_xml` raises `SchedulerUnavailableError` when
-  qstat's stderr names qmaster/commlib/a connection failure; the test is
-  no longer an xfail and requires the error within 10 s.*
+  qstat's stderr names qmaster/commlib/a connection failure. Pinned by the
+  unit test over the captured `qstat_master_down.json`; the live test was
+  removed the same day (D-T40).*
   `SGEScheduler._active_states` runs `qstat -xml -u '*'` with `check=False`
   and treats any non-zero exit as "nothing active" (to tolerate sites whose
   qstat exits 1 on an empty queue). With the master stopped, qstat fails at
