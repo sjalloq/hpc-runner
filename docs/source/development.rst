@@ -59,10 +59,11 @@ qmaster, two execution hosts and a login container, all in ``testbed/``.
 
 .. code-block:: bash
 
-   make -C testbed sge-up      # build the image and start the cluster (~20 s)
-   make -C testbed sge-test    # run the suite inside the login container
-   make -C testbed sge-shell   # a shell there, for qstat/qacct by hand
-   make -C testbed sge-down    # remove containers, network and volumes
+   hpc-testbed up              # build the image and start the cluster (~20 s)
+   hpc-testbed pytest          # run the suite inside the login container
+   hpc-testbed shell           # a shell there, for qstat/qacct by hand
+   hpc-testbed down            # remove containers, network and volumes
+   hpc-testbed pytest --up     # up, pytest, down in one command
 
 ``PY=3.11`` selects the Python the suite runs under and
 ``PYTEST_ARGS="-k submit -x"`` passes options through. The same job runs

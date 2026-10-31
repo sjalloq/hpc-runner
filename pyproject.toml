@@ -57,6 +57,9 @@ all = [
 
 [project.scripts]
 hpc = "hpc_runner.cli.main:main"
+# Developer tool: drives the Docker scheduler testbed from a checkout
+# (testbed/README.md). Stdlib only; a no-op without the repository.
+hpc-testbed = "hpc_runner._testbed:main"
 
 [project.urls]
 Homepage = "https://github.com/sjalloq/hpc-runner"

@@ -67,9 +67,10 @@ jobs:
   #
   # Pull requests run Python 3.12 only; pushes to main run the full
   # 3.10-3.12 matrix. Each cell runs the suite twice: once on the default
-  # stack and once with SLOW_ACCOUNTING=1 for the one test that needs it
-  # (docs/dev/testbed/TESTBED_REVIEW.md D-T22). The tests run inside the login container, so
-  # no Python is set up on the runner.
+  # stack and once with --slow-accounting for the one test that needs it
+  # (docs/dev/testbed/TESTBED_REVIEW.md D-T22). The tests run inside the login
+  # container; the runner only needs Python for the hpc-testbed driver
+  # (src/hpc_runner/_testbed.py, stdlib only), which wraps docker compose.
   integration:
     needs: [lint, test]
     runs-on: ubuntu-latest
@@ -84,24 +85,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the testbed driver
+        run: pip install -e .
+
       - name: Start the SGE stack
-        run: make -C testbed sge-up
+        run: hpc-testbed up
 
       - name: Integration tests (Python ${{ matrix.python }})
-        run: make -C testbed sge-test PY=${{ matrix.python }} PYTEST_ARGS="--require-cluster"
-
-      # sge-test always writes testbed/junit-<PY>.xml; keep the first run's
-      # report out of the way of the second.
-      - name: Keep the default-stack report
-        run: mv testbed/junit-${{ matrix.python }}.xml testbed/junit-${{ matrix.python }}-default.xml
+        run: >
+          hpc-testbed pytest --py ${{ matrix.python }}
+          --junit testbed/junit-${{ matrix.python }}-default.xml
 
       - name: Restart the stack with slow accounting
         run: |
-          make -C testbed sge-down
-          make -C testbed sge-up SLOW_ACCOUNTING=1
+          hpc-testbed down
+          hpc-testbed up --slow-accounting
 
       - name: Slow-accounting tests (Python ${{ matrix.python }})
-        run: make -C testbed sge-test PY=${{ matrix.python }} PYTEST_ARGS="--require-cluster -k slow_accounting"
+        run: hpc-testbed pytest --py ${{ matrix.python }} -- -k slow_accounting
 
       - name: Upload JUnit reports
         if: always()
@@ -115,7 +120,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p testbed-logs
-          make -C testbed sge-logs > testbed-logs/compose.log 2>&1 || true
+          hpc-testbed logs > testbed-logs/compose.log 2>&1 || true
           for c in master exec1 exec2 login; do
             docker cp "$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
           done
@@ -130,4 +135,4 @@ jobs:
 
       - name: Tear down the stack
         if: always()
-        run: make -C testbed sge-down
+        run: hpc-testbed down

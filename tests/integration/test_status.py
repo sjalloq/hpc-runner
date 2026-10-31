@@ -17,7 +17,7 @@ from hpc_runner.schedulers import _subprocess
 from tests.fakes import SEAM
 from tests.integration.cluster import Cluster
 
-#: ``qconf -sconf`` line of the slow-accounting stack (``make sge-up SLOW_ACCOUNTING=1``).
+#: ``qconf -sconf`` line of the slow-accounting stack (``hpc-testbed up --slow-accounting``).
 SLOW_FLUSH = "flush_time=00:00:15"
 #: D-T6: on the slow stack qacct lags the job end by a variable 10-13 s.
 QACCT_WINDOW = 30.0

@@ -16,7 +16,7 @@ Candidates for later phases (plan section 6, phase 5): Open Cluster Scheduler
 ## Support matrix
 
 One row per integration test, grouped by file (tests/integration/). The
-`soge` column is the result of `make -C testbed sge-test` on 2026-10-29:
+`soge` column is the result of the integration suite (`hpc-testbed pytest`) on 2026-10-29:
 `pass`; `xfail(BUG-Tn)` for a strict expected failure pinning a bug listed
 in docs/dev/testbed/TESTBED_REVIEW.md ("Phase 3 findings"), which flips to a hard pass when
 fixed; `skip(reason)` for a test this flavour or stack cannot run. A test
@@ -32,7 +32,7 @@ skipped for a flavour with `@pytest.mark.flavour` would also appear here
 | | test_interactive | pass |
 | | test_interactive_no_slot (all eight slots filled, D-T28) | pass |
 | test_status.py | test_queued_running_done | pass |
-| | test_slow_accounting_window | skip(needs `sge-up SLOW_ACCOUNTING=1`, D-T22); pass on that stack |
+| | test_slow_accounting_window | skip(needs `hpc-testbed up --slow-accounting`, D-T22); pass on that stack |
 | | test_aged_out | pass |
 | test_dependencies.py | test_afterok_cascade | pass |
 | | test_afternotok | pass |
@@ -73,7 +73,7 @@ skipped for a flavour with `@pytest.mark.flavour` would also appear here
   ("can't open output file") or it fails at once, `get_status` reports
   FAILED (`Eqw`) or the job never leaves the queue, and `read_stdout()`
   returns None because the output file was never created on the shared
-  volume. Remove the override and `make sge-up` to restore the stack.
+  volume. Remove the override and `hpc-testbed up` to restore the stack.
 
 Flags and output formats that differ between flavours are noted under the
 flavour's row once a second flavour exists.

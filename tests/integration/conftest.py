@@ -1,7 +1,7 @@
 """Integration-test fixtures (docs/dev/testbed/TESTBED_PLAN.md section 4.2).
 
 The suite runs inside the testbed's ``login`` container; the stack's
-lifecycle belongs to ``make -C testbed sge-up/down``, not to pytest. The
+lifecycle belongs to ``hpc-testbed up/down``, not to pytest. The
 session fixture only checks readiness and skips (or, with
 ``--require-cluster``, fails) when no scheduler is reachable.
 """

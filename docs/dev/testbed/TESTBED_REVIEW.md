@@ -275,6 +275,15 @@ the suite is green now and the fix flips the test to a hard pass.
   because `qsub -V` reads the process environment, not `Host.env`.
 - **D-T35 fixture additions**: `docker_available` on the protocol,
   `start_node(name)`, `wait_ready()` (polls `ready.sh`), `hpc_cli` path.
+- **D-T36 the Makefile is replaced by `hpc-testbed`** (test QA review,
+  2026-10-31, §5 "Testbed driver"). `src/hpc_runner/_testbed.py` is a
+  stdlib-only entry point with `up`, `down`, `pytest`, `shell`, `logs`,
+  `clean`, `--flavour`, `--py`, `--slow-accounting` and `pytest --up
+  [--keep]`; it drives `docker compose` by subprocess (testcontainers was
+  not worth a dependency for six commands) and prints every command.
+  `pytest` always passes `--require-cluster`. CI installs the package for
+  the driver and no longer renames the first JUnit report (`--junit`).
+  The inside-out design is unchanged: tests still run in `login`.
 - Suite time: about 4 min per Python on the default stack; the master-stop
   (95 s, the 60 s command timeout) and `h_rt` (61 s) tests are inherent.
 - **BUG-T5 signal deaths report `exit_code None`.** qacct writes

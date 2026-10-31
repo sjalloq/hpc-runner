@@ -69,11 +69,13 @@ make -C docs html SPHINXOPTS="-W --keep-going"
 # Regenerate golden job scripts after an intended template change
 pytest tests/unit/test_golden.py --update-golden
 
-# Integration tests against a real SGE in Docker (testbed/README.md)
-make -C testbed sge-up            # build image, start master/exec1/exec2/login, wait for ready.sh (~20 s)
-make -C testbed sge-test          # pytest tests/integration inside login as tester; PY=3.11 to change
-make -C testbed sge-shell         # shell in login; `pytest tests/integration -m integration --pdb`
-make -C testbed sge-down          # remove containers, network and volumes
+# Integration tests against a real SGE in Docker (testbed/README.md); the
+# hpc-testbed driver (src/hpc_runner/_testbed.py) wraps docker compose
+hpc-testbed up                    # build image, start master/exec1/exec2/login, wait for ready.sh (~20 s)
+hpc-testbed pytest -- -k submit   # pytest tests/integration inside login as tester; --py 3.11 to change
+hpc-testbed shell                 # shell in login; `pytest tests/integration -m integration --pdb`
+hpc-testbed down                  # remove containers, network and volumes
+hpc-testbed pytest --up           # the three above in one go (--keep leaves the stack running)
 
 # CLI usage
 hpc --help

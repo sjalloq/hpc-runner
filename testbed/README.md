@@ -5,9 +5,13 @@ Real schedulers in Docker Compose, used by `tests/integration`. Design:
 (29 locally, 28 on CI) and Compose 2.38 features are used; no registry, the
 image is built locally each time (Docker's layer cache makes a rebuild free).
 
+The stack is driven by `hpc-testbed` (`src/hpc_runner/_testbed.py`, installed
+with the package; stdlib only, wraps `docker compose` and prints every command
+it runs). It needs a checkout: it finds `testbed/<family>/<flavour>/compose.yml`
+above the current directory and uses `-p hpc-testbed-<flavour>`.
+
 ```
 testbed/
-  Makefile            sge-up / sge-down / sge-shell / sge-logs / sge-test / sge-clean (FLAVOUR=soge)
   common/             users.sh (alice 1001, bob 1002, tester 1003), wait-for.sh (poll with timeout)
   sge/README.md       SGE flavours and the per-flavour support matrix
   sge/soge/           Debian trixie gridengine 8.1.9 (Son of Grid Engine lineage)
@@ -23,14 +27,20 @@ testbed/
 ## Running by hand
 
 ```bash
-make -C testbed sge-up            # build, start, wait for ready.sh (90 s cap)
-make -C testbed sge-shell         # bash in login as tester, /opt/venv/3.12/bin on PATH (PY=3.11 to change)
-make -C testbed sge-test          # pytest tests/integration inside login; JUnit XML copied to testbed/junit-<PY>.xml
-make -C testbed sge-logs          # all logs; SERVICE=master for one container
-make -C testbed sge-clean         # delete every job, wait for an empty queue
-make -C testbed sge-down          # containers, network and volumes removed
-make -C testbed sge-up SLOW_ACCOUNTING=1   # master with a 15 s accounting flush (one test only)
+hpc-testbed up                    # build, start, wait for ready.sh (--ready-timeout 90, --no-build)
+hpc-testbed shell                 # bash in login as tester, /opt/venv/3.12/bin on PATH (--py 3.11 to change)
+hpc-testbed pytest                # tests/integration inside login; JUnit XML copied to testbed/junit-<py>.xml
+hpc-testbed pytest -- -k submit -x   # everything after -- goes to pytest
+hpc-testbed pytest --up [--keep]  # up, pytest, down (--keep leaves the stack running)
+hpc-testbed logs [master ...]     # container logs, all or named services
+hpc-testbed clean                 # delete every job, wait for an empty queue
+hpc-testbed down                  # containers, network and volumes removed
+hpc-testbed up --slow-accounting  # master with a 15 s accounting flush (one test only)
+hpc-testbed --flavour <name> ...  # another flavour under testbed/<family>/ (default soge)
 ```
+
+`hpc-testbed pytest` always passes `-m integration --require-cluster`: inside
+the testbed an unreachable scheduler is a broken testbed and fails the run.
 
 Inside `login` the suite's environment is already set: `HPC_SCHEDULER=sge`,
 `HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml`,
@@ -46,14 +56,14 @@ Shared volumes: `/work` (mode 1777: job scripts, output, sentinels),
 
 ## Debugging inside login
 
-- `make -C testbed sge-shell`, then `qstat -f`, `qhost`, `qconf -sq all.q`,
+- `hpc-testbed shell`, then `qstat -f`, `qhost`, `qconf -sq all.q`,
   `qacct -j <id>`, `sudo -u alice qsub ...`. The in-container form of the
   suite is `pytest tests/integration -m integration` (the `-m` overrides
   pyproject's `-m 'not integration'` addopts; add `--pdb`, `-k`, ... as usual).
 - `login` is an admin host as well as a submit host (every `qconf -s*` read
   needs one), so root on `login` is an SGE manager: `sudo qdel -u '*'`,
   `sudo qconf ...` work from there.
-- Daemon logs: `make -C testbed sge-logs SERVICE=master` (qmaster prints to
+- Daemon logs: `hpc-testbed logs master` (qmaster prints to
   stdout under `SGE_ND=1`), or inside the containers
   `/var/spool/gridengine/qmaster/messages` and
   `/var/spool/gridengine/execd/<host>/messages`; the entrypoints append to
@@ -74,17 +84,18 @@ The `integration` job in `.github/workflows/ci.yml` runs this stack on
 registry (the image is built in the job). Pull requests run Python 3.12 only;
 pushes to `main` run 3.10, 3.11 and 3.12, one matrix cell each. A cell is:
 
-1. `make -C testbed sge-up`, then `make -C testbed sge-test PY=<ver>
-   PYTEST_ARGS="--require-cluster"` (a missing cluster is a failure, not a
-   skip); the report is kept as `testbed/junit-<ver>-default.xml`.
-2. `sge-down`, `sge-up SLOW_ACCOUNTING=1`, then `sge-test` again with
-   `-k slow_accounting` for the one test that needs the 15 s flush
-   (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its report is `testbed/junit-<ver>.xml`.
+1. `pip install -e .` for the driver, `hpc-testbed up`, then `hpc-testbed
+   pytest --py <ver> --junit testbed/junit-<ver>-default.xml` (a missing
+   cluster is a failure, not a skip).
+2. `hpc-testbed down`, `hpc-testbed up --slow-accounting`, then `hpc-testbed
+   pytest --py <ver> -- -k slow_accounting` for the one test that needs the
+   15 s flush (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its report is
+   `testbed/junit-<ver>.xml`.
 
 Artefacts: `junit-<ver>` (both XML reports, always uploaded) and, on failure,
-`testbed-logs-<ver>` with `compose.log` (`make sge-logs`) and each container's
-`/var/log/testbed.log` as `<name>-testbed.log`. `make sge-down` runs last
-whatever happened.
+`testbed-logs-<ver>` with `compose.log` (`hpc-testbed logs`) and each
+container's `/var/log/testbed.log` as `<name>-testbed.log`. `hpc-testbed down`
+runs last whatever happened.
 
 ## Adding a scheduler or a flavour
 
@@ -97,8 +108,9 @@ configuration and `hpc-runner-testbed.toml`. The fixture classes
 one family; `--flavour <name>` selects the stack that is up and
 `@pytest.mark.flavour(...)` skips what a flavour cannot do, which is what fills
 `testbed/sge/README.md`. A new family (Slurm) is `testbed/slurm/<flavour>/`
-plus a `SlurmCluster` with the same interface. Add Makefile targets with the
-family prefix (`slurm-up`, ...) using the same compose invocation pattern.
+plus a `SlurmCluster` with the same interface. The driver needs nothing new:
+`hpc-testbed --flavour <name>` finds the compose file under any family and
+passes the family as `--cluster`.
 
 ## Phase 0 spike results (2026-10-29, gridengine 8.1.9+dfsg-13.1 on trixie)
 
@@ -136,12 +148,12 @@ wait` never forwards SIGTERM (the entrypoint traps and forwards; master
 ## Phase 1 acceptance (measured 2026-10-29 on the development laptop)
 
 - Image: 637 MB; full `--no-cache` build 44.5 s; cached rebuild check 1.2 s.
-- `make -C testbed sge-up` after the image is built, fresh volumes: ready.sh
+- `hpc-testbed up` after the image is built, fresh volumes: ready.sh
   green in **21.0 s** (master configured 1 s after its start, login's three
   editable installs done at +7 s; the rest is health polling and the
   `qsub -sync y` readiness probe).
-- `make sge-down`: **8.4 s** (login 0.3 s under tini, execd 0.9 s, qmaster
-  6.9 s controlled shutdown); `make sge-up` again: **19.6 s**. The plan's
+- `hpc-testbed down`: **8.4 s** (login 0.3 s under tini, execd 0.9 s, qmaster
+  6.9 s controlled shutdown); `hpc-testbed up` again: **19.6 s**. The plan's
   20 s combined target was a guess (docs/dev/testbed/TESTBED_REVIEW.md D-T20); 28 s is the
   recorded number.
 - `qsub -b y hostname` as alice twice: exec2 then exec1; `qacct -j` had the
@@ -150,7 +162,7 @@ wait` never forwards SIGTERM (the entrypoint traps and forwards; master
 - `module load dummy_tool` in a batch job through hpc-runner
   (`JobSpec(modules=["dummy_tool"], modules_path=["/opt/modulefiles"])`):
   COMPLETED, `DUMMY_TOOL_VERSION=1.0`.
-- `make sge-test` with PY=3.12 / 3.11 / 3.10: the smoke test passes once
+- The suite with `--py` 3.12 / 3.11 / 3.10: the smoke test passes once
   per Python (4.2 s / 3.2 s / 4.1 s); `testbed/junit-<PY>.xml` copied out.
 - Node control from login as tester: `sudo docker kill exec1` then
   `sudo docker start exec1`: exec1 back in `qhost` with numeric load 5 s after

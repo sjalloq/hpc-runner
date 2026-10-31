@@ -1,4 +1,4 @@
-"""End-to-end check for ``make -C testbed sge-test``: one batch job, start to finish."""
+"""End-to-end check for ``hpc-testbed pytest``: one batch job, start to finish."""
 
 from __future__ import annotations
 
