@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import uuid
 from collections.abc import Sequence
@@ -21,6 +22,7 @@ from hpc_runner.core.exceptions import (
     SchedulerUnavailableError,
     SubmissionError,
 )
+from hpc_runner.core.job import RENDER_ORDER
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import (
     HPC_EXIT_DEP_FAILED,
@@ -99,6 +101,9 @@ def get_script_dir() -> Path:
 #: Default for ``[schedulers.sge] sentinel_ttl_days``: how long an exit
 #: sentinel is kept before the sweep at scheduler construction removes it.
 DEFAULT_SENTINEL_TTL_DAYS = 30
+
+#: Any whitespace: a #$ directive line is split on it (BUG-T1).
+_WHITESPACE = re.compile(r"\s")
 
 
 def get_exit_dir(sweep_ttl_days: float = DEFAULT_SENTINEL_TTL_DAYS) -> Path:
@@ -372,6 +377,7 @@ class SGEScheduler(BaseScheduler):
         special cases that aren't simple attribute mappings.
         """
         directives: list[str] = []
+        self._check_directive_values(job)
 
         # 1. Render standard attributes via protocol
         directives.extend(self.render_directives(job))
@@ -409,6 +415,35 @@ class SGEScheduler(BaseScheduler):
             directives.append("#$ " + " ".join(passthrough))
 
         return directives
+
+    def _check_directive_values(self, job: Job) -> None:
+        """Refuse a value a ``#$`` line cannot carry (BUG-T1, decision D-T41).
+
+        SGE parses a directive line like a command line and has no quoting,
+        so ``#$ -o /data/my run/x.out`` becomes two arguments and qsub fails
+        with "Unknown option". Every option stays in the script (the script
+        is the record of how a job was submitted), so a value with
+        whitespace is refused here with a message that names it, instead of
+        qsub's.
+
+        Raises:
+            SubmissionError: A rendered attribute or resource contains
+                whitespace.
+        """
+        offending: list[str] = []
+        for attr_name in RENDER_ORDER:
+            value = self.render_value(job, attr_name)
+            if isinstance(value, str) and _WHITESPACE.search(value):
+                offending.append(f"{attr_name} = {value!r}")
+        for resource in job.resources:
+            text = f"{resource.name}={resource.value}"
+            if _WHITESPACE.search(text):
+                offending.append(f"resource {text!r}")
+        if offending:
+            raise SubmissionError(
+                "SGE cannot take a value with whitespace in a job script directive "
+                "(#$ lines are split on spaces and have no quoting): " + "; ".join(offending),
+            )
 
     # =========================================================================
     # Job Submission

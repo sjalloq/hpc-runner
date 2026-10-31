@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 
+from hpc_runner.core.exceptions import SubmissionError
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
@@ -146,13 +147,18 @@ def test_cwd(cluster: Cluster) -> None:
     _check_cwd(cluster, "subdir")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BUG-T1: #$ -o path with a space is split by the directive parser "
-        "(docs/dev/testbed/TESTBED_REVIEW.md)"
-    ),
-)
 def test_cwd_with_space(cluster: Cluster) -> None:
-    """BUG-T1: a workdir containing a space is submitted and used as-is."""
-    _check_cwd(cluster, "sub dir")
+    """BUG-T1/D-T41: a workdir with a space is refused before qsub, naming the value.
+
+    A ``#$ -o`` line is split on the space by SGE's directive parser and
+    qsub says only "Unknown option"; every option stays in the script, so
+    hpc-runner refuses the value itself.
+    """
+    sub = cluster.workdir / "sub dir"
+    sub.mkdir()
+    spec = JobSpec("pwd", name="cwd-space", workdir=str(sub))
+    job = resolve(spec, cluster.config(), cluster.host())
+    with pytest.raises(SubmissionError, match="whitespace") as excinfo:
+        cluster.scheduler().submit(job)
+    assert "sub dir" in str(excinfo.value)
+    assert cluster.run(["qstat", "-u", "tester"]).stdout.strip() == ""  # nothing was submitted

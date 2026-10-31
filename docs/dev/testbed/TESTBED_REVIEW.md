@@ -231,11 +231,12 @@ Product code was not changed in this session; these are for you to triage.
 Each has an integration test marked `xfail(strict=True)` naming the id, so
 the suite is green now and the fix flips the test to a hard pass.
 
-- **BUG-T1 workdir with a space breaks submission.** `#$ -o <workdir>/x.out`
-  is split on whitespace by SGE's directive parser, so `qsub` fails with
-  "Unknown option". `SGEScheduler.render_value` joins the path unquoted.
-  SGE directive lines may not support quoting at all; the fix may be to
-  pass `-o`/`-e` (and `-wd`) on the qsub argv instead. `test_cwd_with_space`.
+- **BUG-T1 workdir with a space breaks submission.** *Closed 2026-10-31 by
+  decision D-T41: the value is refused before qsub with a `SubmissionError`
+  naming it; options stay in the script.* `#$ -o <workdir>/x.out` is split
+  on whitespace by SGE's directive parser, so `qsub` fails with "Unknown
+  option". SGE directive lines have no quoting. `test_cwd_with_space` now
+  asserts the refusal and that nothing was submitted.
 - **BUG-T2 `list_completed_jobs(user=...)` returns a phantom record.** *Fixed
   2026-10-31 (trace work, D-TR12): `parse_qacct_records` keeps only blocks
   with a `jobnumber`.* `qacct -o <user> -j` ends with a per-owner summary
@@ -358,6 +359,16 @@ the suite is green now and the fix flips the test to a hard pass.
   Jobs keep running on the execds while the master is down; what stops is
   answers, and the message for that is covered. `test_node_killed` stays:
   a lost node is a real mid-job event and `failed 19` is our path.
+- **D-T41 directive values with whitespace are refused, not moved to argv**
+  (user, 2026-10-31 evening; closes BUG-T1). The alternative, passing
+  `-o`/`-e`/`-wd` on the qsub command line where quoting works, was
+  rejected: the job script is the record of how a job was submitted and
+  every option belongs in it. A directory with a space is legal on Linux
+  and turns up (synced desktops, Windows mounts) but is rare on a cluster,
+  so the right cost is a clear early error. `_check_directive_values`
+  walks `RENDER_ORDER` and the resources before rendering and raises
+  `SubmissionError` naming each offending value; passthrough arguments
+  are the user's own text and are not checked.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does

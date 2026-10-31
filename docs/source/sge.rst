@@ -103,6 +103,14 @@ else the submit directory) before rendering, so ``-o``/``-e`` are always
 absolute: ``use_cwd`` only decides where the command runs, and the recorded
 ``stdout_path`` is right either way.
 
+A ``#$`` line is parsed like a command line and has no quoting, so a value
+with whitespace (a working directory called ``my run``, a queue or resource
+with a space) cannot be written as a directive. hpc-runner keeps every
+option in the script, where it is the record of how the job was submitted,
+rather than moving some onto the ``qsub`` command line; such a value is
+refused before ``qsub`` with a ``SubmissionError`` that names it, instead
+of qsub's "Unknown option".
+
 SGE rejects job names that start with a digit or contain whitespace,
 ``/``, ``:``, ``@``, ``\``, ``*`` or ``?``. hpc-runner sanitises the name
 it renders: a leading digit gets a ``j`` prefix and each invalid character

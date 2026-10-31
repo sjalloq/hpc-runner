@@ -1255,3 +1255,34 @@ class TestSGEUnits:
     def test_time_rendered_h_rt(self):
         assert "#$ -l h_rt=4:00:00" in self._script(make_job(time="4h"))
         assert "#$ -l h_rt=48:00:00" in self._script(make_job(time="2d"))
+
+
+class TestDirectiveWhitespace:
+    """BUG-T1 / D-T41: a value a ``#$`` line cannot carry is refused before qsub."""
+
+    def test_workdir_with_space_is_refused(self, tmp_path, mock_sge_commands):
+        from hpc_runner.core.exceptions import SubmissionError
+        from hpc_runner.core.job import RENDER_ORDER
+
+        scheduler = SGEScheduler(HPCConfig())
+        workdir = tmp_path / "my run"
+        workdir.mkdir()
+        job = make_job("pwd", workdir=str(workdir))
+        with pytest.raises(SubmissionError, match="whitespace") as excinfo:
+            scheduler.preview(job)
+        assert "stdout = " in str(excinfo.value) and "my run" in str(excinfo.value)
+        with pytest.raises(SubmissionError):
+            scheduler.submit(job)
+        assert not any(call.args[0][0] == "qsub" for call in mock_sge_commands.call_args_list)
+        assert "stdout" in RENDER_ORDER
+
+    def test_resource_with_space_is_refused(self, tmp_path):
+        from hpc_runner.core.exceptions import SubmissionError
+
+        job = make_job("pwd", workdir=str(tmp_path), resources=[{"name": "lic", "value": "a b"}])
+        with pytest.raises(SubmissionError, match="resource 'lic=a b'"):
+            SGEScheduler(HPCConfig()).preview(job)
+
+    def test_name_with_space_is_sanitised_not_refused(self, tmp_path):
+        job = make_job("pwd", workdir=str(tmp_path), name="9 lives")
+        assert "#$ -N j9_lives" in SGEScheduler(HPCConfig()).preview(job).splitlines()
