@@ -41,3 +41,16 @@ def test_array_1_to_5(cluster: Cluster) -> None:
     assert cluster.scheduler().get_exit_code(result.task_id(3)) == 1
     assert cluster.scheduler().get_exit_code(result.task_id(1)) == 0
     assert len({result.task_stdout_path(n) for n in range(1, 6)}) == 5
+
+
+def test_array_concurrency_limit_is_accepted(cluster: Cluster) -> None:
+    """``%MAX`` renders as SGE's ``-tc``; qsub accepts it and every task runs."""
+    spec = JobSpec('echo "task $SGE_TASK_ID"', name="arrtc", array="1-6%2")
+    job = resolve(spec, cluster.config(), cluster.host())
+    script = cluster.scheduler().preview(job)
+    assert "#$ -t 1-6\n" in script
+    assert "#$ -tc 2\n" in script
+    result = cluster.scheduler().submit(job)
+    assert isinstance(result, ArrayJobResult)
+    statuses = result.wait(poll_interval=0.5, timeout=90)
+    assert statuses == dict.fromkeys(range(1, 7), JobStatus.COMPLETED)

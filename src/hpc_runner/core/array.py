@@ -46,11 +46,29 @@ class ArrayRange:
         )
 
     @property
-    def range_str(self) -> str:
-        """Format as a scheduler range string."""
+    def task_range(self) -> str:
+        """``START-END[:STEP]``: the task range without the concurrency limit.
+
+        This part of the grammar is spelled the same way by every scheduler
+        (SGE ``-t``, Slurm ``--array``, PBS ``-J``, LSF ``[n-m:s]``). The
+        concurrency limit is not: each scheduler renders
+        :attr:`max_concurrent` in its own grammar (SGE ``-tc N``, PBS
+        ``-W max_run_subjobs=N``, Slurm and LSF ``%N``).
+        """
         s = f"{self.start}-{self.end}"
         if self.step != 1:
             s += f":{self.step}"
+        return s
+
+    @property
+    def range_str(self) -> str:
+        """The range in hpc-runner's own grammar, ``START-END[:STEP][%MAX]``.
+
+        For display and round-tripping through :meth:`parse` only; it is not
+        scheduler text. Schedulers render :attr:`task_range` and
+        :attr:`max_concurrent` separately.
+        """
+        s = self.task_range
         if self.max_concurrent:
             s += f"%{self.max_concurrent}"
         return s

@@ -33,6 +33,7 @@ from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_depende
 from hpc_runner.schedulers.sge.args import (
     MEMORY_PER,
     SGEArrayArg,
+    SGEArrayConcurrencyArg,
     SGECpuArg,
     SGECwdArg,
     SGEErrorArg,
@@ -221,6 +222,7 @@ class SGEScheduler(BaseScheduler):
         # Keep references for special-case rendering
         self._mem_arg = cast(SGEMemArg, self.ARG_RENDERERS["mem"])
         self._array_arg = SGEArrayArg()
+        self._array_concurrency_arg = SGEArrayConcurrencyArg()
         self._hold_arg = SGEHoldArg()
         self._merge_output_arg = SGEMergeOutputArg()
 
@@ -357,9 +359,12 @@ class SGEScheduler(BaseScheduler):
             if d := self._merge_output_arg.to_directive(True):
                 directives.append(d)
 
-        # 3. Array job range
+        # 3. Array job: SGE spells the task range as -t and the concurrency
+        #    limit as a separate -tc (there is no %N suffix as in Slurm).
         if job.array is not None:
-            if d := self._array_arg.to_directive(job.array.range_str):
+            if d := self._array_arg.to_directive(job.array.task_range):
+                directives.append(d)
+            if d := self._array_concurrency_arg.to_directive(job.array.max_concurrent):
                 directives.append(d)
 
         # 4. Dependencies: one -hold_jid for every parent (it is afterany and

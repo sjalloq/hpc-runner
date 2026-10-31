@@ -30,6 +30,21 @@ class TestProperties:
         for text in ("1-100", "1-100:10", "1-100%5", "1-100:10%5"):
             assert ArrayRange.parse(text).range_str == text
 
+    @pytest.mark.parametrize(
+        ("text", "task_range", "limit"),
+        [
+            ("1-100", "1-100", None),
+            ("1-100:10", "1-100:10", None),
+            ("1-100%5", "1-100", 5),
+            ("1-100:10%5", "1-100:10", 5),
+        ],
+    )
+    def test_task_range_excludes_the_concurrency_limit(self, text, task_range, limit):
+        parsed = ArrayRange.parse(text)
+        assert parsed.task_range == task_range
+        assert parsed.max_concurrent == limit
+        assert "%" not in parsed.task_range
+
     def test_indices_is_a_range(self):
         assert ArrayRange(1, 10, 3).indices == range(1, 11, 3)
         assert list(ArrayRange(1, 10, 3).indices) == [1, 4, 7, 10]

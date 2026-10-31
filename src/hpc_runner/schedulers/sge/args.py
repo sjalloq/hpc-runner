@@ -232,9 +232,10 @@ class SGETimeArg(SchedulerArg[Duration]):
 
 
 class SGEArrayArg(SchedulerArg[str]):
-    """Array job range: -t range
+    """Array job task range: ``-t n[-m[:s]]``.
 
-    Range formats: 1-100, 1-100:10, 1,2,3,4
+    SGE's ``-t`` grammar has no concurrency limit; that is a separate
+    ``-tc`` option (:class:`SGEArrayConcurrencyArg`).
     """
 
     def __init__(self) -> None:
@@ -249,6 +250,23 @@ class SGEArrayArg(SchedulerArg[str]):
         if value is None:
             return None
         return f"#$ -t {value}"
+
+
+class SGEArrayConcurrencyArg(SchedulerArg[int]):
+    """Maximum number of array tasks running at once: ``-tc max_running_tasks``."""
+
+    def __init__(self) -> None:
+        super().__init__("tc", doc="Maximum concurrently running array tasks")
+
+    def to_args(self, value: int | None) -> list[str]:
+        if value is None:
+            return []
+        return ["-tc", str(value)]
+
+    def to_directive(self, value: int | None) -> str | None:
+        if value is None:
+            return None
+        return f"#$ -tc {value}"
 
 
 # =============================================================================

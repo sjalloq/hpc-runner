@@ -10,7 +10,8 @@
 #$ -l h_rt=0:30:00
 #$ -o /work/$JOB_NAME.$JOB_ID.out.$TASK_ID
 #$ -j y
-#$ -t 1-10:2%3
+#$ -t 1-10:2
+#$ -tc 3
 #$ -hold_jid 100,200,300
 
 # Exit on error

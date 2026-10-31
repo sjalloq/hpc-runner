@@ -470,8 +470,10 @@ remaining jobs:
 Array jobs
 ----------
 
-Set ``array`` on the spec for a scheduler array job (SGE: ``qsub -t``). The
-range is ``START-END[:STEP][%MAX_CONCURRENT]``. Array jobs are always batch;
+Set ``array`` on the spec for a scheduler array job. The range is
+``START-END[:STEP][%MAX_CONCURRENT]`` whatever the scheduler; each backend
+renders it in its own grammar (SGE: ``-t START-END[:STEP]`` plus
+``-tc MAX_CONCURRENT``). Array jobs are always batch;
 ``submit()`` returns an ``ArrayJobResult`` whose ``job_id`` is the base id:
 
 .. code-block:: python

@@ -108,6 +108,10 @@ becomes ``_`` (``--name "9 lives"`` is submitted as ``j9_lives``). The
 sanitised name is the one in ``-N``, ``$JOB_NAME`` and the recorded output
 path. Generated names (``<user>_<command>``) are unaffected.
 
+An array range ``START-END[:STEP][%MAX]`` renders as ``#$ -t START-END[:STEP]``
+and, when ``%MAX`` is given, a separate ``#$ -tc MAX`` (SGE's ``-t`` grammar
+has no concurrency suffix; ``-tc`` caps the number of tasks running at once).
+
 
 Custom resources
 ----------------

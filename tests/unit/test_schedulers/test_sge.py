@@ -914,11 +914,20 @@ class TestSGESubmissionContract:
         from hpc_runner.core.result import ArrayJobResult
 
         job = make_job(array="1-10:2%3", workdir=str(tmp_path))
-        assert "#$ -t 1-10:2%3" in scheduler.preview(job)
+        script = scheduler.preview(job)
+        # SGE has no %N suffix: the range is -t, the concurrency limit is -tc.
+        assert "#$ -t 1-10:2\n" in script
+        assert "#$ -tc 3\n" in script
+        assert "%3" not in script
         result = scheduler.submit(job)
         assert isinstance(result, ArrayJobResult)
         assert result.job_id == "12345"
         assert result.array.count == 5
+
+    def test_array_job_without_limit_has_no_tc(self, scheduler):
+        script = scheduler.preview(make_job(array="1-4"))
+        assert "#$ -t 1-4\n" in script
+        assert "-tc" not in script
 
     def test_interactive_runs_qrsh_and_returns_exit_code(self, scheduler):
         calls = []
