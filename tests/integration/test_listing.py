@@ -6,8 +6,6 @@ import re
 import time
 from pathlib import Path
 
-import pytest
-
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus
 from tests.integration.cluster import Cluster
@@ -94,7 +92,6 @@ def test_two_users(cluster: Cluster) -> None:
     assert [j.job_id for j in scheduler.list_active_jobs(user="alice")] == [alice_id]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-T2: qacct -o summary block parsed as a job")
 def test_completed_listing_by_user(cluster: Cluster) -> None:
     """BUG-T2: list_completed_jobs(user=bob) holds only bob's real records, no phantom entry."""
     bob_id = _submit_as(cluster, "bob", "bob-only", ["true"])

@@ -150,6 +150,9 @@ and ids in `manifest.json`). The unit suite's `mock_sge_commands` answers by
 whole argv from those files (`tests/fakes.py: make_sge_responder`) and the
 parser tests read them, so canned text is never typed from memory. Regenerate
 with `hpc-testbed capture` against a running stack when a scenario changes.
+The manifest records the argv behind every file; `hpc trace compare
+--fixtures` uses it to say which call shapes a trace has that no fixture
+covers (`src/hpc_runner/trace/`, design in `docs/dev/trace/DESIGN.md`).
 
 ### Developer notes (`docs/dev/`)
 

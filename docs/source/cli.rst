@@ -21,7 +21,7 @@ These options come before the subcommand:
   stderr) as one JSON file per call under ``DIR``, for this invocation. To
   record every invocation during a period of use, set ``[trace] enabled =
   true`` in the config instead (:ref:`trace-settings`); the flag wins when
-  both are given.
+  both are given. ``hpc trace`` reads a trace back (below).
 
 Errors are printed as one line, ``error: <message>``, and ``hpc`` exits 1.
 A Python traceback means a bug in hpc-runner.
@@ -157,3 +157,14 @@ Other commands
   error and warning, exit 1 on any error
 - ``hpc config resolve [-t TYPE] COMMAND...``: show the job ``COMMAND`` would
   get and which config layer supplied each value
+- ``hpc trace compare DIR [--fixtures FIXTURES] [--json]``: run every
+  scheduler output recorded under ``DIR`` (by ``--trace`` or ``[trace]``)
+  back through the parsers and list what they could not make sense of: a
+  parser exception, nothing parsed from text that holds something, a job
+  whose state maps to ``UNKNOWN``, a qacct field (exit status, runtime,
+  timestamps, failed reason) the record has but the result lacks. Each argv
+  *shape* (``qacct -j <arg>``, ``qstat -xml -u <arg>``, ...) is listed with
+  its call count. With ``--fixtures tests/unit/fixtures/sge`` the shapes
+  no captured fixture covers are listed too. Exits 1 on any finding or
+  uncovered shape, so it can run unattended over a trace directory. A
+  finding is a parser bug: open an issue with the record attached.

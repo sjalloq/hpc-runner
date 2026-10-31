@@ -218,3 +218,26 @@ class TestActivation:
         with caplog.at_level("WARNING", logger="hpc_runner.trace"):
             assert tracer.record(["qstat"], returncode=0, stdout="", stderr="", elapsed=0) is None
         assert "trace: cannot write" in caplog.text
+
+
+class TestDedupeAcrossProcesses:
+    def test_seeded_from_todays_directory(self, tmp_path):
+        first = activate(tmp_path)
+        run_command([PY, "-c", "print('same')"], timeout=10)
+        deactivate()
+        # A new process: a fresh tracer over the same directory.
+        second = activate(tmp_path)
+        assert second is not first
+        run_command([PY, "-c", "print('same')"], timeout=10)
+        assert len(_records(tmp_path)) == 1
+        run_command([PY, "-c", "print('other')"], timeout=10)
+        assert len(_records(tmp_path)) == 2
+
+    def test_seed_ignores_junk(self, tmp_path):
+        day = tmp_path / date.today().isoformat()
+        day.mkdir()
+        (day / "junk.json").write_text("[1]")
+        (day / "bad.json").write_text("{")
+        tracer = Tracer(tmp_path)
+        tracer.seed()
+        assert tracer._last == {}

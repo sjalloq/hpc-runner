@@ -14,6 +14,7 @@ with the keys the JSON fixtures under ``tests/unit/fixtures/`` use
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -52,8 +53,29 @@ class Tracer:
 
     root: Path
     dedupe: bool = True
-    #: Last record written per argv, as a comparable tuple (D-TR5).
-    _last: dict[tuple[str, ...], tuple[Any, ...]] = field(default_factory=dict, repr=False)
+    #: Digest of the last record written per argv (D-TR5), seeded from
+    #: today's directory so repeats across invocations dedupe too.
+    _last: dict[tuple[str, ...], str] = field(default_factory=dict, repr=False)
+
+    def seed(self) -> None:
+        """Load the last record per argv from today's directory (D-TR5)."""
+        day = self.root / datetime.now().strftime("%Y-%m-%d")
+        try:
+            paths = sorted(day.glob("*.json"))
+        except OSError:
+            return
+        for path in paths:
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(data, dict) and isinstance(data.get("argv"), list):
+                self._last[tuple(str(a) for a in data["argv"])] = _digest(
+                    data.get("returncode"),
+                    data.get("stdout"),
+                    data.get("stderr"),
+                    data.get("error"),
+                )
 
     def record(
         self,
@@ -67,7 +89,7 @@ class Tracer:
     ) -> Path | None:
         """Write the record; return its path, or None when deduplicated or unwritable."""
         key = tuple(argv)
-        signature = (returncode, stdout, stderr, error)
+        signature = _digest(returncode, stdout, stderr, error)
         if self.dedupe and self._last.get(key) == signature:
             return None
         self._last[key] = signature
@@ -125,6 +147,16 @@ class Tracer:
         return removed
 
 
+def _digest(
+    returncode: int | None, stdout: str | None, stderr: str | None, error: str | None
+) -> str:
+    h = hashlib.sha1()
+    for part in (returncode, stdout, stderr, error):
+        h.update(repr(part).encode())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
 def _name(argv: Sequence[str]) -> str:
     base = Path(argv[0]).name if argv else "cmd"
     return re.sub(r"[^A-Za-z0-9_.-]", "_", base) or "cmd"
@@ -153,6 +185,8 @@ def activate(
     root = Path(directory).expanduser()
     tracer = Tracer(root=root, dedupe=dedupe)
     removed = tracer.sweep(max_days)
+    if dedupe:
+        tracer.seed()
     if removed:
         logger.debug(
             "trace: swept %d day director%s", len(removed), "y" if len(removed) == 1 else "ies"

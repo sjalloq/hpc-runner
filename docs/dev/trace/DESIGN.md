@@ -53,7 +53,10 @@ text attached.
   and stderr equal the previous record *for that argv* is not written.
   `hpc monitor` polls every few seconds and most snapshots are identical;
   the trace keeps the moments something changed. The record that is kept
-  is the first of a run of identical ones. Off with `dedupe = false`.
+  is the first of a run of identical ones. The comparison is seeded from
+  today's directory at activation, so a run of identical `hpc status`
+  invocations (separate processes) dedupes like a polling loop does. Off
+  with `dedupe = false`.
 - **D-TR6 Sweep by day directory.** At activation, day directories older
   than `max_days` (default 14) are removed. Only directories whose name is
   a date are touched, so a wrong `dir` cannot delete anything else.
@@ -82,6 +85,17 @@ text attached.
   regenerated for this (ids change, structure does not).
 - **D-TR11 `compare` exits 1 when it finds anything**, so a cron job over
   a trace directory can act on it; `--json` for machines.
+
+- **D-TR12 The first live `compare` found BUG-T2.** A trace of `hpc status
+  --history` on the testbed produced two findings on `qacct -j -o <arg> -b
+  <arg>`: the owner summary row parsed as a job with no number. The
+  captured fixture had never held the row (qacct prints it only for an
+  owner with non-zero wallclock, and the capture's jobs ran in 0 s), which
+  is why the strict xfail XPASSed during the QA fix pass. Fixed in
+  `parse_qacct_records` (blocks without `jobnumber` are not jobs), the
+  capture's bob job now sleeps so the fixture carries the row, and the
+  xfail is a plain test. Recorded here because it is the tool doing the
+  job it was built for, on its first run.
 
 ## Out of scope
 

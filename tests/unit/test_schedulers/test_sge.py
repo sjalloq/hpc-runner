@@ -293,7 +293,8 @@ class TestSGEScheduler:
         running = jobs[sge_fixtures.job("running")]
         assert running.status is JobStatus.RUNNING
         assert (running.name, running.user) == ("running", "tester")
-        assert (running.queue, running.node, running.cpu) == ("all.q", "exec1", 1)
+        assert (running.queue, running.cpu) == ("all.q", 1)
+        assert running.node in {"exec1", "exec2"}
         assert running.start_time is not None and running.runtime is not None
 
         # The array has running and queued tasks; its one entry is the running one.

@@ -1,41 +1,41 @@
 ==============================================================
-qname        all.q               
+qname        short.q             
 hostname     exec2               
 group        bob                 
 owner        bob                 
 project      NONE                
 department   defaultdepartment   
 jobname      bob                 
-jobnumber    70                  
+jobnumber    11                  
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sat Oct 31 13:05:54 2026
-start_time   -/-
-end_time     -/-
+qsub_time    Sat Oct 31 17:53:46 2026
+start_time   Sat Oct 31 17:53:46 2026
+end_time     Sat Oct 31 17:53:46 2026
 granted_pe   NONE                
 slots        1                   
-failed       26  : opening input/output file
+failed       0    
 exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.000s
-ru_stime     0.000s
-ru_maxrss    0.000B
+ru_utime     0.046s
+ru_stime     0.023s
+ru_maxrss    8.406KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    0                   
+ru_minflt    2485                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
-ru_oublock   0                   
+ru_oublock   8                   
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     0                   
-ru_nivcsw    0                   
-cpu          0.000s
+ru_nvcsw     18                  
+ru_nivcsw    8                   
+cpu          0.069s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
@@ -51,26 +51,26 @@ owner        bob
 project      NONE                
 department   defaultdepartment   
 jobname      bob                 
-jobnumber    84                  
+jobnumber    17                  
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sat Oct 31 13:09:38 2026
-start_time   Sat Oct 31 13:09:38 2026
-end_time     Sat Oct 31 13:09:38 2026
+qsub_time    Sat Oct 31 17:55:04 2026
+start_time   Sat Oct 31 17:55:04 2026
+end_time     Sat Oct 31 17:55:04 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.019s
-ru_stime     0.018s
-ru_maxrss    8.410KB
+ru_utime     0.034s
+ru_stime     0.030s
+ru_maxrss    8.250KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2493                
+ru_minflt    2489                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -78,9 +78,54 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     15                  
+ru_nvcsw     17                  
 ru_nivcsw    4                   
-cpu          0.036s
+cpu          0.063s
+mem          0.000Bs
+io           0.000B
+iow          0.000s
+maxvmem      0.000B
+arid         undefined
+ar_sub_time  undefined
+category     NONE
+==============================================================
+qname        all.q               
+hostname     exec2               
+group        bob                 
+owner        bob                 
+project      NONE                
+department   defaultdepartment   
+jobname      bob                 
+jobnumber    36                  
+taskid       undefined
+account      sge                 
+priority     0                   
+qsub_time    Sat Oct 31 18:04:30 2026
+start_time   Sat Oct 31 18:04:31 2026
+end_time     Sat Oct 31 18:04:31 2026
+granted_pe   NONE                
+slots        1                   
+failed       0    
+exit_status  0                   
+ru_wallclock 0s
+ru_utime     0.047s
+ru_stime     0.022s
+ru_maxrss    8.441KB
+ru_ixrss     0.000B
+ru_ismrss    0.000B
+ru_idrss     0.000B
+ru_isrss     0.000B
+ru_minflt    2584                
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   8                   
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     21                  
+ru_nivcsw    7                   
+cpu          0.068s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
@@ -96,36 +141,36 @@ owner        bob
 project      NONE                
 department   defaultdepartment   
 jobname      bob                 
-jobnumber    98                  
+jobnumber    50                  
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sat Oct 31 13:15:29 2026
-start_time   Sat Oct 31 13:15:30 2026
-end_time     Sat Oct 31 13:15:30 2026
+qsub_time    Sat Oct 31 18:07:19 2026
+start_time   Sat Oct 31 18:07:20 2026
+end_time     Sat Oct 31 18:07:20 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.019s
-ru_stime     0.014s
-ru_maxrss    8.297KB
+ru_utime     0.034s
+ru_stime     0.029s
+ru_maxrss    8.246KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2451                
+ru_minflt    2569                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
-ru_oublock   40                  
+ru_oublock   8                   
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     20                  
-ru_nivcsw    4                   
-cpu          0.033s
+ru_nvcsw     21                  
+ru_nivcsw    8                   
+cpu          0.063s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
@@ -133,5 +178,51 @@ maxvmem      0.000B
 arid         undefined
 ar_sub_time  undefined
 category     NONE
+==============================================================
+qname        short.q             
+hostname     exec2               
+group        bob                 
+owner        bob                 
+project      NONE                
+department   defaultdepartment   
+jobname      bob                 
+jobnumber    64                  
+taskid       undefined
+account      sge                 
+priority     0                   
+qsub_time    Sat Oct 31 18:09:42 2026
+start_time   Sat Oct 31 18:10:10 2026
+end_time     Sat Oct 31 18:10:12 2026
+granted_pe   NONE                
+slots        1                   
+failed       0    
+exit_status  0                   
+ru_wallclock 2s
+ru_utime     0.042s
+ru_stime     0.027s
+ru_maxrss    8.395KB
+ru_ixrss     0.000B
+ru_ismrss    0.000B
+ru_idrss     0.000B
+ru_isrss     0.000B
+ru_minflt    2530                
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   8                   
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     19                  
+ru_nivcsw    5                   
+cpu          0.069s
+mem          8.389KBs
+io           0.000B
+iow          0.000s
+maxvmem      1.648MB
+arid         undefined
+ar_sub_time  undefined
+category     NONE
 OWNER     WALLCLOCK         UTIME         STIME           CPU             MEMORY                 IO                IOW
 ======================================================================================================================
+bob               2         0.202         0.131         0.333              0.000              0.000              0.000

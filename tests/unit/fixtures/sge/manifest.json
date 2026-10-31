@@ -1,35 +1,154 @@
 {
-  "captured": "2026-10-31T13:16:52Z",
+  "captured": "2026-10-31T18:12:05Z",
   "flavour": "soge",
   "scheduler": "SGE 8.1.9",
   "jobs": {
-    "ok": "95",
-    "exit1": "96",
-    "array_done": "97",
-    "bob": "98",
-    "signal": "101",
-    "lost_node": "102",
-    "running": "104",
-    "held": "105",
-    "eqw": "106",
-    "array": "107"
+    "ok": "61",
+    "exit1": "62",
+    "array_done": "63",
+    "bob": "64",
+    "signal": "67",
+    "lost_node": "68",
+    "running": "70",
+    "held": "71",
+    "eqw": "72",
+    "array": "73"
   },
   "files": {
-    "qstat_empty.xml": "qstat -xml -u '*' with nothing queued",
-    "qacct_missing.txt": "qacct -j of an unknown id (JSON)",
-    "qsub.txt": "qsub stdout for a plain job",
-    "qsub_array.txt": "qsub stdout for an array job",
-    "qacct_ok.txt": "qacct -j of a job that exited 0",
-    "qacct_exit1.txt": "qacct -j of a job that exited 1",
-    "qacct_array_task.txt": "qacct -j <id> -t 2 of a finished array",
-    "qacct_owner_bob.txt": "qacct -j -o bob: bob's records then the owner summary block (BUG-T2)",
-    "qdel.txt": "qdel stdout",
-    "qacct_signal.txt": "qacct -j of a running job deleted with qdel (exit_status 137 (Killed), BUG-T5)",
-    "qacct_lost_node.txt": "qacct -j of a job whose node was killed (failed 19, BUG-T3)",
-    "qstat_mixed.xml": "qstat -xml -u '*': running, hqw, Eqw and an array with r and qw tasks",
-    "qstat_mixed.txt": "plain qstat -u '*' of the same moment",
-    "qstat_j_running.xml": "qstat -j <id> -xml of the running job",
-    "qstat_j_missing.txt": "qstat -j of an unknown id (JSON: returncode, stdout, stderr)",
-    "qstat_master_down.json": "qstat -xml -u '*' with the qmaster stopped (JSON, BUG-T6)"
+    "qstat_empty.xml": {
+      "what": "qstat -xml -u '*' with nothing queued",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qacct_missing.txt": {
+      "what": "qacct -j of an unknown id (JSON)",
+      "argv": [
+        "qacct",
+        "-j",
+        "999999"
+      ]
+    },
+    "qsub.txt": {
+      "what": "qsub stdout for a plain job",
+      "argv": [
+        "qsub",
+        "/work/capture/qsubtxt.sh"
+      ]
+    },
+    "qsub_array.txt": {
+      "what": "qsub stdout for an array job",
+      "argv": [
+        "qsub",
+        "/work/capture/qsubarr.sh"
+      ]
+    },
+    "qacct_ok.txt": {
+      "what": "qacct -j of a job that exited 0",
+      "argv": [
+        "qacct",
+        "-j",
+        "61"
+      ]
+    },
+    "qacct_exit1.txt": {
+      "what": "qacct -j of a job that exited 1",
+      "argv": [
+        "qacct",
+        "-j",
+        "62"
+      ]
+    },
+    "qacct_array_task.txt": {
+      "what": "qacct -j <id> -t 2 of a finished array",
+      "argv": [
+        "qacct",
+        "-j",
+        "63",
+        "-t",
+        "2"
+      ]
+    },
+    "qacct_owner_bob.txt": {
+      "what": "qacct -j -o bob -b <since>: bob's records then the owner summary block (BUG-T2)",
+      "argv": [
+        "qacct",
+        "-j",
+        "-o",
+        "bob",
+        "-b",
+        "200001010000"
+      ]
+    },
+    "qdel.txt": {
+      "what": "qdel stdout",
+      "argv": [
+        "qdel",
+        "67"
+      ]
+    },
+    "qacct_signal.txt": {
+      "what": "qacct -j of a running job deleted with qdel (exit_status 137 (Killed), BUG-T5)",
+      "argv": [
+        "qacct",
+        "-j",
+        "67"
+      ]
+    },
+    "qacct_lost_node.txt": {
+      "what": "qacct -j of a job whose node was killed (failed 19, BUG-T3)",
+      "argv": [
+        "qacct",
+        "-j",
+        "68"
+      ]
+    },
+    "qstat_mixed.xml": {
+      "what": "qstat -xml -u '*': running, hqw, Eqw and an array with r and qw tasks",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_mixed.txt": {
+      "what": "plain qstat -u '*' of the same moment",
+      "argv": [
+        "qstat",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_running.xml": {
+      "what": "qstat -j <id> -xml of the running job",
+      "argv": [
+        "qstat",
+        "-j",
+        "70",
+        "-xml"
+      ]
+    },
+    "qstat_j_missing.txt": {
+      "what": "qstat -j of an unknown id (JSON: returncode, stdout, stderr)",
+      "argv": [
+        "qstat",
+        "-j",
+        "999999",
+        "-xml"
+      ]
+    },
+    "qstat_master_down.json": {
+      "what": "qstat -xml -u '*' with the qmaster stopped (JSON, BUG-T6)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    }
   }
 }

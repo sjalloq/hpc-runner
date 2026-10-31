@@ -46,8 +46,9 @@ def test_manifest_names_every_scenario_and_file():
         "array",
     }
     assert all(v.isdigit() for v in FX.jobs.values())
-    for name in FX.manifest["files"]:
+    for name, entry in FX.manifest["files"].items():
         assert (FX.root / name).is_file(), name
+        assert entry["argv"][0] in {"qsub", "qstat", "qacct", "qdel"}, name
     assert FX.manifest["scheduler"].startswith("SGE")
 
 
@@ -91,7 +92,8 @@ class TestQstatMixed:
         assert state_to_status(array["state"]) is JobStatus.RUNNING
         assert array["array_task_id"] == "1"
         running = jobs[FX.job("running")]
-        assert (running["queue"], running["node"], running["slots"]) == ("all.q", "exec1", 1)
+        assert (running["queue"], running["slots"]) == ("all.q", 1)
+        assert running["node"] in {"exec1", "exec2"}
         assert "start_time" in running and "submit_time" not in running
         held = jobs[FX.job("held")]
         assert "queue" not in held and "submit_time" in held
@@ -141,7 +143,7 @@ class TestQstatJ:
         with patch_seam(make_sge_responder(FX)):
             info, extra = SGEScheduler(HPCConfig()).get_job_details(FX.job("running"))
         assert info.status is JobStatus.RUNNING
-        assert (info.queue, info.node) == ("all.q", "exec1")
+        assert info.queue == "all.q" and info.node in {"exec1", "exec2"}
         assert info.stdout_path == Path("/dev/null")
         assert extra["job_args"] == ["600"]
         assert "pe_name" not in extra  # qsub -b y sleep 600: no parallel environment
@@ -193,19 +195,22 @@ class TestQacct:
         assert (jobs[0].failed_code, jobs[0].status) == (19, JobStatus.FAILED)
 
     def test_owner_listing(self):
-        """``qacct -j -o bob``: bob's records, then the owner-summary header and rule.
+        """``qacct -j -o bob -b <since>``: bob's records, then the owner-summary block.
 
-        The header line follows the last record with no separator, so it lands
-        in that record as an ``OWNER`` key, harmlessly. The summary *row* that
-        BUG-T2 trips on (parsed as a job with no number) is not in this
-        capture: qacct printed none for these zero-usage jobs.
+        The block is a header, a rule and one row per owner. The header
+        follows the last record with no separator and lands in it as an
+        ``OWNER`` key, harmlessly; the row after the rule is a block of its
+        own with no ``jobnumber`` and must not come back as a job (BUG-T2).
         """
         text = FX.text("qacct_owner_bob.txt")
-        assert text.rstrip().endswith("=" * 118)
+        summary = text.rstrip().rsplit("\n", 1)[-1]
+        assert summary.startswith("bob "), summary  # the row BUG-T2 tripped on
         records = parse_qacct_records(text)
         assert records and all(r.get("owner") == "bob" for r in records)
         assert all(r["jobnumber"].isdigit() for r in records)
         assert "OWNER" in records[-1]
+        jobs = [qacct_to_job_info(r) for r in records]
+        assert all(j.job_id and j.status is not JobStatus.UNKNOWN for j in jobs)
 
 
 def test_responder_refuses_what_was_not_captured():

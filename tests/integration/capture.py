@@ -16,8 +16,8 @@ texts do not depend on hpc-runner's own rendering:
 * ``signal``: a running job deleted with ``qdel`` (``exit_status 137 (Killed)``,
   ``failed 100``; also ``qdel``'s stdout).
 * ``lost_node``: a job whose node is killed (``failed 19``, ``exit_status 0``).
-* ``bob``: a job of another user (``qacct -j -o bob``, with the trailing
-  owner summary header).
+* ``bob``: a job of another user (``qacct -j -o bob -b <since>``, with the
+  trailing owner summary header, rule and row, BUG-T2).
 * ``running``, ``held``, ``eqw``, ``array``: alive together for one
   ``qstat -xml -u '*'`` (and plain ``qstat``) snapshot: ``r``, ``hqw``,
   ``Eqw`` and an array with running and queued tasks; ``qstat -j -xml`` of
@@ -25,7 +25,9 @@ texts do not depend on hpc-runner's own rendering:
 * ``master_down``: ``qstat -xml -u '*'`` with the qmaster stopped (exit
   status, stdout, stderr as JSON).
 
-``manifest.json`` records the job id of every scenario and what each file is.
+``manifest.json`` records the job id of every scenario and, for each file,
+what it is and the argv that produced it (``hpc trace compare --fixtures``
+reads the argv to tell which call shapes the fixtures cover).
 """
 
 from __future__ import annotations
@@ -35,8 +37,10 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from tests.integration.cluster import WORK_ROOT, SGECluster
 
@@ -50,16 +54,21 @@ class Capture:
         self.cluster = cluster
         self.out = out
         self.jobs: dict[str, str] = {}
-        self.files: dict[str, str] = {}
+        self.files: dict[str, dict[str, Any]] = {}
 
     # -- helpers --------------------------------------------------------------
 
     def log(self, message: str) -> None:
         print(f"capture: {message}", file=sys.stderr, flush=True)
 
-    def save(self, name: str, text: str, what: str) -> None:
+    def save(self, name: str, text: str, what: str, argv: Sequence[str]) -> None:
         (self.out / name).write_text(text)
-        self.files[name] = what
+        self.files[name] = {"what": what, "argv": list(argv)}
+
+    def capture(self, name: str, argv: Sequence[str], what: str, *, as_json: bool = False) -> None:
+        """Run *argv* and save its stdout (or the whole result as JSON) as *name*."""
+        proc = self.cluster.run(list(argv), check=not as_json)
+        self.save(name, _as_json(proc) if as_json else proc.stdout, what, argv)
 
     def qsub(self, scenario: str, *args: str, user: str = "tester") -> str:
         """``qsub -b y`` *args* as *user*; record and return the job id."""
@@ -70,6 +79,12 @@ class Capture:
         self.jobs[scenario] = match.group(1)
         self.log(f"{scenario}: job {match.group(1)}")
         return match.group(1)
+
+    def script(self, name: str, directives: str) -> Path:
+        """A job script in the output directory that runs ``true``, output discarded."""
+        path = self.out / name
+        path.write_text(f"#!/bin/bash\n#$ -o /dev/null\n#$ -j y\n{directives}true\n")
+        return path
 
     def qstat_states(self) -> dict[str, str]:
         proc = self.cluster.run(["qstat", "-u", "*"], check=False)
@@ -111,69 +126,48 @@ class Capture:
         ok = self.qsub("ok", "true")
         exit1 = self.qsub("exit1", "false")
         array = self.qsub("array_done", "-t", "1-3", "true")
-        bob = self.qsub("bob", "true", user="bob")
+        # Non-zero wallclock, so `qacct -o bob` ends with bob's summary row
+        # (BUG-T2); an owner whose jobs all ran in 0s gets the header and rule only.
+        bob = self.qsub("bob", "sleep", "2", user="bob")
+        # Submitted as scripts, the way hpc-runner submits (`qsub <script>`), so
+        # the recorded argv has the shape `hpc trace compare` sees in a trace.
+        plain_script = self.script("qsubtxt.sh", "")
+        array_script = self.script("qsubarr.sh", "#$ -t 1-4\n")
+        self.capture("qsub.txt", ["qsub", str(plain_script)], "qsub stdout for a plain job")
+        self.capture("qsub_array.txt", ["qsub", str(array_script)], "qsub stdout for an array job")
         self.save(
-            "qsub.txt",
-            self.cluster.run(
-                ["qsub", "-b", "y", "-N", "qsubtxt", "-o", "/dev/null", "-j", "y", "true"]
-            ).stdout,
-            "qsub stdout for a plain job",
-        )
-        self.save(
-            "qsub_array.txt",
-            self.cluster.run(
-                [
-                    "qsub",
-                    "-b",
-                    "y",
-                    "-N",
-                    "qsubarr",
-                    "-o",
-                    str(self.out),
-                    "-j",
-                    "y",
-                    "-t",
-                    "1-4",
-                    "true",
-                ]
-            ).stdout,
-            "qsub stdout for an array job",
-        )
-        self.save(
-            "qacct_ok.txt",
-            self.qacct(ok),
-            "qacct -j of a job that exited 0",
+            "qacct_ok.txt", self.qacct(ok), "qacct -j of a job that exited 0", ["qacct", "-j", ok]
         )
         self.save(
             "qacct_exit1.txt",
             self.qacct(exit1),
             "qacct -j of a job that exited 1",
+            ["qacct", "-j", exit1],
         )
         self.save(
             "qacct_array_task.txt",
             self.qacct(array, "-t", "2"),
             "qacct -j <id> -t 2 of a finished array",
+            ["qacct", "-j", array, "-t", "2"],
         )
         self.qacct(bob)
-        self.save(
+        # With -b, as `hpc status --history` asks (list_completed_jobs).
+        self.capture(
             "qacct_owner_bob.txt",
-            self.cluster.run(["qacct", "-j", "-o", "bob"]).stdout,
-            "qacct -j -o bob: bob's records then the owner summary header and rule",
+            ["qacct", "-j", "-o", "bob", "-b", "200001010000"],
+            "qacct -j -o bob -b <since>: bob's records then the owner summary block (BUG-T2)",
         )
 
     def signal(self) -> None:
         job_id = self.qsub("signal", "sleep", "300")
         self.wait_state(job_id, {"r"})
-        self.save(
-            "qdel.txt",
-            self.cluster.run(["qdel", job_id]).stdout,
-            "qdel stdout",
-        )
+        self.capture("qdel.txt", ["qdel", job_id], "qdel stdout")
         self.wait_gone(job_id)
         self.save(
             "qacct_signal.txt",
             self.qacct(job_id),
             "qacct -j of a running job deleted with qdel (exit_status 137 (Killed), BUG-T5)",
+            ["qacct", "-j", job_id],
         )
 
     def lost_node(self) -> None:
@@ -188,6 +182,7 @@ class Capture:
             "qacct_lost_node.txt",
             self.qacct(job_id),
             "qacct -j of a job whose node was killed (failed 19, BUG-T3)",
+            ["qacct", "-j", job_id],
         )
 
     def snapshot(self) -> None:
@@ -208,37 +203,35 @@ class Capture:
                 break
             assert time.monotonic() < deadline, tasks
             time.sleep(POLL)
-        self.save(
+        self.capture(
             "qstat_mixed.xml",
-            self.cluster.run(["qstat", "-xml", "-u", "*"]).stdout,
+            ["qstat", "-xml", "-u", "*"],
             "qstat -xml -u '*': running, hqw, Eqw and an array with r and qw tasks",
         )
-        self.save(
-            "qstat_mixed.txt",
-            self.cluster.run(["qstat", "-u", "*"]).stdout,
-            "plain qstat -u '*' of the same moment",
+        self.capture(
+            "qstat_mixed.txt", ["qstat", "-u", "*"], "plain qstat -u '*' of the same moment"
         )
-        self.save(
+        self.capture(
             "qstat_j_running.xml",
-            self.cluster.run(["qstat", "-j", running, "-xml"]).stdout,
+            ["qstat", "-j", running, "-xml"],
             "qstat -j <id> -xml of the running job",
         )
-        self.save(
+        self.capture(
             "qstat_j_missing.txt",
-            _as_json(self.cluster.run(["qstat", "-j", "999999", "-xml"], check=False)),
+            ["qstat", "-j", "999999", "-xml"],
             "qstat -j of an unknown id (JSON: returncode, stdout, stderr)",
+            as_json=True,
         )
 
     def empty(self) -> None:
-        self.save(
-            "qstat_empty.xml",
-            self.cluster.run(["qstat", "-xml", "-u", "*"]).stdout,
-            "qstat -xml -u '*' with nothing queued",
+        self.capture(
+            "qstat_empty.xml", ["qstat", "-xml", "-u", "*"], "qstat -xml -u '*' with nothing queued"
         )
-        self.save(
+        self.capture(
             "qacct_missing.txt",
-            _as_json(self.cluster.run(["qacct", "-j", "999999"], check=False)),
+            ["qacct", "-j", "999999"],
             "qacct -j of an unknown id (JSON)",
+            as_json=True,
         )
 
     def master_down(self) -> None:
@@ -249,6 +242,7 @@ class Capture:
                 "qstat_master_down.json",
                 _as_json(proc),
                 "qstat -xml -u '*' with the qmaster stopped (JSON, BUG-T6)",
+                proc.args,
             )
         finally:
             self.cluster.start_master()
@@ -267,6 +261,8 @@ class Capture:
         self.snapshot()
         self.master_down()
         self.cluster.run([str(Path("/opt/testbed/clean.sh"))])
+        for script in self.out.glob("*.sh"):
+            script.unlink()
         version = self.cluster.run(["qstat", "-help"], check=False)
         manifest = {
             "captured": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

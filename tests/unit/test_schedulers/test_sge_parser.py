@@ -72,6 +72,17 @@ end_time     Mon Feb 23 11:05:10 2026
         records = parse_qacct_records("=" * 62)
         assert records == []
 
+    def test_owner_summary_block_is_not_a_job(self):
+        """BUG-T2: ``qacct -o`` ends with a usage summary; its row has no jobnumber."""
+        text = self.SINGLE_RECORD + (
+            "OWNER      WALLCLOCK         UTIME         STIME           CPU\n"
+            + "=" * 70
+            + "\n"
+            + "alice            918         1.383         0.968         2.351\n"
+        )
+        records = parse_qacct_records(text)
+        assert [r["jobnumber"] for r in records] == ["10001"]
+
 
 class TestQacctToJobInfo:
     """Tests for qacct_to_job_info()."""

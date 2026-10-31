@@ -236,10 +236,15 @@ the suite is green now and the fix flips the test to a hard pass.
   "Unknown option". `SGEScheduler.render_value` joins the path unquoted.
   SGE directive lines may not support quoting at all; the fix may be to
   pass `-o`/`-e` (and `-wd`) on the qsub argv instead. `test_cwd_with_space`.
-- **BUG-T2 `list_completed_jobs(user=...)` returns a phantom record.**
-  `qacct -o <user> -j` ends with a per-owner summary block that
-  `parse_qacct_records` parses as a job (`job_id=''`, `user='unknown'`,
-  UNKNOWN). The unfiltered form has no such block. `test_two_users`.
+- **BUG-T2 `list_completed_jobs(user=...)` returns a phantom record.** *Fixed
+  2026-10-31 (trace work, D-TR12): `parse_qacct_records` keeps only blocks
+  with a `jobnumber`.* `qacct -o <user> -j` ends with a per-owner summary
+  block (header, rule, one row per owner whose wallclock total is non-zero)
+  that `parse_qacct_records` parsed as a job (`job_id=''`, `user='unknown'`,
+  UNKNOWN). The unfiltered form has no such block. Found live by the first
+  `hpc trace compare` run: the capture's bob jobs ran in 0 s and had no
+  row, so the fixture never held it; bob now sleeps 2 s.
+  `test_completed_listing_by_user`.
 - **BUG-T3 `failed 19` with `exit_status 0` is reported COMPLETED.** *Fixed
   2026-10-31 (test QA fix pass): `qacct_status` reads the full `failed`
   table first; `JobInfo` carries `failed_code`/`failed_reason`.* A job

@@ -484,26 +484,27 @@ def parse_qacct_records(output: str) -> list[dict[str, Any]]:
     """Split multi-record qacct output into a list of parsed dicts.
 
     qacct separates records with lines of ``====…====``.  Each block is
-    parsed by :func:`parse_qacct_output`.
+    parsed by :func:`parse_qacct_output`. Only blocks with a ``jobnumber``
+    are jobs: ``qacct -o <user>`` ends with a per-owner usage summary (a
+    header, a rule and, when usage is non-zero, one row per owner) that
+    would otherwise come back as a job with no id (BUG-T2).
     """
     records: list[dict[str, Any]] = []
     current_block: list[str] = []
 
+    def flush() -> None:
+        if current_block:
+            record = parse_qacct_output("\n".join(current_block))
+            if record.get("jobnumber"):
+                records.append(record)
+            current_block.clear()
+
     for line in output.split("\n"):
         if _SEPARATOR_RE.match(line.strip()):
-            if current_block:
-                record = parse_qacct_output("\n".join(current_block))
-                if record:
-                    records.append(record)
-                current_block = []
+            flush()
         else:
             current_block.append(line)
-
-    # Handle trailing block (no final separator)
-    if current_block:
-        record = parse_qacct_output("\n".join(current_block))
-        if record:
-            records.append(record)
+    flush()  # trailing block (no final separator)
 
     return records
 

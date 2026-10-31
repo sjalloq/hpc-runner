@@ -265,8 +265,8 @@ runs (``qsub``, ``qstat``, ``qacct``, ...), one JSON file per call with the
 argv, exit status, stdout and stderr, under one directory per day. It is
 the same recording ``hpc --trace DIR`` makes for a single invocation, kept
 across every invocation while the setting is on, so a period of normal use
-can be checked against the parsers afterwards and attached to a bug
-report.
+can be checked against the parsers afterwards with ``hpc trace compare``
+(:doc:`cli`) and attached to a bug report.
 
 .. list-table::
    :header-rows: 1

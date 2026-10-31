@@ -1,31 +1,31 @@
 ==============================================================
-qname        short.q             
+qname        all.q               
 hostname     exec1               
 group        tester              
 owner        tester              
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    97                  
+jobnumber    63                  
 taskid       2                   
 account      sge                 
 priority     0                   
-qsub_time    Sat Oct 31 13:15:29 2026
-start_time   Sat Oct 31 13:15:29 2026
-end_time     Sat Oct 31 13:15:29 2026
+qsub_time    Sat Oct 31 18:09:42 2026
+start_time   Sat Oct 31 18:10:10 2026
+end_time     Sat Oct 31 18:10:10 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.019s
-ru_stime     0.015s
-ru_maxrss    8.465KB
+ru_utime     0.043s
+ru_stime     0.022s
+ru_maxrss    8.344KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2475                
+ru_minflt    2485                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -33,9 +33,9 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     18                  
+ru_nvcsw     17                  
 ru_nivcsw    4                   
-cpu          0.034s
+cpu          0.065s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
