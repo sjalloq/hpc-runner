@@ -89,3 +89,23 @@ def test_tool_alias_and_config_resolve(cluster: Cluster) -> None:
     other = _run_batch(cluster, "--name", "noalias", "cat", "/etc/hostname")
     assert cluster.wait_for(other, JobStatus.COMPLETED) is JobStatus.COMPLETED
     assert _history_entry(cluster, other)["queue"] == "all.q"
+
+
+def test_hold_flag_forwards(cluster: Cluster) -> None:
+    """BUG-T4/D-T42: ``hpc run -h`` is qsub's user hold, not help: the job queues ``hqw``."""
+    out = _hpc(
+        cluster, "run", "--batch", "--directory", str(cluster.workdir), "-h", "--", "sleep", "30"
+    )
+    match = re.search(r"Submitted job (\d+)", out)
+    assert match, out
+    job_id = match.group(1)
+    assert "Usage:" not in out
+    states = {
+        line.split()[0]: line.split()[4]
+        for line in cluster.run(["qstat", "-u", "tester"]).stdout.splitlines()[2:]
+        if line.split()
+    }
+    assert states.get(job_id) == "hqw", states
+    assert _hpc_json(cluster, "status")[0]["status"] == "PENDING"
+    cluster.run(["qrls", job_id])
+    assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING

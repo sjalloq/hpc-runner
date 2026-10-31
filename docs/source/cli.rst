@@ -86,10 +86,10 @@ won't be misinterpreted).
 .. note:: **Why ``--``?**
 
    ``hpc run`` uses long-form options for itself (``--cpu``, ``--queue``,
-   etc.) so that short flags (``-q``, ``-l``, ``-N``) are unambiguously
-   scheduler arguments. The two exceptions, ``-t`` and ``-b``, shadow
-   scheduler flags whose meaning hpc-runner already covers with ``--array``,
-   ``--time`` and the generated job script. Unknown long options, and a
+   ``--batch``, ``--help``, etc.) so that short flags (``-q``, ``-l``,
+   ``-N``, ``-h``, ``-b``) are unambiguously scheduler arguments. The one
+   exception, ``-t`` for ``--type``, shadows a scheduler flag whose meaning
+   hpc-runner already covers with ``--array`` and ``--time``. Unknown long options, and a
    single-dash flag given without ``--``, are rejected rather than forwarded. However, hpc-runner cannot determine where scheduler
    args end and the command begins without knowing every scheduler's option
    grammar — a flag like ``-N`` might be standalone or might consume the next

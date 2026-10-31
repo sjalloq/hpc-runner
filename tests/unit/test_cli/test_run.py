@@ -138,13 +138,52 @@ class TestRunCommand:
         assert "Mode: interactive" in result.output
 
     def test_batch_flag_selects_batch_mode(self, runner, temp_dir):
-        """--batch / -b switch the dry run to batch mode."""
-        for flag in ("--batch", "-b"):
-            result = runner.invoke(
-                cli, ["--scheduler", "local", "run", "--dry-run", flag, "echo", "hello"]
-            )
-            assert result.exit_code == 0, result.output
-            assert "Mode: batch" in result.output
+        """--batch switches the dry run to batch mode."""
+        result = runner.invoke(
+            cli, ["--scheduler", "local", "run", "--dry-run", "--batch", "echo", "hello"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "Mode: batch" in result.output
+
+    def test_short_b_and_h_belong_to_the_scheduler(self, runner, sge_dirs):
+        """BUG-T4: -h is qsub's hold flag and -b its binary flag; both forward, neither is ours."""
+        result = runner.invoke(
+            cli,
+            [
+                "--scheduler",
+                "sge",
+                "run",
+                "--dry-run",
+                "--batch",
+                "-h",
+                "-b",
+                "y",
+                "--",
+                "sleep",
+                "9",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "#$ -h -b y" in result.output
+        assert "Usage:" not in result.output
+
+    @pytest.mark.parametrize("flags", [["-h"], ["-V"], ["-cwd", "-V"], ["-q", "batch.q", "-h"]])
+    def test_bare_flag_before_separator_keeps_the_separator(self, runner, sge_dirs, flags):
+        """click eats a `--` met while parsing options; the split happens before click (BUG-T4)."""
+        result = runner.invoke(
+            cli, ["--scheduler", "sge", "run", "--dry-run", "--batch", *flags, "--", "sleep", "9"]
+        )
+        assert result.exit_code == 0, result.output
+        assert f"#$ {' '.join(flags)}" in result.output
+        assert "sleep 9" in result.output
+
+    def test_run_help_is_long_form_only(self, runner):
+        result = runner.invoke(cli, ["run", "--help"])
+        assert result.exit_code == 0 and "--batch" in result.output
+        assert "-b, --batch" not in result.output
+        assert " -h," not in result.output
+        # The group still answers -h.
+        assert runner.invoke(cli, ["-h"]).exit_code == 0
 
     def test_array_implies_batch(self, runner, sge_dirs):
         """Array jobs are always batch, even without --batch."""
@@ -795,7 +834,7 @@ class TestEnvResourceWaitOptions:
         return CliRunner()
 
     def _dry(self, runner, *args):
-        result = runner.invoke(cli, ["--scheduler", "sge", "run", "--dry-run", "-b", *args])
+        result = runner.invoke(cli, ["--scheduler", "sge", "run", "--dry-run", "--batch", *args])
         assert result.exit_code == 0, result.output
         return result.output
 

@@ -19,32 +19,62 @@ if TYPE_CHECKING:
 console = Console()
 
 
-def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
-    """Split args on '--' into (scheduler_passthrough, command).
+_COMMAND_KEY = "hpc_runner.run.command"
 
-    If '--' is absent, all args are treated as the command.
+
+class _RunCommand(click.RichCommand):
+    """``hpc run`` with the ``--`` split done before click parses anything.
+
+    click drops a ``--`` it meets while still processing options, so with
+    ``ignore_unknown_options`` a bare scheduler flag right before the
+    separator (``hpc run -h -- cmd``, ``hpc run -V -- cmd``) lost the
+    separator and the flag was taken as the command (BUG-T4). Everything
+    after the first ``--`` is the command and is kept aside here; click sees
+    only what comes before it.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        if "--" in args:
+            idx = args.index("--")
+            ctx.meta[_COMMAND_KEY] = args[idx + 1 :]
+            args = args[:idx]
+        return super().parse_args(ctx, args)
+
+
+def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    """Split into (scheduler_passthrough, command).
+
+    With a ``--`` (taken out by :class:`_RunCommand`), every token before it
+    is passthrough and the stashed tail is the command. Without one, all
+    args are the command.
     """
     args_list = list(args)
-    if "--" in args_list:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and _COMMAND_KEY in ctx.meta:
+        return args_list, list(ctx.meta[_COMMAND_KEY])
+    if "--" in args_list:  # called outside the command (tests): split here
         idx = args_list.index("--")
         return args_list[:idx], args_list[idx + 1 :]
     return [], args_list
 
 
 @click.command(
+    cls=_RunCommand,
     context_settings={
         "ignore_unknown_options": True,
         "allow_interspersed_args": False,
-    }
+        # `--help` only: `-h` is qsub's hold flag and must forward (BUG-T4).
+        "help_option_names": ["--help"],
+    },
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 # Short-option namespace rule: any short flag click does not recognise is
 # forwarded verbatim to the scheduler (see _parse_args and the `--`
 # separator). A short flag defined here therefore *shadows* the scheduler's
-# flag of the same letter. Only claim one when hpc-runner already owns that
-# meaning: -t shadows qsub/sbatch -t (array / time), both covered by
-# --array and --time; -b shadows qsub -b (binary), irrelevant because jobs
-# always run via a generated script.
+# flag of the same letter. The one claimed is -t (--type), the product's
+# central option, typed by hand daily; it shadows qsub/sbatch -t (array /
+# time), both covered by --array and --time. Everything else, including
+# help, is long-form only, so -b, -h, -q, -l, -N ... are the scheduler's.
 @click.option("--name", "job_name", help="Job name")
 @click.option("--cpu", type=int, help="Number of CPUs")
 @click.option("--mem", help="Memory for the whole job (e.g., 16G, 1.5GiB)")
@@ -80,7 +110,6 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
     "(e.g. afterok:123:124,afterany:125)",
 )
 @click.option(
-    "-b",
     "--batch",
     is_flag=True,
     help="Submit as a batch job and return immediately (default: run interactively)",

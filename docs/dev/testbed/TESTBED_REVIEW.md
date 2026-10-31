@@ -254,11 +254,13 @@ the suite is green now and the fix flips the test to a hard pass.
   `failed 37` and otherwise trusts `exit_status`, so a lost job looks
   successful. Any non-zero `failed` other than 37 is not a success.
   `test_node_killed`.
-- **BUG-T4 `-h` cannot be passed through to qsub.** The CLI group's
-  `help_option_names = ["-h", "--help"]` is inherited by `hpc run`, so
-  `hpc run -h -- cmd` prints help instead of forwarding qsub's hold flag;
-  CLAUDE.md lists only `-t` and `-b` as claimed. No test; the listing test
-  uses running sleeps instead of held jobs.
+- **BUG-T4 `-h` cannot be passed through to qsub.** *Fixed 2026-10-31
+  (D-T42): `hpc run` answers `--help` only, and `-b/--batch` went with it;
+  `-t/--type` is the one claimed short flag.* The CLI group's
+  `help_option_names = ["-h", "--help"]` was inherited by `hpc run`, so
+  `hpc run -h -- cmd` printed help instead of forwarding qsub's hold flag,
+  against the rule in CLAUDE.md. `test_cli.py::test_hold_flag_forwards`
+  submits with `-h`, sees `hqw`, releases with `qrls`.
 
 ### Phase 3 decisions, second batch
 
@@ -369,6 +371,19 @@ the suite is green now and the fix flips the test to a hard pass.
   walks `RENDER_ORDER` and the resources before rendering and raises
   `SubmissionError` naming each offending value; passthrough arguments
   are the user's own text and are not checked.
+- **D-T42 `hpc run` claims one short flag, `-t`** (user, 2026-10-31
+  evening; closes BUG-T4). `-h` is dropped from `run`'s help names so
+  qsub's hold flag forwards (`--help` stays; the group still takes `-h`).
+  `-b/--batch` is dropped too: batch submission is mostly scripted, where
+  the long spelling costs nothing, and one claimed flag with a one-sentence
+  reason beats two. `-t` stays because `hpc run -t xcelium run_sim.sh` is
+  the product's daily use; an SGE user typing `-t 1-10` gets "unknown job
+  type" and `--array`, a clear failure. The live test then showed a second
+  fault behind BUG-T4: click drops a `--` it meets while still parsing
+  options, so with `ignore_unknown_options` a bare scheduler flag right
+  before the separator (`-h --`, `-V --`) lost it and the flag became the
+  command; `-h -b y --` only worked because `y` stopped option parsing.
+  `hpc run` now splits on the first `--` itself before click parses.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does
