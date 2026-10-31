@@ -246,6 +246,11 @@ example ``[schedulers.slurm]`` today) is a warning and is not checked.
      - ``true``
      - Emulate afterok/afternotok with exit sentinels (:doc:`sge`); with
        ``false`` only afterany dependencies are accepted.
+   * - ``sentinel_ttl_days``
+     - integer, 1 or more
+     - ``30``
+     - Exit sentinels older than this are removed when a scheduler is
+       created. Raise it if dependency chains wait longer than a month.
 
 ``[schedulers.local]`` (runs jobs as local subprocesses) reads
 ``module_init_script`` and ``module_system`` with the same meaning.
@@ -789,6 +794,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    memory_resource = "mem_free"
    time_resource = "h_rt"
    memory_per = "job"          # mem is per job; "slot" divides it by cpu for a per-slot consumable
+   sentinel_ttl_days = 30      # exit sentinels older than this are swept
 
    module_init_script = ""
    module_system = "modules"

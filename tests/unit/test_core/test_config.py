@@ -1019,10 +1019,19 @@ class TestSchedulerSections:
         path = _write(
             tmp_path,
             'config_version = 1\n[schedulers.sge]\nparallel_environment = "mpi"\n'
-            "emulate_afterok = false\n",
+            "emulate_afterok = false\nsentinel_ttl_days = 14\n",
         )
         config = load_config(path)
-        assert config.schedulers["sge"] == {"parallel_environment": "mpi", "emulate_afterok": False}
+        assert config.schedulers["sge"] == {
+            "parallel_environment": "mpi",
+            "emulate_afterok": False,
+            "sentinel_ttl_days": 14,
+        }
+
+    def test_sentinel_ttl_must_be_an_integer(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[schedulers.sge]\nsentinel_ttl_days = "14"\n')
+        (err,) = _errors(path)
+        assert "expected int" in str(err)
 
     def test_unknown_key_rejected(self, tmp_path):
         path = _write(tmp_path, "config_version = 1\n[schedulers.sge]\nmerge_output = true\n")

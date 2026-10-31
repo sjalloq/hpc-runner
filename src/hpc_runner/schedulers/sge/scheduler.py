@@ -96,7 +96,12 @@ def get_script_dir() -> Path:
     return script_dir
 
 
-def get_exit_dir(sweep_ttl_days: float = 7.0) -> Path:
+#: Default for ``[schedulers.sge] sentinel_ttl_days``: how long an exit
+#: sentinel is kept before the sweep at scheduler construction removes it.
+DEFAULT_SENTINEL_TTL_DAYS = 30
+
+
+def get_exit_dir(sweep_ttl_days: float = DEFAULT_SENTINEL_TTL_DAYS) -> Path:
     """Get directory for exit-code sentinel files.
 
     Each job publishes ``<exit_dir>/<JOB_ID>.rc`` (``<JOB_ID>.<TASK>.rc``
@@ -114,7 +119,13 @@ def get_exit_dir(sweep_ttl_days: float = 7.0) -> Path:
     ``SGEScheduler.get_status`` / ``get_exit_code`` read the exit code from
     here instead of returning UNKNOWN.
 
-    Stale sentinels older than *sweep_ttl_days* are opportunistically removed.
+    Sentinels whose mtime is older than *sweep_ttl_days* are removed, so the
+    directory does not grow without bound. The sweep looks only at mtimes,
+    never at the scheduler: a sentinel is written when its job exits, so one
+    older than the TTL belongs to a job that finished that long ago, and a
+    dependent submitted after the sweep would read a missing sentinel as
+    "not satisfied" and skip. Sites whose dependency chains span longer
+    than the default raise ``[schedulers.sge] sentinel_ttl_days``.
 
     Returns:
         Path to exit-sentinel directory (created if needed).
@@ -154,6 +165,7 @@ class SGEScheduler(BaseScheduler):
         "module_init_script": str,
         "module_system": str,
         "emulate_afterok": bool,
+        "sentinel_ttl_days": int,
     }
 
     HPC_VARS = {
@@ -198,7 +210,15 @@ class SGEScheduler(BaseScheduler):
         # [schedulers.sge] emulate_afterok = false, only afterany is
         # supported (the others raise NotSupportedError).
         self.emulate_afterok: bool = sge_config.get("emulate_afterok", True)
-        self.exit_dir = str(get_exit_dir()) if self.emulate_afterok else ""
+        # Sentinels older than this are swept here, once per scheduler
+        # instance, not on every submit (see get_exit_dir).
+        self.sentinel_ttl_days: int = sge_config.get("sentinel_ttl_days", DEFAULT_SENTINEL_TTL_DAYS)
+        if self.sentinel_ttl_days < 1:
+            raise ConfigError(
+                "[schedulers.sge] sentinel_ttl_days: expected a whole number of days, "
+                f"1 or more, got {self.sentinel_ttl_days!r}"
+            )
+        self.exit_dir = str(get_exit_dir(self.sentinel_ttl_days)) if self.emulate_afterok else ""
 
         # Build the argument renderer registry
         # Maps Job attribute names -> SGE argument renderer instances

@@ -238,8 +238,11 @@ task of an array job), where ``exit_dir`` is ``$HPC_EXIT_DIR`` or
 dependency guard and also serve as the status fallback: if ``qstat`` no
 longer knows a job and ``qacct`` cannot report it (accounting disabled or
 delayed), hpc-runner reads the sentinel to report COMPLETED, FAILED or
-SKIPPED and the exit code instead of UNKNOWN. Sentinels older than seven
-days are removed.
+SKIPPED and the exit code instead of UNKNOWN. Sentinels older than
+``[schedulers.sge] sentinel_ttl_days`` (default 30) are removed each time a
+scheduler object is created; the sweep reads file ages only and never asks
+the scheduler, so a dependent submitted after its parent's sentinel was
+swept is skipped as "not satisfied".
 
 Status queries are batched: ``get_statuses(ids)`` runs one
 ``qstat -xml -u '*'`` for all ids (each array task reports its own state),

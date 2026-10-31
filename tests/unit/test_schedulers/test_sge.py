@@ -1,6 +1,8 @@
 """Tests for SGE scheduler."""
 
 import dataclasses
+import os
+import time
 
 import pytest
 
@@ -641,6 +643,59 @@ class TestSGEDependencies:
         result = self._run(scheduler.preview(job), tmp_path, {"JOB_ID": "60"})
         assert result.returncode == (0 if expect_ran else 113), result.stderr
         assert ("RAN" in result.stdout) is expect_ran
+
+
+class TestSentinelSweep:
+    """Sentinels older than sentinel_ttl_days go at scheduler construction; newer stay."""
+
+    DAY = 86400
+
+    @staticmethod
+    def _aged(path, days):
+        path.write_text("0\n")
+        then = time.time() - days * TestSentinelSweep.DAY
+        os.utime(path, (then, then))
+        return path
+
+    def test_default_ttl_is_thirty_days(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        old = self._aged(tmp_path / "1.rc", 31)
+        recent = self._aged(tmp_path / "2.rc", 29)
+        task = self._aged(tmp_path / "3.7.rc", 31)
+        other = self._aged(tmp_path / "notes.txt", 400)
+        scheduler = SGEScheduler(HPCConfig())
+        assert scheduler.sentinel_ttl_days == 30
+        assert not old.exists() and not task.exists()
+        assert recent.exists() and other.exists()  # only *.rc is swept
+
+    def test_configured_ttl(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        old = self._aged(tmp_path / "1.rc", 2)
+        recent = self._aged(tmp_path / "2.rc", 0.5)
+        SGEScheduler(HPCConfig(schedulers={"sge": {"sentinel_ttl_days": 1}}))
+        assert not old.exists() and recent.exists()
+
+    @pytest.mark.parametrize("ttl", [0, -3])
+    def test_ttl_below_one_day_is_a_config_error(self, monkeypatch, tmp_path, ttl):
+        from hpc_runner.core.exceptions import ConfigError
+
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        with pytest.raises(ConfigError, match="sentinel_ttl_days"):
+            SGEScheduler(HPCConfig(schedulers={"sge": {"sentinel_ttl_days": ttl}}))
+
+    def test_no_sweep_without_emulation(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        old = self._aged(tmp_path / "1.rc", 400)
+        SGEScheduler(HPCConfig(schedulers={"sge": {"emulate_afterok": False}}))
+        assert old.exists()
+
+    def test_sweep_runs_at_construction_not_on_submit(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        scheduler = SGEScheduler(HPCConfig())
+        old = self._aged(tmp_path / "1.rc", 400)
+        with patch_seam(lambda argv: (0, 'Your job 5 ("x") has been submitted\n', "")):
+            scheduler.submit(make_job(workdir=str(tmp_path)))
+        assert old.exists()
 
 
 class TestSGEExitSentinelFallback:
