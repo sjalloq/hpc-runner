@@ -240,7 +240,9 @@ the suite is green now and the fix flips the test to a hard pass.
   `qacct -o <user> -j` ends with a per-owner summary block that
   `parse_qacct_records` parses as a job (`job_id=''`, `user='unknown'`,
   UNKNOWN). The unfiltered form has no such block. `test_two_users`.
-- **BUG-T3 `failed 19` with `exit_status 0` is reported COMPLETED.** A job
+- **BUG-T3 `failed 19` with `exit_status 0` is reported COMPLETED.** *Fixed
+  2026-10-31 (test QA fix pass): `qacct_status` reads the full `failed`
+  table first; `JobInfo` carries `failed_code`/`failed_reason`.* A job
   whose node died is recorded by qacct as `failed 19: before writing
   exit_status`, `exit_status 0`; `qacct_status` special-cases only
   `failed 37` and otherwise trusts `exit_status`, so a lost job looks
@@ -294,9 +296,23 @@ the suite is green now and the fix flips the test to a hard pass.
   names are validated against `testbed/*/*/compose.yml` at collection;
   a flavour mismatch deselects rather than skips. `-r sxX` is in addopts.
   This supersedes the skip wording of D-T22 and D-T9.
+- **D-T38 unit fixtures are captured from the testbed** (test QA review §5
+  item 5b). `hpc-testbed capture` runs `tests/integration/capture.py` in
+  `login`: it submits one job per scenario (ok, exit 1, finished array,
+  another user's job, a `qdel`'d running job, a job on a killed node, then a
+  live snapshot with a running job, a held job, an `Eqw` job and an array
+  with running and queued tasks, then `qstat` against a stopped master) and
+  copies the raw CLI output to `tests/unit/fixtures/sge/` with a
+  `manifest.json` of scenario ids. `mock_sge_commands` and the parser tests
+  read those files; ids are never hard-coded. Found while capturing: a job
+  whose `-o` directory it cannot write goes `Eqw` with `failed 26`; `qstat
+  -j <unknown>` exits 0 with `<unknown_jobs>`; `qdel` says "has registered
+  the job N for deletion"; against a stopped master qstat fails after ~45 s
+  with a commlib "No route to host" line before "unable to contact qmaster".
 - Suite time: about 4 min per Python on the default stack; the master-stop
   (95 s, the 60 s command timeout) and `h_rt` (61 s) tests are inherent.
-- **BUG-T5 signal deaths report `exit_code None`.** qacct writes
+- **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
+  `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does
   `int(record["exit_status"])`, which raises, falls through to the exit
   sentinel, and a SIGKILLed job never wrote one. `qacct_status` already
@@ -306,6 +322,9 @@ the suite is green now and the fix flips the test to a hard pass.
   rather than a second 60 s `h_rt` job); `test_h_rt_kill` keeps TIMEOUT
   and `failed 37`.
 - **BUG-T6 an unreachable qmaster is reported as UNKNOWN, not an error.**
+  *Fixed 2026-10-31: `_qstat_xml` raises `SchedulerUnavailableError` when
+  qstat's stderr names qmaster/commlib/a connection failure; the test is
+  no longer an xfail and requires the error within 10 s.*
   `SGEScheduler._active_states` runs `qstat -xml -u '*'` with `check=False`
   and treats any non-zero exit as "nothing active" (to tolerate sites whose
   qstat exits 1 on an empty queue). With the master stopped, qstat fails at

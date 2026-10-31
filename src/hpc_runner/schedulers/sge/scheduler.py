@@ -51,6 +51,7 @@ from hpc_runner.schedulers.sge.args import (
     sanitise_job_name,
 )
 from hpc_runner.schedulers.sge.parser import (
+    _leading_int,
     parse_qacct_output,
     parse_qacct_records,
     parse_qstat_j_xml,
@@ -59,6 +60,7 @@ from hpc_runner.schedulers.sge.parser import (
     parse_qsub_output,
     qacct_status,
     qacct_to_job_info,
+    qstat_unreachable,
     state_to_status,
 )
 from hpc_runner.templates import render_template
@@ -575,16 +577,30 @@ class SGEScheduler(BaseScheduler):
         except ValueError:
             return None
 
-    def _active_states(self) -> dict[str, str]:
-        """State code of every active job and array task, from one ``qstat -xml``.
+    def _qstat_xml(self, user: str = "*") -> str:
+        """The output of ``qstat -xml -u <user>``, ``""`` when qstat says there is nothing.
 
         Some sites' qstat exits non-zero when there are no jobs, so a
-        non-zero exit is "nothing active".
+        non-zero exit is "nothing active" unless its stderr says the master
+        could not be reached: a down scheduler must not look like an empty
+        queue, or a lost job reads as aged out and ``wait()`` polls on.
+
+        Raises:
+            SchedulerUnavailableError: qstat could not contact the qmaster
+                (stderr names qmaster, commlib or a connection failure).
         """
-        result = self._run(["qstat", "-xml", "-u", "*"], check=False)
-        if result.returncode != 0:
-            return {}
-        return parse_qstat_xml_states(result.stdout)
+        result = self._run(["qstat", "-xml", "-u", user], check=False)
+        if result.returncode == 0:
+            return result.stdout
+        if qstat_unreachable(result.stderr):
+            detail = result.stderr.strip() or result.stdout.strip()
+            raise SchedulerUnavailableError(f"qstat cannot reach the SGE qmaster: {detail}")
+        return ""
+
+    def _active_states(self) -> dict[str, str]:
+        """State code of every active job and array task, from one ``qstat -xml``."""
+        output = self._qstat_xml()
+        return parse_qstat_xml_states(output) if output else {}
 
     def _qacct(self, job_id: str) -> dict[str, str] | None:
         """The parsed qacct record for *job_id* (``-t`` for a task), or None."""
@@ -602,7 +618,11 @@ class SGEScheduler(BaseScheduler):
         exit sentinel. An id not active is looked up one by one (qacct has
         no bulk-by-id form); the sentinel is the fallback when accounting
         has no record. An exit code of ``HPC_EXIT_DEP_FAILED`` (113) is
-        SKIPPED; a qacct ``failed`` 37 is TIMEOUT.
+        SKIPPED; the qacct ``failed`` code is read first (see
+        :func:`~hpc_runner.schedulers.sge.parser.qacct_status`).
+
+        Raises:
+            SchedulerUnavailableError: qstat cannot reach the qmaster.
 
         An array task id (``123.4``) reports that task's own state. A base
         id of an array reports the most advanced state of its active tasks.
@@ -654,12 +674,10 @@ class SGEScheduler(BaseScheduler):
         """
         record = self._qacct(job_id)
         if record is not None:
-            exit_status = record.get("exit_status")
+            # qacct writes "137 (Killed)" for a signal death; take the number.
+            exit_status = _leading_int(record.get("exit_status"))
             if exit_status is not None:
-                try:
-                    return int(exit_status)
-                except ValueError:
-                    pass
+                return exit_status
         return self._read_exit_sentinel(job_id)
 
     # =========================================================================
@@ -682,22 +700,12 @@ class SGEScheduler(BaseScheduler):
         Returns:
             List of JobInfo for matching active jobs.
         """
-        # Build qstat command
-        cmd = ["qstat", "-xml"]
-        if user:
-            cmd.extend(["-u", user])
-        else:
-            # Show all users' jobs
-            cmd.extend(["-u", "*"])
-
-        # Some sites' qstat exits non-zero when there are no jobs.  A missing
-        # qstat raises SchedulerUnavailableError.
-        result = self._run(cmd, check=False)
-        if result.returncode != 0:
+        # A missing qstat or an unreachable qmaster raises
+        # SchedulerUnavailableError; "no jobs" is an empty list.
+        output = self._qstat_xml(user or "*")
+        if not output:
             return []
-
-        # Parse XML output
-        parsed_jobs = parse_qstat_xml(result.stdout)
+        parsed_jobs = parse_qstat_xml(output)
 
         # Convert to JobInfo and apply filters
         jobs: list[JobInfo] = []
@@ -802,8 +810,13 @@ class SGEScheduler(BaseScheduler):
         if queue is not None:
             jobs = [j for j in jobs if j.queue == queue]
 
-        # Sort by end_time descending (most recent first), None last
-        jobs.sort(key=lambda j: j.end_time or datetime.min, reverse=True)
+        # Most recent first. A job that never ran to its end (a lost node
+        # records "end_time -/-", and "start_time -/-" too) is placed by the
+        # time it has, so it is not pushed past `limit` behind older jobs.
+        jobs.sort(
+            key=lambda j: j.end_time or j.start_time or j.submit_time or datetime.min,
+            reverse=True,
+        )
 
         return jobs[:limit]
 

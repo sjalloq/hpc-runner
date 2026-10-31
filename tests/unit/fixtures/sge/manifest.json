@@ -1,0 +1,35 @@
+{
+  "captured": "2026-10-31T13:16:52Z",
+  "flavour": "soge",
+  "scheduler": "SGE 8.1.9",
+  "jobs": {
+    "ok": "95",
+    "exit1": "96",
+    "array_done": "97",
+    "bob": "98",
+    "signal": "101",
+    "lost_node": "102",
+    "running": "104",
+    "held": "105",
+    "eqw": "106",
+    "array": "107"
+  },
+  "files": {
+    "qstat_empty.xml": "qstat -xml -u '*' with nothing queued",
+    "qacct_missing.txt": "qacct -j of an unknown id (JSON)",
+    "qsub.txt": "qsub stdout for a plain job",
+    "qsub_array.txt": "qsub stdout for an array job",
+    "qacct_ok.txt": "qacct -j of a job that exited 0",
+    "qacct_exit1.txt": "qacct -j of a job that exited 1",
+    "qacct_array_task.txt": "qacct -j <id> -t 2 of a finished array",
+    "qacct_owner_bob.txt": "qacct -j -o bob: bob's records then the owner summary block (BUG-T2)",
+    "qdel.txt": "qdel stdout",
+    "qacct_signal.txt": "qacct -j of a running job deleted with qdel (exit_status 137 (Killed), BUG-T5)",
+    "qacct_lost_node.txt": "qacct -j of a job whose node was killed (failed 19, BUG-T3)",
+    "qstat_mixed.xml": "qstat -xml -u '*': running, hqw, Eqw and an array with r and qw tasks",
+    "qstat_mixed.txt": "plain qstat -u '*' of the same moment",
+    "qstat_j_running.xml": "qstat -j <id> -xml of the running job",
+    "qstat_j_missing.txt": "qstat -j of an unknown id (JSON: returncode, stdout, stderr)",
+    "qstat_master_down.json": "qstat -xml -u '*' with the qmaster stopped (JSON, BUG-T6)"
+  }
+}

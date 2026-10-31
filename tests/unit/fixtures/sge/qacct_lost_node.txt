@@ -1,0 +1,45 @@
+==============================================================
+qname        all.q               
+hostname     exec1               
+group        tester              
+owner        tester              
+project      NONE                
+department   defaultdepartment   
+jobname      lost_node           
+jobnumber    102                 
+taskid       undefined
+account      sge                 
+priority     0                   
+qsub_time    Sat Oct 31 13:15:35 2026
+start_time   -/-
+end_time     -/-
+granted_pe   NONE                
+slots        1                   
+failed       19  : before writing exit_status
+exit_status  0                   
+ru_wallclock 0s
+ru_utime     0.000s
+ru_stime     0.000s
+ru_maxrss    0.000B
+ru_ixrss     0.000B
+ru_ismrss    0.000B
+ru_idrss     0.000B
+ru_isrss     0.000B
+ru_minflt    0                   
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   0                   
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     0                   
+ru_nivcsw    0                   
+cpu          0.000s
+mem          0.000Bs
+io           0.000B
+iow          0.000s
+maxvmem      0.000B
+arid         undefined
+ar_sub_time  undefined
+category     -l hostname=exec1

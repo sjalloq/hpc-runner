@@ -41,7 +41,7 @@ appear here (none so far); nothing skips at run time.
 | test_arrays.py | test_array_1_to_5 | pass |
 | test_resources.py | test_pe_mem_time | pass |
 | | test_h_rt_kill (TIMEOUT from `failed 37`, D-T30) | pass |
-| | test_signal_exit_code (exit 137 of a signal death) | xfail(BUG-T5) |
+| | test_signal_exit_code (exit 137 of a signal death, BUG-T5 fixed) | pass |
 | | test_h_vmem | pass |
 | | test_queue_selection | pass |
 | test_environment.py | test_modules_on_node | pass |
@@ -54,8 +54,8 @@ appear here (none so far); nothing skips at run time.
 | | test_cwd_with_space | xfail(BUG-T1) |
 | test_listing.py | test_two_users | pass |
 | | test_completed_listing_by_user | xfail(BUG-T2) |
-| test_failures.py | test_master_stopped | xfail(BUG-T6) (skip when the Docker socket is not mounted) |
-| | test_node_killed | xfail(BUG-T3) (skip when the Docker socket is not mounted) |
+| test_failures.py | test_master_stopped (BUG-T6 fixed; fails if the Docker socket is not mounted) | pass |
+| | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass |
 | | shared FS missing | not automated (D-T23); see "Manual checks" |
 
 ### Manual checks

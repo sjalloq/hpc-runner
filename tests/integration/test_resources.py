@@ -5,7 +5,7 @@ See docs/dev/testbed/TESTBED_PLAN.md section 5.
 
 from __future__ import annotations
 
-import pytest
+import time
 
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
@@ -14,6 +14,8 @@ from tests.integration.cluster import Cluster
 
 #: ``short.q`` has ``h_rt 00:01:00``; the kill arrives about 60 s after start.
 H_RT_KILL_TIMEOUT = 150.0
+#: qmaster flushes accounting within 1 s on the default stack; allow more.
+QACCT_TIMEOUT = 30.0
 #: Allocate 200 MB under a 50 MB ``h_vmem`` limit.
 ALLOC_200M = 'python3 -c "b = bytearray(200 * 1024 * 1024); print(len(b))"'
 
@@ -57,22 +59,24 @@ def test_h_rt_kill(cluster: Cluster) -> None:
     record = cluster.run(["qacct", "-j", job_id]).stdout
     failed = [line.split() for line in record.splitlines() if line.startswith("failed")]
     assert failed and failed[0][1] == "37", record
-    # The exit code of a signal death is pinned by test_signal_exit_code (BUG-T5).
+    assert cluster.scheduler().get_exit_code(job_id) == 137
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-T5: qacct writes 'exit_status 137 (Killed)'; get_exit_code int()s it and gets None",
-)
 def test_signal_exit_code(cluster: Cluster) -> None:
-    """A signal-killed job (here qdel, same as an h_rt kill) reports exit code 137."""
+    """A signal-killed job (here qdel, same as an h_rt kill) reports exit code 137 (BUG-T5)."""
     result = _submit(cluster, JobSpec("sleep 60", name="sigexit"))
     job_id = _job_id(result)
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
     assert result.cancel()
     status = cluster.wait_for(job_id, {JobStatus.CANCELLED, JobStatus.FAILED}, timeout=30)
     assert status in {JobStatus.CANCELLED, JobStatus.FAILED}
-    assert cluster.scheduler().get_exit_code(job_id) == 137
+    # CANCELLED comes from qstat's `dr` state, before qacct has the record (and a
+    # SIGKILLed job writes no sentinel), so the exit code is None until then.
+    deadline = time.monotonic() + QACCT_TIMEOUT
+    while (exit_code := cluster.scheduler().get_exit_code(job_id)) is None:
+        assert time.monotonic() < deadline, f"no qacct record for {job_id} after {QACCT_TIMEOUT}s"
+        time.sleep(0.5)
+    assert exit_code == 137
 
 
 def test_h_vmem(cluster: Cluster) -> None:

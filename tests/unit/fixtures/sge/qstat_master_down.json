@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "qstat",
+    "-xml",
+    "-u",
+    "*"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "error: commlib error: got select error (No route to host)\nerror: unable to contact qmaster using port 6444 on host \"master\"\n"
+}

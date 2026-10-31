@@ -244,7 +244,14 @@ days are removed.
 Status queries are batched: ``get_statuses(ids)`` runs one
 ``qstat -xml -u '*'`` for all ids (each array task reports its own state),
 then ``qacct`` (``qacct -j <id> -t <task>`` for a task) and the sentinel
-only for ids no longer active. A ``qacct`` record with ``failed`` 37
-(qmaster enforced ``h_rt``, ``h_cpu`` or ``h_vmem``) is reported as
-``TIMEOUT``; a limit enforced by the execution daemon is recorded as a
-signal death (``exit_status`` 137) and reported as ``FAILED``.
+only for ids no longer active. A ``qacct`` record is read ``failed`` code
+first: 37 (qmaster enforced ``h_rt``, ``h_cpu`` or ``h_vmem``) is
+``TIMEOUT``; 0 and 100 ("assumedly after job": the job ran and was killed,
+by ``qdel`` or an execution-daemon limit) let ``exit_status`` decide, with
+a signal death's ``137 (Killed)`` read as exit code 137 and ``FAILED``; 24
+and 25 (migrating, rescheduling) are not final; any other code means the
+job never ran to completion and is ``FAILED`` whatever ``exit_status``
+says (a node that dies mid-job records ``failed 19`` with
+``exit_status 0``). ``hpc status`` shows the code and SGE's own words for
+it. If ``qstat`` cannot reach the qmaster, status queries raise
+``SchedulerUnavailableError`` instead of reporting ``UNKNOWN``.

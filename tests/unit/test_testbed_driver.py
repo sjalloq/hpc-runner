@@ -11,7 +11,10 @@ from pathlib import Path
 import pytest
 
 from hpc_runner import _testbed as driver
-from hpc_runner._testbed import Stack, TestbedError, find_root, find_stack, main
+from hpc_runner._testbed import Stack, find_root, find_stack, main
+
+TestbedError = driver.TestbedError
+TestbedError.__test__ = False  # type: ignore[attr-defined]  # not a test class, despite the name
 
 
 @pytest.fixture
@@ -189,6 +192,23 @@ class TestCommands:
         monkeypatch.setattr(driver, "run", fake_run)
         assert main(["pytest", "--up"]) == 1
         assert seen[-1] == "down"
+
+    def test_capture_runs_the_module_in_login_and_copies_the_fixtures(self, repo, calls):
+        main(["capture", "--py", "3.11"])
+        run_argv, copy_argv = (c[0] for c in calls)
+        assert run_argv[6] == "exec"
+        tail = run_argv[run_argv.index("login") + 1 :]
+        assert tail == [
+            "/opt/venv/3.11/bin/python",
+            "-m",
+            "tests.integration.capture",
+            "/work/capture",
+            "soge",
+        ]
+        assert copy_argv == _compose(
+            repo, "cp", "login:/work/capture/.", str(repo / "tests/unit/fixtures/sge")
+        )
+        assert (repo / "tests/unit/fixtures/sge").is_dir()
 
     def test_other_flavour_changes_file_and_project(self, repo, calls):
         main(["--flavour", "ocs", "down"])

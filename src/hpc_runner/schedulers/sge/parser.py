@@ -19,22 +19,17 @@ def parse_qstat_xml(xml_output: str) -> dict[str, Any]:
 
     try:
         root = ET.fromstring(xml_output)
-        _strip_namespaces(root)
-
-        # Parse queue_info (running jobs)
-        for job_list in root.findall(".//job_list"):
-            job_info = _parse_job_element(job_list)
-            if job_info:
-                jobs[job_info["job_id"]] = job_info
-
-        # Parse job_info (pending jobs)
-        for job_list in root.findall(".//job_info/job_list"):
-            job_info = _parse_job_element(job_list)
-            if job_info:
-                jobs[job_info["job_id"]] = job_info
-
     except ET.ParseError:
-        pass
+        return jobs
+    _strip_namespaces(root)
+
+    # One entry per job id. qstat lists running entries (queue_info) before
+    # pending ones (job_info); an array job with running and queued tasks
+    # has both, and the first, running, entry is the one kept.
+    for job_list in root.iter("job_list"):
+        job_info = _parse_job_element(job_list)
+        if job_info:
+            jobs.setdefault(job_info["job_id"], job_info)
 
     return jobs
 
@@ -275,39 +270,149 @@ def parse_qacct_output(output: str) -> dict[str, Any]:
     return info
 
 
-# qacct ``failed`` code for "qmaster enforced h_rt, h_cpu, or h_vmem limit"
-# (accounting.5 / sge_status.5, SGE 8.1.9).
+# The qacct ``failed`` codes of gridengine 8.1.9 and the text qacct prints
+# after each (``failed  19  : before writing exit_status``). Taken from the
+# testbed image's qacct itself (fed an accounting file with every code), not
+# from memory: 0 is "no failure", 23 and anything above 38 other than 100
+# print "invalid execution state". Codes 1-38 say where the shepherd was
+# when the job failed; 100 is the one code set *after* the job ran.
+SGE_FAILED_CODES: dict[int, str] = {
+    1: "assumedly before job",
+    2: "on executing shepherd",
+    3: "before writing config",
+    4: "before writing pid",
+    5: "on reading config file",
+    6: "setting processor set",
+    7: "before prolog",
+    8: "in prolog",
+    9: "before pestart",
+    10: "in pestart",
+    11: "before job",
+    12: "before pestop",
+    13: "in pestop",
+    14: "before epilog",
+    15: "in epilog",
+    16: "releasing processor set",
+    17: "through signal",
+    18: "shepherd returned error",
+    19: "before writing exit_status",
+    20: "found unexpected error file",
+    21: "in recognizing job",
+    22: "removed manually",
+    24: "migrating",
+    25: "rescheduling",
+    26: "opening input/output file",
+    27: "searching requested shell",
+    28: "changing into working directory",
+    29: "AFS setup",
+    30: "application error returned",
+    31: "accessing sgepasswd file",
+    32: "entry is missing in sgepasswd file",
+    33: "wrong password",
+    34: "communicating with Grid Engine Helper Service",
+    35: "before job in Grid Engine Helper Service",
+    36: "checking configured daemons",
+    37: "qmaster enforced h_rt, h_cpu, or h_vmem limit",
+    38: "adding supplementary group",
+    100: "assumedly after job",
+}
+QACCT_FAILED_INVALID = "invalid execution state"
+
+#: ``failed`` 37: qmaster enforced ``h_rt``, ``h_cpu`` or ``h_vmem``.
 QACCT_FAILED_LIMIT = 37
+#: ``failed`` 100: the job ran; ``exit_status`` is its real exit code.
+QACCT_FAILED_AFTER_JOB = 100
+#: ``failed`` codes after which the job runs again, so the record is not final.
+QACCT_FAILED_NOT_FINAL = frozenset({24, 25})
+
+
+def failed_reason(code: int) -> str:
+    """qacct's text for a ``failed`` *code* (``""`` for 0)."""
+    if code == 0:
+        return ""
+    return SGE_FAILED_CODES.get(code, QACCT_FAILED_INVALID)
+
+
+def parse_failed(value: object) -> tuple[int, str] | None:
+    """``(code, reason)`` from a qacct ``failed`` value, or None if absent/garbled.
+
+    The reason is the text qacct printed after the colon when there is one,
+    else the table entry for the code.
+    """
+    code = _leading_int(value)
+    if code is None:
+        return None
+    assert isinstance(value, str)
+    _, sep, text = value.partition(":")
+    reason = text.strip() if sep else failed_reason(code)
+    return code, reason
 
 
 def qacct_status(record: dict[str, Any]) -> JobStatus | None:
     """The status of a finished job from its parsed qacct record.
 
-    ``failed`` 37 (qmaster enforced a time or memory limit) is TIMEOUT.
-    Otherwise ``exit_status`` decides via
-    :func:`~hpc_runner.core.result.status_from_exit_code` (113 is SKIPPED).
-    An execd ``h_rt`` kill is recorded as ``failed 100`` with
-    ``exit_status 137``, indistinguishable from any other signal death, so
-    it stays FAILED.
+    One table decides, on the ``failed`` code first:
+
+    * 0 or absent: the job ran to completion; ``exit_status`` decides via
+      :func:`~hpc_runner.core.result.status_from_exit_code` (113 is SKIPPED).
+    * 37 (qmaster enforced ``h_rt``/``h_cpu``/``h_vmem``): TIMEOUT.
+    * 100 ("assumedly after job"): the job ran but ended abnormally, as on a
+      ``qdel`` or an execd limit kill; ``exit_status`` (137 for SIGKILL) is
+      real and decides, as for 0.
+    * 24 and 25 (migrating, rescheduling): the job runs again, this record
+      is not its end: None.
+    * Anything else (1-38 bar 37): the job did not run to completion and
+      ``exit_status`` is meaningless (a node that died mid-job records
+      ``failed 19`` with ``exit_status 0``): FAILED.
 
     Returns:
-        The status, or None if the record has no usable exit status.
+        The status, or None if the record cannot decide it.
     """
-    failed = _leading_int(record.get("failed"))
+    failed = _leading_int(record.get("failed")) or 0
     if failed == QACCT_FAILED_LIMIT:
         return JobStatus.TIMEOUT
+    if failed in QACCT_FAILED_NOT_FINAL:
+        return None
+    if failed not in (0, QACCT_FAILED_AFTER_JOB):
+        return JobStatus.FAILED
     exit_code = _leading_int(record.get("exit_status"))
     if exit_code is None:
         return None
     return status_from_exit_code(exit_code)
 
 
+def _qacct_seconds(value: object) -> float | None:
+    """A qacct duration (``"123.456"``, ``"7s"``, ``"0.030s"``) in seconds, or None."""
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*s?\s*", value)
+    return float(match.group(1)) if match else None
+
+
 def _leading_int(value: object) -> int | None:
-    """The integer at the start of a qacct value (``"37  : qmaster ..."`` -> 37)."""
+    """The integer at the start of a qacct value.
+
+    ``"37  : qmaster ..."`` -> 37; ``"137 (Killed)"`` (``exit_status`` of a
+    signal death) -> 137.
+    """
     if not isinstance(value, str):
         return None
     match = re.match(r"\s*(\d+)", value)
     return int(match.group(1)) if match else None
+
+
+# What qstat writes to stderr when it cannot reach the master (gridengine
+# 8.1.9 commlib): "error: unable to contact qmaster using port 6444 on host
+# \"master\"", "error: commlib error: got select error (Connection refused)",
+# "error: commlib error: can't connect to service (...)". A qstat that exits
+# non-zero for any *other* reason (some sites' "no jobs") is still "nothing
+# active".
+_QSTAT_UNREACHABLE_RE = re.compile(r"qmaster|commlib|connect|contact", re.IGNORECASE)
+
+
+def qstat_unreachable(stderr: str) -> bool:
+    """Whether a failed qstat's *stderr* says the qmaster could not be reached."""
+    return bool(_QSTAT_UNREACHABLE_RE.search(stderr))
 
 
 def state_to_status(state: str) -> JobStatus:
@@ -423,7 +528,8 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     * ``jobname`` -> ``name``
     * ``owner`` -> ``user``
     * ``exit_status`` -> ``exit_code``; with ``failed``, ``status`` (see
-      :func:`qacct_status`)
+      :func:`qacct_status`); ``failed`` -> ``failed_code`` and, when non-zero,
+      ``failed_reason`` (the scheduler's own words, for ``hpc status``)
     * ``qname`` -> ``queue``
     * ``hostname`` -> ``node``
     * ``slots`` -> ``cpu``
@@ -434,6 +540,7 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     """
     exit_code = _leading_int(record.get("exit_status"))
     status = qacct_status(record) or JobStatus.UNKNOWN
+    failed = parse_failed(record.get("failed"))
 
     # CPU slots
     cpu: int | None = None
@@ -444,14 +551,12 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
         except (ValueError, TypeError):
             pass
 
-    # Runtime from ru_wallclock (seconds as a float string)
+    # Runtime from ru_wallclock: "123.456" on older releases, "7s" (whole
+    # seconds with a unit) on gridengine 8.1.9.
     runtime: timedelta | None = None
-    wallclock_str = record.get("ru_wallclock")
-    if wallclock_str is not None:
-        try:
-            runtime = timedelta(seconds=float(wallclock_str))
-        except (ValueError, TypeError):
-            pass
+    seconds = _qacct_seconds(record.get("ru_wallclock"))
+    if seconds is not None:
+        runtime = timedelta(seconds=seconds)
 
     job_info = JobInfo(
         job_id=record.get("jobnumber", ""),
@@ -463,6 +568,8 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
         cpu=cpu,
         exit_code=exit_code,
         runtime=runtime,
+        failed_code=failed[0] if failed else None,
+        failed_reason=failed[1] if failed and failed[0] else None,
     )
 
     # Timestamps

@@ -144,6 +144,13 @@ directory per scheduler implementation (`testbed/sge/soge/` = Debian trixie
 gridengine 8.1.9); every divergence from the plan is in `docs/dev/testbed/TESTBED_REVIEW.md`.
 Nothing captured from a real work cluster ever goes into the repo.
 
+`tests/unit/fixtures/sge/` holds real scheduler output captured *from the
+testbed* by `hpc-testbed capture` (`tests/integration/capture.py`; scenarios
+and ids in `manifest.json`). The unit suite's `mock_sge_commands` answers by
+whole argv from those files (`tests/fakes.py: make_sge_responder`) and the
+parser tests read them, so canned text is never typed from memory. Regenerate
+with `hpc-testbed capture` against a running stack when a scenario changes.
+
 ### Developer notes (`docs/dev/`)
 
 Planning, design and review documents live under `docs/dev/`, one

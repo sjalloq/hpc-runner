@@ -10,7 +10,7 @@ from pathlib import Path
 import jinja2
 import pytest
 
-from tests.fakes import make_host, patch_seam
+from tests.fakes import SGEFixtures, make_host, make_sge_responder, patch_seam
 
 
 def pytest_addoption(parser):
@@ -83,74 +83,20 @@ def temp_dir():
 
 
 @pytest.fixture
-def mock_sge_commands():
-    """Mock SGE commands (qsub, qstat, etc.) at the subprocess seam."""
+def mock_sge_commands(sge_fixtures):
+    """SGE commands at the subprocess seam, answered from the captured fixtures.
 
-    def respond(cmd):
-        stdout = ""
-
-        if cmd[0] == "qsub":
-            stdout = 'Your job 12345 ("test_job") has been submitted\n'
-        elif cmd[0] == "qstat":
-            if "-xml" in cmd:
-                # XML output for list_active_jobs
-                stdout = """<?xml version='1.0'?>
-<job_info>
-  <queue_info>
-    <job_list state="running">
-      <JB_job_number>12345</JB_job_number>
-      <JB_name>running_job</JB_name>
-      <JB_owner>testuser</JB_owner>
-      <state>r</state>
-      <queue_name>batch.q@node1</queue_name>
-      <slots>4</slots>
-      <JB_submission_time>1704110400</JB_submission_time>
-      <JAT_start_time>1704110460</JAT_start_time>
-    </job_list>
-  </queue_info>
-  <job_info>
-    <job_list state="pending">
-      <JB_job_number>12346</JB_job_number>
-      <JB_name>pending_job</JB_name>
-      <JB_owner>testuser</JB_owner>
-      <state>qw</state>
-      <slots>2</slots>
-      <JB_submission_time>1704110500</JB_submission_time>
-    </job_list>
-    <job_list state="pending">
-      <JB_job_number>12347</JB_job_number>
-      <JB_name>other_user_job</JB_name>
-      <JB_owner>otheruser</JB_owner>
-      <state>qw</state>
-      <queue_name>gpu.q@node2</queue_name>
-      <slots>8</slots>
-    </job_list>
-  </job_info>
-</job_info>
-"""
-            elif "-j" in cmd:
-                stdout = "job_number: 12345\n"
-            else:
-                stdout = """job-ID  prior   name       user         state submit/start at     queue                          slots ja-task-ID
------------------------------------------------------------------------------------------------------------------
-12345   0.55500 test_job   user         r     01/01/2024 10:00:00 all.q@node1                    1
-"""
-        elif cmd[0] == "qdel":
-            stdout = "user has deleted job 12345\n"
-        elif cmd[0] == "qacct":
-            stdout = """==============================================================
-qname        all.q
-hostname     node1
-owner        user
-jobname      test_job
-jobnumber    12345
-exit_status  0
-"""
-
-        return 0, stdout, ""
-
-    with patch_seam(respond) as mock_run:
+    See :func:`tests.fakes.make_sge_responder`: answers depend on the whole
+    argv, and ids come from ``sge_fixtures.job(<scenario>)``.
+    """
+    with patch_seam(make_sge_responder(sge_fixtures)) as mock_run:
         yield mock_run
+
+
+@pytest.fixture(scope="session")
+def sge_fixtures() -> SGEFixtures:
+    """The SGE texts captured from the testbed (tests/unit/fixtures/sge/)."""
+    return SGEFixtures()
 
 
 @pytest.fixture

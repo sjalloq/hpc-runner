@@ -38,6 +38,12 @@ class JobInfo:
 
     # Completion info (None for active jobs)
     exit_code: int | None = None
+    # The scheduler's own failure code and words when it, not the job, ended
+    # the run or could not run it (SGE: qacct ``failed`` 19 "before writing
+    # exit_status" for a lost node, 37 for an enforced limit). None when the
+    # scheduler records no such failure; 0 on SGE means "no failure".
+    failed_code: int | None = None
+    failed_reason: str | None = None
 
     # Output file paths
     stdout_path: Path | None = None

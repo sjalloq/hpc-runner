@@ -105,6 +105,12 @@ class TestQacctToJobInfo:
         assert info.start_time == datetime(2026, 2, 23, 10, 0, 5)
         assert info.end_time == datetime(2026, 2, 23, 10, 2, 8)
 
+    def test_wallclock_with_unit_suffix(self):
+        info = qacct_to_job_info({"jobnumber": "1", "exit_status": "0", "ru_wallclock": "7s"})
+        assert info.runtime == timedelta(seconds=7)
+        info = qacct_to_job_info({"jobnumber": "1", "exit_status": "0", "ru_wallclock": "n/a"})
+        assert info.runtime is None
+
     def test_failed_job(self):
         record = {
             "jobnumber": "10002",

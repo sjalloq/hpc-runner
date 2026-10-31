@@ -10,14 +10,17 @@ from collections.abc import Iterator
 
 import pytest
 
-from hpc_runner.core.exceptions import SchedulerError
+from hpc_runner.core.exceptions import SchedulerUnavailableError
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.schedulers.base import BaseScheduler
 from tests.integration.cluster import Cluster
 
-#: BaseScheduler.COMMAND_TIMEOUT is 60 s; a failure must surface within that plus slack.
-FAIL_WITHIN = 90.0
+#: Against a stopped master, qstat's commlib gives up after about 45 s (observed 43.5 s
+#: on gridengine 8.1.9). The error must come from qstat's own stderr, so it must
+#: land before BaseScheduler.COMMAND_TIMEOUT (60 s) turns it into a timeout.
+FAIL_WITHIN = BaseScheduler.COMMAND_TIMEOUT
 RECOVER_TIMEOUT = 90.0
 #: Statuses that say "did not finish normally" (docs/dev/testbed/TESTBED_REVIEW.md D-T24).
 FAILED_FAMILY = {JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT}
@@ -44,16 +47,12 @@ def _job_id(result: JobResult) -> str:
     return result.job_id
 
 
-@pytest.mark.xfail(
-    # Not strict: against a stopped master qstat sometimes fails at once
-    # (UNKNOWN, the bug) and sometimes hangs into the 60 s command timeout
-    # (SchedulerTimeoutError, which passes). Make it strict once BUG-T6 is fixed.
-    strict=False,
-    reason="BUG-T6: qstat 'unable to contact qmaster' is treated as 'no active jobs'; "
-    "status falls through qacct to UNKNOWN instead of raising SchedulerError",
-)
 def test_master_stopped(cluster: Cluster) -> None:
-    """qmaster down: get_status raises SchedulerError within the command timeout; recovers after."""
+    """qmaster down: get_status raises SchedulerUnavailableError; recovers after.
+
+    The oracle is the specific error built from qstat's stderr (BUG-T6): the
+    command-timeout path raises SchedulerTimeoutError and fails this test.
+    """
     scheduler = cluster.scheduler()
     job_id = _job_id(_submit(cluster, JobSpec("sleep 300", name="orphan")))
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
@@ -61,11 +60,11 @@ def test_master_stopped(cluster: Cluster) -> None:
     cluster.stop_master()
     try:
         started = time.monotonic()
-        with pytest.raises(SchedulerError) as excinfo:
+        with pytest.raises(SchedulerUnavailableError, match="qmaster") as excinfo:
             scheduler.get_status(job_id)
         elapsed = time.monotonic() - started
         assert elapsed < FAIL_WITHIN, elapsed
-        assert type(excinfo.value) is not SchedulerError or str(excinfo.value)
+        assert "unable to contact qmaster" in str(excinfo.value), excinfo.value
     finally:
         cluster.start_master()
         cluster.wait_ready(RECOVER_TIMEOUT)
@@ -74,9 +73,8 @@ def test_master_stopped(cluster: Cluster) -> None:
     assert scheduler.cancel(job_id)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-T3: failed 19 with exit_status 0 reported COMPLETED")
 def test_node_killed(cluster: Cluster) -> None:
-    """D-T24: a job on a killed node ends FAILED-family, no exception, qacct ``failed 19``."""
+    """D-T24: a job on a killed node ends FAILED, no exception, qacct ``failed 19`` (BUG-T3)."""
     scheduler = cluster.scheduler()
     spec = JobSpec("sleep 30", name="doomed", resources=[{"name": "hostname", "value": "exec1"}])
     job_id = _job_id(_submit(cluster, spec))
@@ -102,3 +100,7 @@ def test_node_killed(cluster: Cluster) -> None:
     record = cluster.run(["qacct", "-j", job_id]).stdout
     failed = [line.split() for line in record.splitlines() if line.startswith("failed")]
     assert failed and failed[0][1] == "19", record
+    # The scheduler's own words reach the listing (hpc status --history shows them).
+    info = next(j for j in scheduler.list_completed_jobs(user="tester") if j.job_id == job_id)
+    assert (info.status, info.failed_code) == (JobStatus.FAILED, 19), info
+    assert info.failed_reason == "before writing exit_status"

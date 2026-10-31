@@ -64,7 +64,7 @@ class SchedulerError(HPCToolsError):
 
 
 class SchedulerUnavailableError(SchedulerError):
-    """Scheduler binary missing; caught by callers that fall back to another scheduler."""
+    """Scheduler binary missing or its daemon unreachable; callers fall back or retry later."""
 
 
 class SchedulerCommandError(SchedulerError):

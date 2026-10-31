@@ -3,8 +3,12 @@ repos:
     rev: v2.3.0
     hooks:
       - id: check-yaml
+      # tests/unit/fixtures holds scheduler output captured verbatim by
+      # `hpc-testbed capture` (qacct pads its columns with trailing spaces).
       - id: end-of-file-fixer
+        exclude: ^tests/unit/fixtures/
       - id: trailing-whitespace
+        exclude: ^tests/unit/fixtures/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.0

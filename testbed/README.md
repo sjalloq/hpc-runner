@@ -35,6 +35,7 @@ hpc-testbed pytest --up [--keep]  # up, pytest, down (--keep leaves the stack ru
 hpc-testbed logs [master ...]     # container logs, all or named services
 hpc-testbed clean                 # delete every job, wait for an empty queue
 hpc-testbed down                  # containers, network and volumes removed
+hpc-testbed capture               # regenerate tests/unit/fixtures/sge/ from the stack (~3 min)
 hpc-testbed up --slow-accounting  # master with a 15 s accounting flush, for ...
 hpc-testbed pytest --slow-accounting   # ... the tests marked slow_accounting (deselected otherwise)
 hpc-testbed --flavour <name> ...  # another flavour under testbed/<family>/ (default soge)

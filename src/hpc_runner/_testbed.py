@@ -3,9 +3,9 @@
 A developer tool, not part of the product: it needs a checkout of the
 repository (it looks for ``testbed/<family>/<flavour>/compose.yml`` above the
 current directory) and the ``docker`` CLI with the Compose plugin. It replaces
-the former ``testbed/Makefile`` with the same six operations and nothing the
-Makefile could not do: every subcommand is one or two ``docker compose``
-invocations, printed before they run.
+the former ``testbed/Makefile`` with the same six operations plus ``capture``
+(regenerate the unit fixtures from the live stack): every subcommand is one
+or two ``docker compose`` invocations, printed before they run.
 
 The tests themselves still run *inside* the ``login`` container (the product
 must call the real ``qsub``); this tool only starts the stack, runs pytest in
@@ -202,6 +202,38 @@ def cmd_pytest(
     return status
 
 
+FIXTURES_DIR = "tests/unit/fixtures"
+CAPTURE_DIR = f"{WORK_DIR}/capture"
+
+
+def cmd_capture(stack: Stack, *, py: str) -> None:
+    """Regenerate the unit-test fixtures from the live stack.
+
+    Runs ``tests/integration/capture.py`` inside ``login`` (it submits the
+    scenario jobs, kills a node and stops the master) and copies its output
+    to ``tests/unit/fixtures/<family>/``.
+    """
+    run(
+        stack.compose(
+            "exec",
+            "-T",
+            "-u",
+            "tester",
+            "-w",
+            SRC_DIR,
+            "login",
+            f"{venv_bin(py)}/python",
+            "-m",
+            "tests.integration.capture",
+            CAPTURE_DIR,
+            stack.flavour,
+        )
+    )
+    dest = stack.root / FIXTURES_DIR / stack.family
+    dest.mkdir(parents=True, exist_ok=True)
+    run(stack.compose("cp", f"login:{CAPTURE_DIR}/.", str(dest)))
+
+
 # -----------------------------------------------------------------------------
 # Command line
 # -----------------------------------------------------------------------------
@@ -238,6 +270,12 @@ def build_parser() -> argparse.ArgumentParser:
     logs.add_argument("services", nargs="*", help="services to show (default: all)")
 
     sub.add_parser("clean", help="delete every job and wait for an empty queue")
+
+    capture = sub.add_parser(
+        "capture",
+        help="regenerate tests/unit/fixtures/<family>/ from the live stack",
+    )
+    _add_py(capture)
 
     test = sub.add_parser(
         "pytest",
@@ -304,6 +342,8 @@ def dispatch(stack: Stack, args: argparse.Namespace) -> int:
         cmd_logs(stack, services=args.services)
     elif args.command == "clean":
         cmd_clean(stack)
+    elif args.command == "capture":
+        cmd_capture(stack, py=args.py)
     elif args.command == "pytest":
         extra = list(args.pytest_args)
         if extra and extra[0] == "--":

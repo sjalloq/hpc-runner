@@ -302,6 +302,9 @@ def _show_single_job(
 
     if job_info.exit_code is not None:
         table.add_row("Exit Code", str(job_info.exit_code))
+    if job_info.failed_code:
+        reason = f": {job_info.failed_reason}" if job_info.failed_reason else ""
+        table.add_row("Failed", f"{job_info.failed_code}{reason}")
     if job_info.queue:
         table.add_row("Queue", job_info.queue)
     if job_info.node:
@@ -363,6 +366,8 @@ def _job_info_to_dict(j: JobInfo) -> dict[str, object]:
         "cpu": j.cpu,
         "memory": j.memory,
         "exit_code": j.exit_code,
+        "failed_code": j.failed_code,
+        "failed_reason": j.failed_reason,
         "submit_time": _format_datetime(j.submit_time) if j.submit_time else None,
         "start_time": _format_datetime(j.start_time) if j.start_time else None,
         "end_time": _format_datetime(j.end_time) if j.end_time else None,

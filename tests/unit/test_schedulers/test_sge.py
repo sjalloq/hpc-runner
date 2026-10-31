@@ -136,26 +136,51 @@ class TestSGEScheduler:
         assert "#$ -j y" not in script
         assert "#$ -e /work/error.log" in script
 
-    def test_submit_job(self, mock_sge_commands, tmp_path):
-        """Test job submission with mocked qsub."""
+    def test_submit_job(self, mock_sge_commands, sge_fixtures, tmp_path):
+        """The id comes from qsub's own "Your job N" line."""
         scheduler = SGEScheduler(HPCConfig())
         job = make_job("echo hello", name="test_job", workdir=str(tmp_path))
 
         result = scheduler.submit(job)
 
-        assert result.job_id == "12345"
+        assert result.job_id == sge_fixtures.submitted_id
 
-    def test_cancel_job(self, mock_sge_commands):
-        """Test job cancellation."""
+    def test_cancel_job(self, mock_sge_commands, sge_fixtures):
+        """qdel of a known job is True; of an unknown id (qdel exits 1) False."""
         scheduler = SGEScheduler(HPCConfig())
-        success = scheduler.cancel("12345")
-        assert success is True
+        assert scheduler.cancel(sge_fixtures.job("running")) is True
+        assert scheduler.cancel("999999") is False
 
-    def test_get_status(self, mock_sge_commands):
-        """Test getting job status."""
+    @pytest.mark.parametrize(
+        ("scenario", "task", "expected"),
+        [
+            ("running", None, JobStatus.RUNNING),
+            ("held", None, JobStatus.PENDING),
+            ("eqw", None, JobStatus.FAILED),
+            ("array", None, JobStatus.RUNNING),  # tasks 1-7 run, 8-10 queued
+            ("array", "1", JobStatus.RUNNING),
+            ("array", "9", JobStatus.PENDING),
+            ("ok", None, JobStatus.COMPLETED),
+            ("exit1", None, JobStatus.FAILED),
+            ("signal", None, JobStatus.FAILED),  # qdel: failed 100, exit 137 (Killed)
+            ("lost_node", None, JobStatus.FAILED),  # failed 19, exit_status 0
+            ("array_done", "2", JobStatus.COMPLETED),
+        ],
+    )
+    def test_get_status(
+        self, mock_sge_commands, sge_fixtures, monkeypatch, tmp_path, scenario, task, expected
+    ):
+        """Every captured scenario, through qstat then qacct, reports its status."""
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
         scheduler = SGEScheduler(HPCConfig())
-        status = scheduler.get_status("12345")
-        assert status == JobStatus.RUNNING
+        job_id = sge_fixtures.job(scenario)
+        if task:
+            job_id = scheduler.task_job_id(job_id, int(task))
+        assert scheduler.get_status(job_id) is expected
+
+    def test_get_status_unknown_id(self, mock_sge_commands, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        assert SGEScheduler(HPCConfig()).get_status("999999") is JobStatus.UNKNOWN
 
     def test_batch_options_are_all_directives(self, mock_sge_commands, tmp_path):
         """Batch submission is ``qsub <script>``: every option is a #$ directive."""
@@ -252,53 +277,52 @@ class TestSGEScheduler:
         assert "#$ -pe mpi 2" in script
         assert "#$ -l h_vmem=1G" in script  # requested as given (memory_per = "job")
 
-    def test_list_active_jobs(self, mock_sge_commands):
-        """Test listing active jobs."""
+    def test_list_active_jobs(self, mock_sge_commands, sge_fixtures):
+        """One entry per job id from the mixed snapshot: r, hqw, Eqw and a 10-task array."""
         scheduler = SGEScheduler(HPCConfig())
-        jobs = scheduler.list_active_jobs()
+        jobs = {j.job_id: j for j in scheduler.list_active_jobs()}
+        argv = mock_sge_commands.call_args[0][0]
+        assert argv == ["qstat", "-xml", "-u", "*"]
 
-        # Should return 3 jobs from mock XML
-        assert len(jobs) == 3
+        ids = {sge_fixtures.job(s) for s in ("running", "held", "eqw", "array")}
+        assert set(jobs) == ids
 
-        # Check first job (running)
-        running_jobs = [j for j in jobs if j.status == JobStatus.RUNNING]
-        assert len(running_jobs) == 1
-        assert running_jobs[0].job_id == "12345"
-        assert running_jobs[0].name == "running_job"
-        assert running_jobs[0].user == "testuser"
-        assert running_jobs[0].queue == "batch.q"
-        assert running_jobs[0].cpu == 4
+        running = jobs[sge_fixtures.job("running")]
+        assert running.status is JobStatus.RUNNING
+        assert (running.name, running.user) == ("running", "tester")
+        assert (running.queue, running.node, running.cpu) == ("all.q", "exec1", 1)
+        assert running.start_time is not None and running.runtime is not None
 
-        # Check pending jobs
-        pending_jobs = [j for j in jobs if j.status == JobStatus.PENDING]
-        assert len(pending_jobs) == 2
+        # The array has running and queued tasks; its one entry is the running one.
+        array = jobs[sge_fixtures.job("array")]
+        assert array.status is JobStatus.RUNNING
+        assert array.array_task_id == 1
 
-    def test_list_active_jobs_filter_by_status(self, mock_sge_commands):
-        """Test filtering jobs by status."""
+        held = jobs[sge_fixtures.job("held")]
+        assert held.status is JobStatus.PENDING
+        assert held.queue is None and held.submit_time is not None
+
+        assert jobs[sge_fixtures.job("eqw")].status is JobStatus.FAILED
+
+    def test_list_active_jobs_filter_by_user_changes_the_argv(self, mock_sge_commands):
+        SGEScheduler(HPCConfig()).list_active_jobs(user="bob")
+        assert mock_sge_commands.call_args[0][0] == ["qstat", "-xml", "-u", "bob"]
+
+    def test_list_active_jobs_filter_by_status(self, mock_sge_commands, sge_fixtures):
         scheduler = SGEScheduler(HPCConfig())
+        running = {j.job_id for j in scheduler.list_active_jobs(status={JobStatus.RUNNING})}
+        assert running == {sge_fixtures.job("running"), sge_fixtures.job("array")}
+        pending = {j.job_id for j in scheduler.list_active_jobs(status={JobStatus.PENDING})}
+        assert pending == {sge_fixtures.job("held")}
+        failed = {j.job_id for j in scheduler.list_active_jobs(status={JobStatus.FAILED})}
+        assert failed == {sge_fixtures.job("eqw")}
 
-        # Only running jobs
-        running = scheduler.list_active_jobs(status={JobStatus.RUNNING})
-        assert len(running) == 1
-        assert running[0].job_id == "12345"
-
-        # Only pending jobs
-        pending = scheduler.list_active_jobs(status={JobStatus.PENDING})
-        assert len(pending) == 2
-
-    def test_list_active_jobs_filter_by_queue(self, mock_sge_commands):
-        """Test filtering jobs by queue."""
+    def test_list_active_jobs_filter_by_queue(self, mock_sge_commands, sge_fixtures):
+        """Queued jobs have no queue yet, so a queue filter keeps running ones only."""
         scheduler = SGEScheduler(HPCConfig())
-
-        # Filter by batch.q
-        batch_jobs = scheduler.list_active_jobs(queue="batch.q")
-        assert len(batch_jobs) == 1
-        assert batch_jobs[0].job_id == "12345"
-
-        # Filter by gpu.q
-        gpu_jobs = scheduler.list_active_jobs(queue="gpu.q")
-        assert len(gpu_jobs) == 1
-        assert gpu_jobs[0].job_id == "12347"
+        all_q = {j.job_id for j in scheduler.list_active_jobs(queue="all.q")}
+        assert all_q == {sge_fixtures.job("running"), sge_fixtures.job("array")}
+        assert scheduler.list_active_jobs(queue="gpu.q") == []
 
 
 class TestSGEParserXML:
@@ -910,7 +934,7 @@ class TestSGESubmissionContract:
         assert "_hpc_dep_check_id afterok 1\n" in script
         assert "_hpc_dep_check_id afterany" not in script
 
-    def test_array_job(self, scheduler, mock_sge_commands, tmp_path):
+    def test_array_job(self, scheduler, mock_sge_commands, sge_fixtures, tmp_path):
         from hpc_runner.core.result import ArrayJobResult
 
         job = make_job(array="1-10:2%3", workdir=str(tmp_path))
@@ -921,7 +945,8 @@ class TestSGESubmissionContract:
         assert "%3" not in script
         result = scheduler.submit(job)
         assert isinstance(result, ArrayJobResult)
-        assert result.job_id == "12345"
+        # qsub answered with its job-array line because the script has #$ -t.
+        assert result.job_id == sge_fixtures.submitted_array_id
         assert result.array.count == 5
 
     def test_array_job_without_limit_has_no_tc(self, scheduler):
@@ -969,10 +994,11 @@ class TestSGESubmissionContract:
         assert "#$" not in script
         assert "xterm" in script
 
-    def test_result_handle_without_job(self, scheduler, mock_sge_commands):
-        handle = scheduler.result("12345")
+    def test_result_handle_without_job(self, scheduler, mock_sge_commands, sge_fixtures):
+        job_id = sge_fixtures.job("running")
+        handle = scheduler.result(job_id)
         assert handle.job is None
-        assert handle.job_id == "12345"
+        assert handle.job_id == job_id
         assert handle.status == JobStatus.RUNNING
 
 

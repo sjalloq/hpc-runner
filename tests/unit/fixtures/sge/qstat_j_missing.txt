@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "qstat",
+    "-j",
+    "999999",
+    "-xml"
+  ],
+  "returncode": 0,
+  "stdout": "<?xml version='1.0'?>\n<unknown_jobs >\n    <ST_name>999999</ST_name>\n</unknown_jobs>\n",
+  "stderr": ""
+}
