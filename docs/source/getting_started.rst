@@ -36,11 +36,11 @@ Show what would be submitted without actually submitting:
 
    hpc run --dry-run python train.py
 
-Pass raw scheduler arguments using ``--`` as a separator:
+Pass raw scheduler arguments as one quoted string with ``-S``/``--scheduler-args``:
 
 .. code-block:: bash
 
-   hpc run -q gpu.q -l gpu=1 -- python train.py
+   hpc run -S '-l gpu=1 -P proj' python train.py
 
 Use a named job type from the config:
 

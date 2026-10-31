@@ -1,5 +1,6 @@
 """Run command - submit jobs to the scheduler."""
 
+import shlex
 from typing import TYPE_CHECKING
 
 import rich_click as click
@@ -19,77 +20,27 @@ if TYPE_CHECKING:
 console = Console()
 
 
-_COMMAND_KEY = "hpc_runner.run.command"
-
-
-class _RunCommand(click.RichCommand):
-    """``hpc run`` with the ``--`` split done before click parses anything.
-
-    click drops a ``--`` it meets while still processing options, so with
-    ``ignore_unknown_options`` a bare scheduler flag right before the
-    separator (``hpc run -h -- cmd``, ``hpc run -V -- cmd``) lost the
-    separator and the flag was taken as the command (BUG-T4). Everything
-    after the first ``--`` is the command and is kept aside here; click sees
-    only what comes before it.
-    """
-
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
-        if "--" in args:
-            idx = args.index("--")
-            ctx.meta[_COMMAND_KEY] = args[idx + 1 :]
-            args = args[:idx]
-        return super().parse_args(ctx, args)
-
-
-def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
-    """Split into (scheduler_passthrough, command).
-
-    With a ``--`` (taken out by :class:`_RunCommand`), every token before it
-    is passthrough and the stashed tail is the command. Without one, all
-    args are the command.
-    """
-    args_list = list(args)
-    ctx = click.get_current_context(silent=True)
-    if ctx is not None and _COMMAND_KEY in ctx.meta:
-        return args_list, list(ctx.meta[_COMMAND_KEY])
-    if "--" in args_list:  # called outside the command (tests): split here
-        idx = args_list.index("--")
-        return args_list[:idx], args_list[idx + 1 :]
-    return [], args_list
-
-
-@click.command(
-    cls=_RunCommand,
-    context_settings={
-        "ignore_unknown_options": True,
-        "allow_interspersed_args": False,
-        # `--help` only: `-h` is qsub's hold flag and must forward (BUG-T4).
-        "help_option_names": ["--help"],
-    },
-)
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
-# Short-option namespace rule: any short flag click does not recognise is
-# forwarded verbatim to the scheduler (see _parse_args and the `--`
-# separator). A short flag defined here therefore *shadows* the scheduler's
-# flag of the same letter. The one claimed is -t (--type), the product's
-# central option, typed by hand daily; it shadows qsub/sbatch -t (array /
-# time), both covered by --array and --time. Everything else, including
-# help, is long-form only, so -b, -h, -q, -l, -N ... are the scheduler's.
-@click.option("--name", "job_name", help="Job name")
-@click.option("--cpu", type=int, help="Number of CPUs")
-@click.option("--mem", help="Memory for the whole job (e.g., 16G, 1.5GiB)")
-@click.option("--time", "time_limit", help="Time limit (e.g., 4:00:00, 4h, 1h30m)")
-@click.option("--queue", help="Queue/partition name")
-@click.option("--nodes", type=int, help="Number of nodes (MPI jobs)")
+@click.command(context_settings={"allow_interspersed_args": False})
+@click.argument("command", nargs=-1, type=click.UNPROCESSED)
+@click.option("-N", "--name", "job_name", help="Job name")
+@click.option("-c", "--cpu", type=int, help="Number of CPUs")
+@click.option("-m", "--mem", help="Memory for the whole job (e.g., 16G, 1.5GiB)")
+@click.option("-T", "--time", "time_limit", help="Time limit (e.g., 4:00:00, 4h, 1h30m)")
+@click.option("-q", "--queue", help="Queue/partition name")
+@click.option("-n", "--nodes", type=int, help="Number of nodes (MPI jobs)")
 @click.option("--ntasks", type=int, help="Number of tasks (MPI jobs)")
-@click.option("--directory", type=click.Path(exists=True), help="Working directory")
+@click.option("-d", "--directory", type=click.Path(exists=True), help="Working directory")
 @click.option("-t", "--type", "job_type", help="Job type from config")
-@click.option("--stderr", help="Separate stderr file pattern (default: merged into stdout)")
+@click.option("-e", "--stderr", help="Separate stderr file pattern (default: merged into stdout)")
 @click.option(
-    "--stdout", "stdout", help="Stdout file pattern (default: ${hpc.job_name}.${hpc.job_id}.out)"
+    "-o",
+    "--stdout",
+    "stdout",
+    help="Stdout file pattern (default: ${hpc.job_name}.${hpc.job_id}.out)",
 )
-@click.option("--array", help="Array job specification (e.g., 1-100)")
+@click.option("-a", "--array", help="Array job specification (e.g., 1-100)")
 @click.option(
+    "-E",
     "--env",
     "env",
     multiple=True,
@@ -97,6 +48,7 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
     help="Set an environment variable in the job (repeatable)",
 )
 @click.option(
+    "-R",
     "--resource",
     "resource",
     multiple=True,
@@ -104,23 +56,34 @@ def _parse_args(args: tuple[str, ...]) -> tuple[list[str], list[str]]:
     help="Request a scheduler resource or licence, e.g. gpu=2 (repeatable)",
 )
 @click.option(
+    "-D",
     "--depend",
     multiple=True,
     help="Job dependency, repeatable: ID (afterok) or TYPE:ID[:ID...][,TYPE:ID...] "
     "(e.g. afterok:123:124,afterany:125)",
 )
 @click.option(
+    "-S",
+    "--scheduler-args",
+    "scheduler_args",
+    multiple=True,
+    metavar="'FLAGS'",
+    help="Raw flags for the active scheduler, one quoted string (repeatable), "
+    "e.g. -S '-l gpu=2 -P proj' or -S '--gres=gpu:2'",
+)
+@click.option(
+    "-b",
     "--batch",
     is_flag=True,
     help="Submit as a batch job and return immediately (default: run interactively)",
 )
 @click.option("--dry-run", "dry_run", is_flag=True, help="Show what would be submitted")
-@click.option("--wait", is_flag=True, help="With --batch: block until the job completes")
+@click.option("-w", "--wait", is_flag=True, help="With --batch: block until the job completes")
 @click.option("--keep-script", "keep_script", is_flag=True, help="Keep job script for debugging")
 @pass_context
 def run(
     ctx: Context,
-    args: tuple[str, ...],
+    command: tuple[str, ...],
     job_name: str | None,
     cpu: int | None,
     mem: str | None,
@@ -136,6 +99,7 @@ def run(
     env: tuple[str, ...],
     resource: tuple[str, ...],
     depend: tuple[str, ...],
+    scheduler_args: tuple[str, ...],
     batch: bool,
     dry_run: bool,
     wait: bool,
@@ -147,20 +111,20 @@ def run(
     streams to this terminal and hpc waits for it to finish. Use --batch
     to submit and return immediately.
 
-    COMMAND is the command to execute, including any flags it needs:
+    COMMAND is the command to execute, including any flags it needs. The
+    first word that is not an hpc option starts it, so its own flags are
+    never interpreted:
 
     \b
         hpc run xterm
         hpc run -t xcelium make sim
-        hpc run --batch --cpu 4 make -j4 sim
+        hpc run -b -c 4 make -j4 sim
 
-    Use ``--`` to pass raw scheduler arguments before the command:
+    Raw scheduler flags go in one quoted string with --scheduler-args:
 
     \b
-        hpc run -q batch.q -l gpu=2 -- python train.py
-        hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim
-
-    Without ``--``, everything after hpc-runner options is the command.
+        hpc run -S '-q batch.q -l gpu=2' python train.py
+        hpc run -c 4 -S '--gres=gpu:2' mpirun -N 4 ./sim
     """
     from hpc_runner.core.array import ArrayRange
     from hpc_runner.core.host import Host
@@ -168,27 +132,12 @@ def run(
     from hpc_runner.core.spec import JobSpec
     from hpc_runner.schedulers import get_scheduler
 
-    # Split on '--': everything before is scheduler passthrough,
-    # everything after is the command.  No '--' means all command.
-    passthrough, command_parts = _parse_args(args)
-
-    # Click forwards every option it does not know (ignore_unknown_options), so
-    # a mistyped hpc-runner option would otherwise reach the scheduler, or be
-    # submitted as the start of the command. Long options are always ours;
-    # single-dash flags belong to the scheduler and must precede `--`.
-    unknown_long = [a for a in passthrough if a.startswith("--")]
-    if unknown_long:
-        raise click.UsageError(
-            f"No such option: {unknown_long[0]} (long options are hpc-runner's own; "
-            "scheduler flags are single-dash)"
-        )
+    command_parts = list(command)
     if not command_parts:
         raise click.UsageError("Command is required")
-    if command_parts[0].startswith("-"):
-        raise click.UsageError(
-            f"No such option: {command_parts[0]}. Scheduler flags must come before '--', "
-            "e.g. hpc run -q batch.q -- make sim"
-        )
+    # Each --scheduler-args value is one shell-quoted string of raw flags; split
+    # like a shell would and keep the typed order.
+    passthrough = [tok for text in scheduler_args for tok in shlex.split(text)]
     if array is not None:
         try:
             ArrayRange.parse(array)

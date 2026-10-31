@@ -61,8 +61,8 @@ hpc run --batch --wait --cpu 4 --mem 16G --time 4:00:00 make sim
 # Preview the generated script without submitting
 hpc run --dry-run --cpu 8 make -j8
 
-# Raw scheduler flags go before --, the command after
-hpc run -q gpu.q -l gpu=1 -- python train.py
+# Raw scheduler flags go in one quoted string
+hpc run -S '-l gpu=1 -P proj' python train.py
 ```
 
 The same three steps from Python: a `JobSpec` says what you want,

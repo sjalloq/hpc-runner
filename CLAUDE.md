@@ -116,18 +116,16 @@ Uses `rich-click` for styled output. One entry point, **`hpc`** (group), with su
 
 **`hpc run` defaults to interactive** (qrsh/srun): most hand-typed uses want a GUI to pop up or want to wait for the result. `--batch` submits and returns. Array jobs are always batch. Scripts have full control of their options, so they pay the extra characters.
 
-**Short-option namespace rule**: any short flag click does not recognise is forwarded verbatim to the scheduler, so a short flag `hpc run` defines *shadows* the scheduler's flag of the same letter. The one claimed short flag is `-t/--type`, the product's central option, typed by hand daily (it shadows qsub/sbatch `-t` = array/time, covered by `--array`/`--time`). Everything else is long-form only, including help: `hpc run --help`, never `-h`, because `-h` is qsub's hold flag (BUG-T4, fixed October 2026, when `-b/--batch` was also dropped). Unknown *long* options are rejected, as is a single-dash flag that appears without a `--` separator, so a typo can never be silently forwarded or submitted as the command.
+**Short flags are hpc-runner's own** (D-T43, October 2026): raw scheduler flags travel in `-S/--scheduler-args` as a quoted string, so no scheduler flag ever reaches click's parser and every short letter is free for `hpc run` (`-t` type, `-b` batch, `-c` cpu, `-N` name, `-q` queue, `-h` help ...). Any flag `hpc run` does not define is a usage error, never forwarded. Earlier designs reserved short letters for the scheduler and split argv on `--` (BUG-T4, D-T42); click's short-flag clustering made that unfixable (`-terse` matched `-t erse`), see `docs/dev/cli/RUN_ARG_PARSING.md`.
 
 **Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, env, resource) stay. `--wait` needs `--batch` (or `--array`); run locally with `hpc --scheduler local run`.
 
-**Scheduler passthrough on `hpc run`**: Use `--` to pass raw scheduler arguments. Everything before `--` is scheduler passthrough (set on `JobSpec.scheduler_args[<active scheduler>]`), everything after is the command. Without `--`, all args are the command (no heuristic).
+**Scheduler passthrough on `hpc run`**: `-S/--scheduler-args 'FLAGS'`, repeatable, split with `shlex` and set on `JobSpec.scheduler_args[<active scheduler>]`. Options stop at the first plain word (`allow_interspersed_args=False`), so the command's own flags are untouched; a command that starts with a dash needs `--` first.
 ```bash
-hpc run echo hello                              # no passthrough
-hpc run -q batch.q -l gpu=2 -- python train.py  # passthrough
-hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim # mixed
+hpc run echo hello                                # no passthrough
+hpc run -S '-l gpu=2 -P proj' python train.py     # passthrough
+hpc run -c 4 -S '-l gpu=2' mpirun -N 4 ./sim      # mixed; -N 4 belongs to mpirun
 ```
-
-**Design rationale for `--`**: `hpc run` reserves short-form flags (e.g. `-q`, `-l`, `-N`) for scheduler passthrough and uses long-form options for itself, with the two deliberate exceptions noted above. This means an unclaimed short flag is unambiguously a scheduler argument. However, hpc-runner cannot determine where scheduler args end and the command begins without knowing every scheduler's option grammar — specifically, whether a flag like `-N` is a standalone flag or takes a value argument. The `--` separator is the standard Unix solution to this ambiguity (used by `git`, `ssh`, `docker exec`, etc.). Without it, `hpc run -q batch.q python train.py` is ambiguous: is `python` an argument to `-q` or the start of the command? The `--` makes it explicit.
 
 ### Workflow (`src/hpc_runner/workflow/`)
 

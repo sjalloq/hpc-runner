@@ -450,8 +450,8 @@ merges per :ref:`list-merging`, and each scheduler uses only its own:
    [tools.sim]
    scheduler_args = { sge = ["-masterq", "fast.q"], slurm = ["--constraint=avx512"] }
 
-On the command line, raw arguments go before ``--``
-(``hpc run -q batch.q -- make sim``) and are appended after config's.
+On the command line, raw arguments go in ``-S``/``--scheduler-args``
+(``hpc run -S '-l gpu=2' make sim``) and are appended after config's.
 ``[schedulers.<name>]`` holds site facts only (PE name, resource names,
 module init script).
 

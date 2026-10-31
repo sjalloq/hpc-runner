@@ -44,10 +44,8 @@ def _history_entry(cluster: Cluster, job_id: str) -> dict[str, Any]:
 
 def test_status_active_history_and_details(cluster: Cluster) -> None:
     """`hpc status` lists a held job, `--history` and `<id>` report it once done."""
-    # -h is the CLI's help flag (BUG-T4), so a far-future start time keeps the job pending.
-    job_id = _run_batch(
-        cluster, "--name", "clistat", "-a", "203001010000", "--", "sh", "-c", "exit 3"
-    )
+    # A far-future qsub -a start time keeps the job pending (-S carries raw flags, D-T43).
+    job_id = _run_batch(cluster, "--name", "clistat", "-S", "-a 203001010000", "sh", "-c", "exit 3")
     assert cluster.wait_for(job_id, JobStatus.PENDING, timeout=5) is JobStatus.PENDING
 
     active = {j["job_id"]: j for j in _hpc_json(cluster, "status")}
@@ -92,9 +90,9 @@ def test_tool_alias_and_config_resolve(cluster: Cluster) -> None:
 
 
 def test_hold_flag_forwards(cluster: Cluster) -> None:
-    """BUG-T4/D-T42: ``hpc run -h`` is qsub's user hold, not help: the job queues ``hqw``."""
+    """D-T43: qsub's user hold reaches the job through ``-S '-h'``: it queues ``hqw``."""
     out = _hpc(
-        cluster, "run", "--batch", "--directory", str(cluster.workdir), "-h", "--", "sleep", "30"
+        cluster, "run", "--batch", "--directory", str(cluster.workdir), "-S", "-h", "sleep", "30"
     )
     match = re.search(r"Submitted job (\d+)", out)
     assert match, out

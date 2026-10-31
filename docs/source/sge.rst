@@ -25,7 +25,7 @@ Or using passthrough flags directly:
 
 .. code-block:: bash
 
-   hpc run -q gpu.q -- python train.py
+   hpc run -S '-q gpu.q' python train.py
 
 
 CPU / slots (parallel environment)
@@ -150,7 +150,7 @@ through:
 
 .. code-block:: bash
 
-   hpc run -l exclusive=true -binding linear:1 -- python train.py
+   hpc run -S '-l exclusive=true -binding linear:1' python train.py
 
 In config the same flags go in ``scheduler_args``
 (:ref:`scheduler-args`). The project is a job

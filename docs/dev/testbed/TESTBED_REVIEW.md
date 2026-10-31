@@ -384,6 +384,21 @@ the suite is green now and the fix flips the test to a hard pass.
   before the separator (`-h --`, `-V --`) lost it and the flag became the
   command; `-h -b y --` only worked because `y` stopped option parsing.
   `hpc run` now splits on the first `--` itself before click parses.
+- **D-T43 raw scheduler flags are a quoted string, `-S/--scheduler-args`;
+  the `--` passthrough design is dropped and short flags are hpc-runner's**
+  (user, 2026-10-31 evening; supersedes D-T42). A sweep after D-T42 found two
+  more faults in the `--` design: our options after a valued scheduler flag
+  were silently handed to qsub (`-q batch.q -t xcelium --` sent `-t xcelium`
+  as an array range), and click's short-flag clustering matched the claimed
+  `-t` inside every qsub word containing a `t` (`-terse` → type `erse`,
+  `-soft -l` → type `-l`). Neither is fixable with click's switches; the
+  parser is private. Rather than write a bespoke tokeniser, raw flags now go
+  in one quoted string, the shape Snakemake, dask-jobqueue and submitit use.
+  `hpc run` is a plain click command again: `-h` is help, every option has a
+  short spelling, an unknown flag is a usage error with did-you-mean.
+  `test_hold_flag_forwards` submits `-S '-h'`; the status test's far-future
+  start time is `-S '-a 2030...'` since `-a` is now `--array`. Record in
+  `docs/dev/cli/RUN_ARG_PARSING.md`.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does

@@ -37,64 +37,64 @@ batch.
 
 Options:
 
-- ``--name TEXT``
-- ``--cpu N``
-- ``--mem TEXT`` (memory for the whole job, e.g. ``16G``, ``1.5GiB``; see :ref:`memory-and-time`)
-- ``--time TEXT`` (e.g. ``4:00:00``, ``4h``, ``1h30m``; a bare integer is an error)
-- ``--queue TEXT`` (SGE queue)
-- ``--nodes N`` (number of nodes, MPI jobs)
+- ``-N, --name TEXT``
+- ``-c, --cpu N``
+- ``-m, --mem TEXT`` (memory for the whole job, e.g. ``16G``, ``1.5GiB``; see :ref:`memory-and-time`)
+- ``-T, --time TEXT`` (e.g. ``4:00:00``, ``4h``, ``1h30m``; a bare integer is an error)
+- ``-q, --queue TEXT`` (SGE queue)
+- ``-n, --nodes N`` (number of nodes, MPI jobs)
 - ``--ntasks N`` (number of tasks, MPI jobs)
-- ``--directory PATH`` (working dir)
+- ``-d, --directory PATH`` (working dir)
 - ``-t, --type TEXT`` (named profile from config)
-- ``--stdout TEXT`` (stdout file pattern, batch only; default
+- ``-o, --stdout TEXT`` (stdout file pattern, batch only; default
   ``${hpc.job_name}.${hpc.job_id}.out``; see :ref:`output-files`)
-- ``--stderr TEXT`` (separate stderr file pattern; default: merged into stdout)
-- ``--array TEXT`` (e.g. ``1-100``, ``1-100:10%5``; implies batch)
-- ``--env KEY=VALUE`` (repeatable; sets ``KEY`` in the job, added to the
+- ``-e, --stderr TEXT`` (separate stderr file pattern; default: merged into stdout)
+- ``-a, --array TEXT`` (e.g. ``1-100``, ``1-100:10%5``; implies batch)
+- ``-E, --env KEY=VALUE`` (repeatable; sets ``KEY`` in the job, added to the
   config's ``env_vars``; ``$VAR`` is resolved where you submit)
-- ``--resource NAME=VALUE`` (repeatable; requests a scheduler resource or
+- ``-R, --resource NAME=VALUE`` (repeatable; requests a scheduler resource or
   licence, added to the config's ``resources``; SGE ``-l NAME=VALUE``)
-- ``--depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
+- ``-D, --depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
   e.g. ``afterok:123:124,afterany:125``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
 - ``--dry-run`` (print the mode and the rendered script, don’t submit)
-- ``--wait`` (with ``--batch`` or ``--array``: block until the job completes;
+- ``-w, --wait`` (with ``--batch`` or ``--array``: block until the job completes;
   without them it is a usage error, since an interactive run already waits)
+- ``-S, --scheduler-args 'FLAGS'`` (repeatable; raw flags for the active
+  scheduler, see below)
 - ``--keep-script`` (keep generated script; path is logged at debug level —
   use ``--verbose`` to see it)
 
 Scheduler passthrough
 ^^^^^^^^^^^^^^^^^^^^^
 
-Use ``--`` to pass raw scheduler arguments. Everything before ``--`` is passed
-directly to the scheduler (e.g. ``qsub`` flags); everything after is the
-command:
+Raw scheduler flags go in one quoted string with ``-S``/``--scheduler-args``.
+It is split like a shell would split it and appended to the scheduler's
+command line (``qsub``/``sbatch`` flags) after anything the config adds. It may
+be repeated; the pieces are kept in order.
 
 .. code-block:: bash
 
-   # No passthrough — everything is the command
-   hpc run --batch python train.py --epochs 10
+   hpc run -S '-l gpu=1 -P proj' python train.py
+   hpc run -c 4 -S '-l scratch=50G' -S '-P proj' make -j8 sim
+   hpc run -S '--gres=gpu:2 --partition=short' srun ./a.out   # Slurm
 
-   # Passthrough — scheduler flags before --, command after
-   hpc run -q gpu.q -l gpu=1 -- python train.py
-   hpc run --cpu 4 -q batch.q -l scratch=50G -- make -j8 sim
+``hpc run`` stops reading its own options at the first word that is not one,
+so the command's flags are never interpreted (``hpc run mpirun -N 4 ./sim``
+runs ``mpirun -N 4 ./sim``). A command that itself starts with a dash needs
+the usual ``--`` first (``hpc run -- -h``). A flag ``hpc run`` does not know
+is a usage error, never forwarded.
 
-Without ``--``, all arguments are treated as the command. This avoids any
-ambiguity between scheduler flags and command flags (e.g. ``mpirun -N 4``
-won't be misinterpreted).
+.. note:: **Why a quoted string?**
 
-.. note:: **Why ``--``?**
-
-   ``hpc run`` uses long-form options for itself (``--cpu``, ``--queue``,
-   ``--batch``, ``--help``, etc.) so that short flags (``-q``, ``-l``,
-   ``-N``, ``-h``, ``-b``) are unambiguously scheduler arguments. The one
-   exception, ``-t`` for ``--type``, shadows a scheduler flag whose meaning
-   hpc-runner already covers with ``--array`` and ``--time``. Unknown long options, and a
-   single-dash flag given without ``--``, are rejected rather than forwarded. However, hpc-runner cannot determine where scheduler
-   args end and the command begins without knowing every scheduler's option
-   grammar — a flag like ``-N`` might be standalone or might consume the next
-   argument. The ``--`` separator is the standard Unix solution to this
-   ambiguity, used by ``git``, ``ssh``, ``docker exec``, and others.
+   hpc-runner cannot tell where raw scheduler flags end and the command begins
+   without knowing every scheduler's option grammar: whether ``-N`` is a bare
+   flag or takes a value differs between qsub and sbatch. Quoting the raw flags
+   makes the boundary explicit and leaves every short letter free for
+   hpc-runner's own options. It is the shape other scheduler front ends use
+   (Snakemake's ``slurm_extra``, dask-jobqueue's ``job_extra_directives``).
+   Site and tool policy belongs in the config's ``scheduler_args`` rather than
+   on the command line; ``-S`` is the escape hatch.
 
 Examples:
 
@@ -105,8 +105,8 @@ Examples:
    hpc run --batch --cpu 4 --mem 16G --time 2:00:00 python train.py
    hpc run --batch -t gpu python train.py
    hpc run --batch --env OMP_NUM_THREADS=4 --resource xcelium_lic=1 make sim
-   hpc run -q gpu.q -l gpu=1 -- python train.py
-   hpc run --cpu 4 -q batch.q -- mpirun -N 4 ./sim
+   hpc run -S '-l gpu=1 -P proj' python train.py
+   hpc run --cpu 4 -S '-l scratch=50G' mpirun -N 4 ./sim
 
 
 

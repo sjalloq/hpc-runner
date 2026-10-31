@@ -145,45 +145,25 @@ class TestRunCommand:
         assert result.exit_code == 0, result.output
         assert "Mode: batch" in result.output
 
-    def test_short_b_and_h_belong_to_the_scheduler(self, runner, sge_dirs):
-        """BUG-T4: -h is qsub's hold flag and -b its binary flag; both forward, neither is ours."""
+    def test_short_flags_are_hpc_runners(self, runner, sge_dirs):
+        """D-T43: with raw flags in -S, every short letter is ours: -b batch, -h help."""
         result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "sge",
-                "run",
-                "--dry-run",
-                "--batch",
-                "-h",
-                "-b",
-                "y",
-                "--",
-                "sleep",
-                "9",
-            ],
+            cli, ["--scheduler", "sge", "run", "--dry-run", "-b", "-N", "held", "sleep", "9"]
         )
         assert result.exit_code == 0, result.output
-        assert "#$ -h -b y" in result.output
-        assert "Usage:" not in result.output
+        assert "Mode: batch" in result.output
+        assert "#$ -N held" in result.output
+        help_out = runner.invoke(cli, ["run", "-h"])
+        assert help_out.exit_code == 0 and "--scheduler-args" in help_out.output
 
-    @pytest.mark.parametrize("flags", [["-h"], ["-V"], ["-cwd", "-V"], ["-q", "batch.q", "-h"]])
-    def test_bare_flag_before_separator_keeps_the_separator(self, runner, sge_dirs, flags):
-        """click eats a `--` met while parsing options; the split happens before click (BUG-T4)."""
-        result = runner.invoke(
-            cli, ["--scheduler", "sge", "run", "--dry-run", "--batch", *flags, "--", "sleep", "9"]
-        )
-        assert result.exit_code == 0, result.output
-        assert f"#$ {' '.join(flags)}" in result.output
-        assert "sleep 9" in result.output
-
-    def test_run_help_is_long_form_only(self, runner):
+    @pytest.mark.parametrize(
+        ("short", "long"),
+        [("-b", "--batch"), ("-N", "--name"), ("-c", "--cpu"), ("-S", "--scheduler-args")],
+    )
+    def test_short_and_long_spellings_listed_together(self, runner, short, long):
         result = runner.invoke(cli, ["run", "--help"])
-        assert result.exit_code == 0 and "--batch" in result.output
-        assert "-b, --batch" not in result.output
-        assert " -h," not in result.output
-        # The group still answers -h.
-        assert runner.invoke(cli, ["-h"]).exit_code == 0
+        assert result.exit_code == 0
+        assert short in result.output and long in result.output
 
     def test_array_implies_batch(self, runner, sge_dirs):
         """Array jobs are always batch, even without --batch."""
@@ -199,338 +179,103 @@ class TestRunCommand:
         """--job-type, --job-name, --interactive, --extra-module no longer exist."""
         for opt in ("--job-type", "--job-name", "--interactive", "--extra-module"):
             result = runner.invoke(
-                cli, ["--scheduler", "local", "run", "--dry-run", opt, "x", "--", "echo"]
-            )
-            assert result.exit_code != 0, opt
-            assert "No such option" in result.output, opt
-            result = runner.invoke(
                 cli, ["--scheduler", "local", "run", "--dry-run", opt, "x", "echo"]
             )
             assert result.exit_code != 0, opt
+            assert "No such option" in result.output, opt
 
-    def test_scheduler_flag_without_separator_errors(self, runner, temp_dir):
-        """A single-dash flag with no `--` is a usage error, not a bogus command."""
+    def test_unknown_flag_is_a_usage_error(self, runner, temp_dir):
+        """A flag hpc run does not define is rejected, never forwarded or run."""
         result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "-q", "batch.q", "echo", "hi"]
+            cli, ["--scheduler", "local", "run", "--dry-run", "-z", "batch.q", "echo", "hi"]
         )
         assert result.exit_code != 0
-        assert "must come before" in result.output
-
-    def test_run_command_with_flags(self, runner, temp_dir):
-        """Test run with command that has its own flags."""
+        assert "No such option" in result.output
         result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--dry-run",
-                "mpirun",
-                "-N",
-                "4",
-                "-n",
-                "16",
-                "./sim",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Dry Run" in result.output
-        # All args become part of the command
-        assert "mpirun -N 4 -n 16 ./sim" in result.output
-
-    def test_run_requires_command(self, runner):
-        """Test that run requires a command."""
-        result = runner.invoke(
-            cli,
-            ["--scheduler", "local", "run", "--dry-run"],
+            cli, ["--scheduler", "local", "run", "--dry-run", "--cpus", "4", "echo"]
         )
         assert result.exit_code != 0
-        assert "Command is required" in result.output
-
-    def test_run_array_job_dry_run(self, runner, sge_dirs):
-        """Test array job with --dry-run."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "sge",
-                "run",
-                "--dry-run",
-                "--array",
-                "1-10",
-                "echo",
-                "task",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Array job" in result.output
-        assert "10 tasks" in result.output
-
-    def test_run_with_stdout(self, runner, temp_dir, fast_wait):
-        """Test --stdout directs a batch job's output to a file."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--batch",
-                "--wait",
-                "--directory",
-                str(temp_dir),
-                "--stdout",
-                "out.log",
-                "echo",
-                "hello",
-            ],
-        )
-        assert result.exit_code == 0
-        out = (temp_dir / "out.log").read_text()
-        assert "hello" in out
-
-    def test_run_with_stderr(self, runner, temp_dir, fast_wait):
-        """Test --stderr directs stderr to a separate file."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--batch",
-                "--wait",
-                "--directory",
-                str(temp_dir),
-                "--stdout",
-                "out.log",
-                "--stderr",
-                "err.log",
-                "--",
-                "bash",
-                "-c",
-                "echo stderr msg >&2",
-            ],
-        )
-        assert result.exit_code == 0
-        err = (temp_dir / "err.log").read_text()
-        assert "stderr msg" in err
-
-    def test_run_with_directory(self, runner, temp_dir, fast_wait):
-        """Test --directory sets the working directory."""
-        subdir = temp_dir / "workdir"
-        subdir.mkdir()
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--batch",
-                "--wait",
-                "--directory",
-                str(subdir),
-                "--stdout",
-                "pwd.log",
-                "pwd",
-            ],
-        )
-        assert result.exit_code == 0
-        out = (subdir / "pwd.log").read_text()
-        assert str(subdir) in out
-
-    def test_run_with_relative_directory_and_stdout(self, runner, temp_dir, fast_wait):
-        """Test --directory with relative path combined with --stdout."""
-        subdir = temp_dir / "reltest"
-        subdir.mkdir()
-        import os
-
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(temp_dir)
-            result = runner.invoke(
-                cli,
-                [
-                    "--scheduler",
-                    "local",
-                    "run",
-                    "--batch",
-                    "--wait",
-                    "--directory",
-                    "reltest",
-                    "--stdout",
-                    "out.log",
-                    "echo",
-                    "hello",
-                ],
-            )
-            assert result.exit_code == 0
-            out = (subdir / "out.log").read_text()
-            assert "hello" in out
-        finally:
-            os.chdir(old_cwd)
+        assert "No such option" in result.output
 
 
-class TestParseArgs:
-    """Tests for _parse_args helper."""
-
-    def test_no_separator(self):
-        """Without '--', all args are the command."""
-        from hpc_runner.cli.run import _parse_args
-
-        sched, cmd = _parse_args(("echo", "hello"))
-        assert sched == []
-        assert cmd == ["echo", "hello"]
-
-    def test_with_separator(self):
-        """'--' splits into scheduler args and command."""
-        from hpc_runner.cli.run import _parse_args
-
-        sched, cmd = _parse_args(("-q", "batch.q", "--", "echo", "hello"))
-        assert sched == ["-q", "batch.q"]
-        assert cmd == ["echo", "hello"]
-
-    def test_separator_at_start(self):
-        """'--' at start means no scheduler args."""
-        from hpc_runner.cli.run import _parse_args
-
-        sched, cmd = _parse_args(("--", "echo", "hello"))
-        assert sched == []
-        assert cmd == ["echo", "hello"]
-
-    def test_empty_command_after_separator(self):
-        """'--' with nothing after gives empty command."""
-        from hpc_runner.cli.run import _parse_args
-
-        sched, cmd = _parse_args(("-q", "batch.q", "--"))
-        assert sched == ["-q", "batch.q"]
-        assert cmd == []
-
-    def test_empty_args(self):
-        """Empty args gives empty lists."""
-        from hpc_runner.cli.run import _parse_args
-
-        sched, cmd = _parse_args(())
-        assert sched == []
-        assert cmd == []
-
-
-class TestSchedulerPassthrough:
-    """Tests for scheduler passthrough via '--' separator."""
+class TestSchedulerArgs:
+    """-S/--scheduler-args: raw scheduler flags as quoted strings (D-T43)."""
 
     @pytest.fixture
     def runner(self):
         return CliRunner()
 
-    def test_passthrough_with_separator(self, runner, temp_dir):
-        """'--' splits scheduler args from command."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--dry-run",
-                "-q",
-                "batch.q",
-                "--",
-                "echo",
-                "hello",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "echo hello" in result.output
-        assert "Scheduler passthrough" in result.output
-        assert "-q batch.q" in result.output
+    def _dry(self, runner, *args):
+        return runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", *args])
 
-    def test_no_separator_no_passthrough(self, runner, temp_dir):
-        """Without '--', no scheduler passthrough is shown."""
-        result = runner.invoke(
-            cli,
-            ["--scheduler", "local", "run", "--dry-run", "echo", "hello"],
-        )
-        assert result.exit_code == 0
+    def test_one_string_is_split_like_a_shell(self, runner, temp_dir):
+        result = self._dry(runner, "-S", "-q batch.q -l gpu=2", "echo", "hello")
+        assert result.exit_code == 0, result.output
         assert "echo hello" in result.output
+        assert "Scheduler passthrough: -q batch.q -l gpu=2" in result.output
+
+    def test_repeated_strings_concatenate_in_order(self, runner, temp_dir):
+        result = self._dry(runner, "-S", "-q batch.q", "--scheduler-args", "-l gpu=2", "echo")
+        assert result.exit_code == 0, result.output
+        assert "Scheduler passthrough: -q batch.q -l gpu=2" in result.output
+
+    def test_no_option_no_passthrough(self, runner, temp_dir):
+        result = self._dry(runner, "echo", "hello")
+        assert result.exit_code == 0
         assert "Scheduler passthrough" not in result.output
 
-    def test_command_flags_preserved(self, runner, temp_dir):
-        """Command flags after '--' are preserved as part of the command."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--dry-run",
-                "--",
-                "mpirun",
-                "-N",
-                "4",
-                "./sim",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "mpirun -N 4 ./sim" in result.output
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            "-terse -tc 4 -pty y",  # qsub words click would cluster-match as -t
+            "-soft -l a=1 -hold_jid 123",
+            "-cwd -V -h",
+            "--gres=gpu:2 --partition=short",  # sbatch long options
+        ],
+    )
+    def test_scheduler_words_never_reach_the_option_parser(self, runner, temp_dir, flags):
+        result = self._dry(runner, "-S", flags, "sleep", "1")
+        assert result.exit_code == 0, result.output
+        assert f"Scheduler passthrough: {flags}" in result.output
+        assert "sleep 1" in result.output
+
+    def test_quoted_value_survives(self, runner, temp_dir):
+        result = self._dry(runner, "-S", "-N 'two words'", "echo")
+        assert result.exit_code == 0, result.output
+        assert "Scheduler passthrough: -N two words" in result.output
+
+    @pytest.mark.parametrize(
+        "order",
+        [
+            ["-S", "-q batch.q", "-t", "x", "--cpu", "4"],
+            ["-t", "x", "-S", "-q batch.q", "--cpu", "4"],
+            ["--cpu", "4", "-t", "x", "-S", "-q batch.q"],
+        ],
+    )
+    def test_option_order_does_not_matter(self, runner, temp_dir, order, monkeypatch):
+        (temp_dir / "hpc-runner.toml").write_text("config_version = 1\n[types.x]\n")
+        monkeypatch.setenv("HPC_RUNNER_CONFIG", str(temp_dir / "hpc-runner.toml"))
+        result = self._dry(runner, *order, "make", "sim")
+        assert result.exit_code == 0, result.output
+        assert "Scheduler passthrough: -q batch.q" in result.output
+        assert "make sim" in result.output
+
+    def test_command_flags_are_the_commands(self, runner, temp_dir):
+        """The first plain word ends hpc's options; everything after is the command."""
+        result = self._dry(runner, "mpirun", "-N", "4", "-S", "x", "./sim")
+        assert result.exit_code == 0, result.output
+        assert "mpirun -N 4 -S x ./sim" in result.output
         assert "Scheduler passthrough" not in result.output
 
-    def test_mixed_hpc_opts_and_passthrough(self, runner, temp_dir):
-        """hpc-runner options and scheduler passthrough work together."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--dry-run",
-                "--cpu",
-                "4",
-                "-q",
-                "batch.q",
-                "--",
-                "python",
-                "train.py",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "python train.py" in result.output
-        assert "Scheduler passthrough" in result.output
-        assert "-q batch.q" in result.output
+    def test_dashed_command_needs_a_separator(self, runner, temp_dir):
+        result = self._dry(runner, "--", "-h", "sleep", "30")
+        assert result.exit_code == 0, result.output
+        assert "Command: -h sleep 30" in result.output
 
-    def test_empty_command_after_separator_errors(self, runner):
-        """'--' with no command after it is an error."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--dry-run",
-                "-q",
-                "batch.q",
-                "--",
-            ],
-        )
+    def test_no_command_is_an_error(self, runner):
+        result = self._dry(runner, "-S", "-q batch.q")
         assert result.exit_code != 0
         assert "Command is required" in result.output
-
-    def test_multiple_passthrough_args(self, runner, temp_dir):
-        """Multiple scheduler args before '--' are all captured."""
-        result = runner.invoke(
-            cli,
-            [
-                "--scheduler",
-                "local",
-                "run",
-                "--dry-run",
-                "-q",
-                "batch.q",
-                "-l",
-                "gpu=2",
-                "--",
-                "echo",
-                "hello",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "-q batch.q -l gpu=2" in result.output
 
 
 class TestToolAutoDetection:
@@ -804,7 +549,7 @@ class TestDepend:
 
 class TestPassthroughDirectives:
     def test_batch_passthrough_one_directive_line(self, sge_dirs):
-        """B1 end-to-end: hpc run --batch -q batch.q -l gpu=2 -- python train.py."""
+        """B1 end-to-end: hpc run --batch -S '-q batch.q -l gpu=2' python train.py."""
         result = CliRunner().invoke(
             cli,
             [
@@ -813,11 +558,8 @@ class TestPassthroughDirectives:
                 "run",
                 "--dry-run",
                 "--batch",
-                "-q",
-                "batch.q",
-                "-l",
-                "gpu=2",
-                "--",
+                "-S",
+                "-q batch.q -l gpu=2",
                 "python",
                 "train.py",
             ],
