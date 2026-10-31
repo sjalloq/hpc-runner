@@ -40,6 +40,7 @@ appear here (none so far); nothing skips at run time.
 | | test_cli_depend | pass |
 | test_arrays.py | test_array_1_to_5 | pass |
 | test_resources.py | test_pe_mem_time | pass |
+| | test_memory_per_consumable[slot], [job] (h_vmem consumable, 8G per host; reads `qc:h_vmem` back) | pass |
 | | test_h_rt_kill (TIMEOUT from `failed 37`, D-T30) | pass |
 | | test_signal_exit_code (exit 137 of a signal death, BUG-T5 fixed) | pass |
 | | test_h_vmem | pass |
@@ -54,6 +55,10 @@ appear here (none so far); nothing skips at run time.
 | | test_cwd_with_space | xfail(BUG-T1) |
 | test_listing.py | test_two_users | pass |
 | | test_completed_listing_by_user | xfail(BUG-T2) |
+| test_cli.py | test_status_active_history_and_details (`hpc status`, `--history`, `<id>`, `--json`) | pass |
+| | test_status_shows_the_schedulers_failure_reason (qdel: exit 137, `100: assumedly after job`) | pass |
+| | test_tool_alias_and_config_resolve (`[tools.sort] commands`, `hpc config resolve`) | pass |
+| test_goldens.py | test_qsub_verifies_the_golden[4 SGE batch goldens] (`qsub -w v`; two verify, two get the expected site rejection) | pass |
 | test_failures.py | test_master_stopped (BUG-T6 fixed; fails if the Docker socket is not mounted) | pass |
 | | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass |
 | | shared FS missing | not automated (D-T23); see "Manual checks" |

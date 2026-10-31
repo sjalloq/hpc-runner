@@ -20,7 +20,8 @@ testbed/
     entrypoint.sh     master: init_cluster + qconf config; exec: sge_execd; login: venvs + sleep
     cell/             qconf inputs: global, sched.conf, complexes.conf, pe-smp.conf,
                       hg-allhosts.conf, q-all.conf, q-short.conf, userset-arusers.conf
-    hpc-runner-testbed.toml   HPC_RUNNER_CONFIG for the suite ([schedulers.sge] names match cell/)
+    hpc-runner-testbed.toml   HPC_RUNNER_CONFIG for the suite ([schedulers.sge] names match cell/, [tools.sort] alias)
+    hpc-runner-testbed-consumable.toml   second layer: h_vmem (a per-slot consumable here) with memory_per = "slot"
     ready.sh / clean.sh       readiness probe / per-test cleanup, both run on login
 ```
 

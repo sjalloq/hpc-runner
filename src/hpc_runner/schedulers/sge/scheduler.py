@@ -848,6 +848,8 @@ class SGEScheduler(BaseScheduler):
         """Get detailed information for an SGE job using qstat -j -xml.
 
         Parses the full job details including output paths, resources, etc.
+        A job qstat no longer knows is looked up in qacct instead (status,
+        exit code, ``failed`` code and reason; no extra details).
 
         Returns:
             Tuple of (JobInfo, extra_details dict).
@@ -862,10 +864,15 @@ class SGEScheduler(BaseScheduler):
             if not output:
                 raise JobNotFoundError(f"job {job_id} not found")
 
-        # Parse XML output
+        # Parse XML output. qstat -j of an id it no longer knows exits 0 with
+        # <unknown_jobs>; a finished job is then described by its accounting
+        # record, which carries the exit code and SGE's failed code and reason.
         job_data = parse_qstat_j_xml(output)
         if not job_data and output:
-            raise JobNotFoundError(f"job {job_id} not found")
+            record = self._qacct(job_id)
+            if record is None:
+                raise JobNotFoundError(f"job {job_id} not found")
+            return qacct_to_job_info(record), {}
 
         # Separate extra details from JobInfo fields
         extra_details: dict[str, object] = {}

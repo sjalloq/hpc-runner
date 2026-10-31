@@ -1,0 +1,13 @@
+# Second configuration layer for the integration suite: the memory resource
+# is h_vmem, a per-slot consumable in this testbed (cell/complexes.conf,
+# all.q complex_values h_vmem=8G), so mem is divided by cpu before rendering.
+# test_resources.py::test_memory_per_consumable loads this beside the default
+# hpc-runner-testbed.toml to read SGE's per-slot multiplication back.
+config_version = 1
+
+[schedulers.sge]
+parallel_environment = "smp"
+memory_resource = "h_vmem"
+memory_per = "slot"
+time_resource = "h_rt"
+emulate_afterok = true

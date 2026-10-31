@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from hpc_runner.core.exceptions import AccountingNotAvailable
+from hpc_runner.core.host import current_user
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus
 
@@ -44,7 +44,7 @@ class JobProvider:
             scheduler: The scheduler instance to use for queries.
         """
         self.scheduler = scheduler
-        self.current_user = os.environ.get("USER", "unknown")
+        self.current_user = current_user()
 
     async def get_active_jobs(
         self,

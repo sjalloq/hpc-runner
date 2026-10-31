@@ -21,6 +21,7 @@ from hpc_runner.core.exceptions import (
     JobNotFoundError,
     NotSupportedError,
 )
+from hpc_runner.core.host import current_user as _current_user
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobResult, JobStatus, status_from_exit_code
 from hpc_runner.schedulers.base import BaseScheduler, Stream, refuse_interactive_dependencies
@@ -245,7 +246,7 @@ class LocalScheduler(BaseScheduler):
     ) -> list[JobInfo]:
         """List active local jobs."""
         jobs: list[JobInfo] = []
-        current_user = os.environ.get("USER", "unknown")
+        current_user = _current_user()
 
         for job_id, proc in self._processes.items():
             poll = proc.poll()
@@ -296,7 +297,7 @@ class LocalScheduler(BaseScheduler):
 
     def get_job_details(self, job_id: str) -> tuple[JobInfo, dict[str, object]]:
         """Get details for a local job."""
-        current_user = os.environ.get("USER", "unknown")
+        current_user = _current_user()
         result = self._results.get(job_id)
 
         if job_id in self._processes:

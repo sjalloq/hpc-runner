@@ -309,6 +309,34 @@ the suite is green now and the fix flips the test to a hard pass.
   -j <unknown>` exits 0 with `<unknown_jobs>`; `qdel` says "has registered
   the job N for deletion"; against a stopped master qstat fails after ~45 s
   with a commlib "No route to host" line before "unable to contact qmaster".
+- **D-T39 testbed additions** (test QA review §5 items 10, 11, 13).
+  `h_vmem` is now a consumable (`complexes.conf`) with `complex_values
+  h_vmem=8G` on every all.q host, and `hpc-runner-testbed-consumable.toml`
+  is a second config layer selecting it with `memory_per = "slot"`;
+  `test_memory_per_consumable` reads `qstat -F h_vmem` back: 2 slots x 1G
+  leaves 6G ("slot"), 2 slots x 2G leaves 4G ("job" over-books), which is
+  the sge.rst claim verified. `[tools.sort] commands = ["sort", "uniq"]`
+  with `queue = "short.q"` proves the alias through `hpc run` and `hpc
+  config resolve`. `test_cli.py` runs the real `hpc status`, `--history`
+  and `<id>` (`--json`); for that, `get_job_details` of a job qstat no
+  longer knows now answers from qacct, so `hpc status <id>` of a finished
+  job shows exit code, failed code and reason. `test_goldens.py` runs
+  `qsub -w v` on every SGE batch golden: a directive the parser rejects
+  says "Unable to read script file" (what `-t 1-10:2%3` produced) and
+  fails any golden; two goldens verify, two get the site rejection they
+  must (4-slot PE on 2-slot hosts; unknown resource `scratch`). Seen on
+  the way: a consumable with no `complex_values` anywhere (`xcelium_lic`)
+  is "unknown resource" to every queue instance, so `-l xcelium_lic=1`
+  is accepted by qsub but can never be scheduled here. Two bugs the new
+  tests found: (1) with `h_vmem` consumable and default 0, every job that
+  did not request memory ran under a 10 MB address-space limit (`ulimit
+  -v` 10240) and bash aborted with exit 134 in the dependency guard; with
+  a 2G default, as sites set, such jobs book 2G per slot and run under the
+  queue's own limit (`ulimit -v` unlimited here); (2) `hpc status`, `hpc
+  kill`, the local scheduler and the TUI read `$USER` and fell back to the
+  string "unknown", which under `docker exec` (no `USER`) matched nobody's
+  jobs; they now share `core.host.current_user()` with a `getpass`
+  fallback, as `Host.capture` already did.
 - Suite time: about 4 min per Python on the default stack; the master-stop
   (95 s, the 60 s command timeout) and `h_rt` (61 s) tests are inherent.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:

@@ -66,7 +66,9 @@ multiply by the slot count. A site whose memory resource is a per-slot
 *consumable* (SGE multiplies the request by the slots; ``h_vmem`` is
 usually configured this way) sets ``memory_per = "slot"`` and hpc-runner
 divides ``mem`` by ``cpu`` (rounded up) before rendering, so the same job
-renders ``-l h_vmem=4G``.
+renders ``-l h_vmem=4G``. (Site note: a consumable's *default* in the
+complex is what a job that does not request it gets; with the stock ``0``,
+execd gives such jobs a 10 MB address-space limit and bash itself aborts.)
 
 - config: ``[schedulers.sge].memory_per`` (``"job"``, the default, or ``"slot"``)
 

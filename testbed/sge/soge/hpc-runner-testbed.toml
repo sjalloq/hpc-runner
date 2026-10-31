@@ -8,3 +8,10 @@ memory_resource = "mem_free"     # cell/complexes.conf (requestable, not consuma
 time_resource = "h_rt"
 memory_per = "job"               # SGE does not multiply a requestable by slots
 emulate_afterok = true
+
+# One tool entry matching several executables (configuration.rst "One tool,
+# several commands"); `sort` and `uniq` are coreutils every node has and no
+# other integration test runs them. test_cli.py proves the alias live.
+[tools.sort]
+commands = ["sort", "uniq"]
+queue = "short.q"

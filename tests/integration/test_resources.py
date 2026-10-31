@@ -5,11 +5,17 @@ See docs/dev/testbed/TESTBED_PLAN.md section 5.
 
 from __future__ import annotations
 
+import dataclasses
+import re
 import time
 
+import pytest
+
+from hpc_runner.core.config import load_config
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.schedulers import get_scheduler
 from tests.integration.cluster import Cluster
 
 #: ``short.q`` has ``h_rt 00:01:00``; the kill arrives about 60 s after start.
@@ -60,6 +66,59 @@ def test_h_rt_kill(cluster: Cluster) -> None:
     failed = [line.split() for line in record.splitlines() if line.startswith("failed")]
     assert failed and failed[0][1] == "37", record
     assert cluster.scheduler().get_exit_code(job_id) == 137
+
+
+def _available_h_vmem(cluster: Cluster, host: str) -> str:
+    """``qc:h_vmem=<value>`` of all.q on *host* (the consumable's remaining capacity)."""
+    out = cluster.run(["qstat", "-F", "h_vmem", "-q", f"all.q@{host}"]).stdout
+    match = re.search(r"qc:h_vmem=(\S+)", out)
+    assert match, out
+    return match.group(1)
+
+
+@pytest.mark.parametrize(
+    ("memory_per", "directive", "left"),
+    [
+        # 2 slots x 1G: the job gets the 2G it asked for; 8G - 2G remain.
+        ("slot", "#$ -l h_vmem=1G", "6.000G"),
+        # Passed through as 2G per slot: SGE books 4G, twice the request.
+        ("job", "#$ -l h_vmem=2G", "4.000G"),
+    ],
+)
+def test_memory_per_consumable(
+    cluster: Cluster, memory_per: str, directive: str, left: str
+) -> None:
+    """D10 / sge.rst: SGE multiplies a per-slot consumable by the slots, so ``memory_per``
+    ``"slot"`` divides ``mem`` by ``cpu`` to request what was asked and ``"job"`` over-books.
+
+    ``h_vmem`` is a consumable here with ``complex_values h_vmem=8G`` on each
+    all.q host (cell/complexes.conf, cell/q-all.conf). The second config layer
+    ``hpc-runner-testbed-consumable.toml`` selects it with ``memory_per = "slot"``.
+    """
+    config = load_config(cluster.config_path.with_name("hpc-runner-testbed-consumable.toml"))
+    assert config.schedulers["sge"]["memory_per"] == "slot"
+    if memory_per == "job":
+        sge = {**config.schedulers["sge"], "memory_per": "job"}
+        config = dataclasses.replace(config, schedulers={**config.schedulers, "sge": sge})
+    scheduler = get_scheduler("sge", config=config)
+
+    spec = JobSpec(
+        "sleep 120",
+        name=f"vmem_{memory_per}",
+        cpu=2,
+        mem="2G",
+        resources=[{"name": "hostname", "value": "exec1"}],
+    )
+    job = resolve(spec, config, cluster.host())
+    assert directive in scheduler.preview(job).splitlines()
+    assert _available_h_vmem(cluster, "exec1") == "8.000G"
+    result = scheduler.submit(job)
+    job_id = _job_id(result)
+    try:
+        assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
+        assert _available_h_vmem(cluster, "exec1") == left
+    finally:
+        result.cancel()
 
 
 def test_signal_exit_code(cluster: Cluster) -> None:

@@ -7,7 +7,6 @@ Uses modern Textual patterns:
 - Message-based event handling
 """
 
-import os
 import socket
 from pathlib import Path
 from typing import ClassVar
@@ -20,6 +19,7 @@ from textual.theme import Theme
 from textual.widgets import DataTable, Header, Static, TabbedContent, TabPane
 
 from hpc_runner.core.config import HPCConfig
+from hpc_runner.core.host import current_user
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.schedulers import get_scheduler
 from hpc_runner.tui.components import (
@@ -85,7 +85,7 @@ class HpcMonitorApp(App[None]):
         """
         super().__init__()
         self._refresh_interval = refresh_interval
-        self._user = os.environ.get("USER", "unknown")
+        self._user = current_user()
         self._hostname = socket.gethostname().split(".")[0]  # Short hostname
 
         # Initialize scheduler and job provider

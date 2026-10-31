@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 
 import rich_click as click
@@ -10,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from hpc_runner.cli._context import Context, pass_context
+from hpc_runner.core.host import current_user
 
 console = Console()
 
@@ -66,7 +66,7 @@ def kill(
 
     scheduler = get_scheduler(ctx.scheduler, config=ctx.config)
 
-    user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
+    user = current_user()
     jobs = scheduler.list_active_jobs(user=user)
 
     if pattern is not None:

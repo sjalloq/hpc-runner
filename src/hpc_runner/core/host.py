@@ -9,6 +9,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def current_user(env: Mapping[str, str] | None = None) -> str:
+    """The user this process runs as: ``$USER`` if set, else the account name.
+
+    ``docker exec``, cron and some ``sudo`` configurations leave ``USER``
+    unset, so anything that filters a scheduler's listing by user must not
+    read the variable alone (it once fell back to the string ``"unknown"``,
+    which matched nobody's jobs).
+    """
+    source = os.environ if env is None else env
+    return source.get("USER") or getpass.getuser()
+
+
 @dataclass(frozen=True)
 class Host:
     """The submitting host: its environment, working directory and user.
@@ -30,5 +42,5 @@ class Host:
     def capture(cls) -> Host:
         """Snapshot the current process: ``os.environ``, cwd and user."""
         env = dict(os.environ)
-        user = env.get("USER") or getpass.getuser()
+        user = current_user(env)
         return cls(env=env, cwd=Path.cwd(), user=user)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
 
 import rich_click as click
@@ -12,6 +11,7 @@ from rich.table import Table
 
 from hpc_runner.cli._context import Context, pass_context
 from hpc_runner.core.exceptions import JobNotFoundError
+from hpc_runner.core.host import current_user
 
 if TYPE_CHECKING:
     from hpc_runner.core.job_info import JobInfo
@@ -36,8 +36,8 @@ def _status_style(status: str) -> str:
 
 
 def _get_current_user() -> str:
-    """Return the current username."""
-    return os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
+    """The user whose jobs ``hpc status`` lists by default."""
+    return current_user()
 
 
 def _format_datetime(dt: object) -> str:

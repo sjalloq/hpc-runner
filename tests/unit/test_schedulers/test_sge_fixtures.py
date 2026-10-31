@@ -127,6 +127,15 @@ class TestQstatJ:
         with patch_seam(make_sge_responder(FX)), pytest.raises(JobNotFoundError):
             SGEScheduler(HPCConfig()).get_job_details("999999")
 
+    def test_get_job_details_of_a_finished_job_comes_from_qacct(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        with patch_seam(make_sge_responder(FX)):
+            info, extra = SGEScheduler(HPCConfig()).get_job_details(FX.job("signal"))
+        assert extra == {}
+        assert (info.status, info.exit_code) == (JobStatus.FAILED, 137)
+        assert (info.failed_code, info.failed_reason) == (100, "assumedly after job")
+        assert info.name == "signal" and info.user == "tester"
+
     def test_get_job_details_merges_listing_and_details(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
         with patch_seam(make_sge_responder(FX)):
