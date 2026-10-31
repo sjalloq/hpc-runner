@@ -6,7 +6,35 @@ on:
       - 'v*'
 
 jobs:
+  # A tag can be pushed onto any commit, so do not trust it: require a green
+  # CI run for that exact commit before building anything. CI also runs on
+  # the tag push itself, so this waits for either run to finish.
+  ci:
+    name: Require green CI for the tagged commit
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for a successful CI run of ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 90); do
+            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+                     --commit "$GITHUB_SHA" --json status,conclusion)
+            if jq -e 'any(.[]; .status == "completed" and .conclusion == "success")' \
+                 <<<"$runs" >/dev/null; then
+              echo "CI is green for $GITHUB_SHA"; exit 0
+            fi
+            if jq -e 'length > 0 and all(.[]; .status == "completed")' <<<"$runs" >/dev/null; then
+              echo "CI finished without success for $GITHUB_SHA:"; echo "$runs"; exit 1
+            fi
+            echo "CI still running for $GITHUB_SHA (attempt $attempt)"; sleep 20
+          done
+          echo "Timed out waiting for CI on $GITHUB_SHA"; exit 1
+
   build:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
