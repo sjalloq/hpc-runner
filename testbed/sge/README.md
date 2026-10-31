@@ -19,9 +19,8 @@ One row per integration test, grouped by file (tests/integration/). The
 `soge` column is the result of the integration suite (`hpc-testbed pytest`) on 2026-10-29:
 `pass`; `xfail(BUG-Tn)` for a strict expected failure pinning a bug listed
 in docs/dev/testbed/TESTBED_REVIEW.md ("Phase 3 findings"), which flips to a hard pass when
-fixed; `skip(reason)` for a test this flavour or stack cannot run. A test
-skipped for a flavour with `@pytest.mark.flavour` would also appear here
-(none so far).
+fixed. A test deselected for a flavour with `@pytest.mark.flavour` would also
+appear here (none so far); nothing skips at run time.
 
 | File | Test | `soge` |
 |---|---|---|
@@ -32,7 +31,7 @@ skipped for a flavour with `@pytest.mark.flavour` would also appear here
 | | test_interactive | pass |
 | | test_interactive_no_slot (all eight slots filled, D-T28) | pass |
 | test_status.py | test_queued_running_done | pass |
-| | test_slow_accounting_window | skip(needs `hpc-testbed up --slow-accounting`, D-T22); pass on that stack |
+| | test_slow_accounting_window | pass on `hpc-testbed pytest --slow-accounting` against that stack (D-T22); deselected otherwise |
 | | test_aged_out | pass |
 | test_dependencies.py | test_afterok_cascade | pass |
 | | test_afternotok | pass |

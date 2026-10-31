@@ -146,6 +146,12 @@ class TestCommands:
             repo, "cp", "login:/work/junit-3.10.xml", str(repo / "testbed/junit-3.10.xml")
         )
 
+    def test_pytest_slow_accounting_selects_the_variant(self, repo, calls):
+        main(["pytest", "--slow-accounting"])
+        assert calls[0][0][-1] == "--slow-accounting"
+        main(["pytest"])
+        assert "--slow-accounting" not in calls[2][0]
+
     def test_pytest_junit_path_can_be_chosen(self, repo, calls):
         main(["pytest", "--junit", "out/report.xml"])
         assert calls[-1][0][-1] == "out/report.xml"

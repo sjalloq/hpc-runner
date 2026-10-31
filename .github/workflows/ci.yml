@@ -106,7 +106,7 @@ jobs:
           hpc-testbed up --slow-accounting
 
       - name: Slow-accounting tests (Python ${{ matrix.python }})
-        run: hpc-testbed pytest --py ${{ matrix.python }} -- -k slow_accounting
+        run: hpc-testbed pytest --py ${{ matrix.python }} --slow-accounting
 
       - name: Upload JUnit reports
         if: always()

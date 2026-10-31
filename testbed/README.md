@@ -35,12 +35,19 @@ hpc-testbed pytest --up [--keep]  # up, pytest, down (--keep leaves the stack ru
 hpc-testbed logs [master ...]     # container logs, all or named services
 hpc-testbed clean                 # delete every job, wait for an empty queue
 hpc-testbed down                  # containers, network and volumes removed
-hpc-testbed up --slow-accounting  # master with a 15 s accounting flush (one test only)
+hpc-testbed up --slow-accounting  # master with a 15 s accounting flush, for ...
+hpc-testbed pytest --slow-accounting   # ... the tests marked slow_accounting (deselected otherwise)
 hpc-testbed --flavour <name> ...  # another flavour under testbed/<family>/ (default soge)
 ```
 
 `hpc-testbed pytest` always passes `-m integration --require-cluster`: inside
 the testbed an unreachable scheduler is a broken testbed and fails the run.
+The same rule holds inside the tests: nothing skips on a missing
+precondition (no Docker socket, wrong accounting flush); it fails and says
+which `hpc-testbed` command fixes it. Variants are selected, not detected:
+`--slow-accounting` selects exactly the tests marked `slow_accounting`, which
+are deselected otherwise. `--flavour` and `@pytest.mark.flavour(...)` must
+name a directory under `testbed/<family>/`; anything else fails collection.
 
 Inside `login` the suite's environment is already set: `HPC_SCHEDULER=sge`,
 `HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml`,
@@ -88,7 +95,7 @@ pushes to `main` run 3.10, 3.11 and 3.12, one matrix cell each. A cell is:
    pytest --py <ver> --junit testbed/junit-<ver>-default.xml` (a missing
    cluster is a failure, not a skip).
 2. `hpc-testbed down`, `hpc-testbed up --slow-accounting`, then `hpc-testbed
-   pytest --py <ver> -- -k slow_accounting` for the one test that needs the
+   pytest --py <ver> --slow-accounting` for the one test that needs the
    15 s flush (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its report is
    `testbed/junit-<ver>.xml`.
 
@@ -106,8 +113,8 @@ delete all jobs and wait), the same users and volumes, and its own cell
 configuration and `hpc-runner-testbed.toml`. The fixture classes
 (`tests/integration/cluster.py`) and the tests are shared across flavours of
 one family; `--flavour <name>` selects the stack that is up and
-`@pytest.mark.flavour(...)` skips what a flavour cannot do, which is what fills
-`testbed/sge/README.md`. A new family (Slurm) is `testbed/slurm/<flavour>/`
+`@pytest.mark.flavour(...)` deselects what a flavour cannot do, which is what
+fills `testbed/sge/README.md`. A new family (Slurm) is `testbed/slurm/<flavour>/`
 plus a `SlurmCluster` with the same interface. The driver needs nothing new:
 `hpc-testbed --flavour <name>` finds the compose file under any family and
 passes the family as `--cluster`.

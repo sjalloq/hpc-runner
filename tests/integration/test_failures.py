@@ -25,8 +25,13 @@ FAILED_FAMILY = {JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT}
 
 @pytest.fixture(autouse=True)
 def _needs_docker(cluster: Cluster) -> Iterator[None]:
+    """Node control is part of the testbed (D-T9); without it the testbed is broken."""
     if not cluster.docker_available:
-        pytest.skip("Docker socket not mounted in login; node control unavailable (D-T9)")
+        pytest.fail(
+            "Docker socket not mounted in login: node control unavailable, the testbed is "
+            "broken (testbed/README.md, D-T9)",
+            pytrace=False,
+        )
     yield
 
 

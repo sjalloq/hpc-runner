@@ -60,14 +60,18 @@ def test_queued_running_done(cluster: Cluster) -> None:
     assert scheduler.get_exit_code(job_id) == 0
 
 
+@pytest.mark.slow_accounting
 def test_slow_accounting_window(cluster: Cluster) -> None:
-    """D-T6/D-T22: the exit sentinel resolves a finished job before qacct has its record."""
+    """D-T6/D-T22: the exit sentinel resolves a finished job before qacct has its record.
+
+    Selected by ``--slow-accounting`` only; the stack must have been started
+    with ``hpc-testbed up --slow-accounting`` or the test fails.
+    """
     sconf = cluster.run(["qconf", "-sconf"]).stdout
-    if SLOW_FLUSH not in sconf:
-        pytest.skip(
-            f"needs the slow-accounting stack ({SLOW_FLUSH}); "
-            "see docs/dev/testbed/TESTBED_REVIEW.md D-T22"
-        )
+    assert SLOW_FLUSH in sconf, (
+        f"the master is not the slow-accounting stack ({SLOW_FLUSH} not in qconf -sconf); "
+        "start it with `hpc-testbed up --slow-accounting` (D-T22)"
+    )
 
     scheduler = cluster.scheduler()
     job_id = _job_id(_submit(cluster, JobSpec("echo done", name="slowacct")))

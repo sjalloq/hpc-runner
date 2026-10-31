@@ -284,6 +284,16 @@ the suite is green now and the fix flips the test to a hard pass.
   `pytest` always passes `--require-cluster`. CI installs the package for
   the driver and no longer renames the first JUnit report (`--junit`).
   The inside-out design is unchanged: tests still run in `login`.
+- **D-T37 no conditional skips** (test QA review §5 item 4). The Docker
+  check in `test_failures.py` and the `flush_time` check in
+  `test_slow_accounting_window` now fail with the `hpc-testbed` command
+  that fixes the stack; the slow variant is a `slow_accounting` marker
+  selected by `--slow-accounting` (pytest option, passed by
+  `hpc-testbed pytest --slow-accounting`) and deselected otherwise, so the
+  default cycle never sees it. `--flavour` and `@pytest.mark.flavour`
+  names are validated against `testbed/*/*/compose.yml` at collection;
+  a flavour mismatch deselects rather than skips. `-r sxX` is in addopts.
+  This supersedes the skip wording of D-T22 and D-T9.
 - Suite time: about 4 min per Python on the default stack; the master-stop
   (95 s, the 60 s command timeout) and `h_rt` (61 s) tests are inherent.
 - **BUG-T5 signal deaths report `exit_code None`.** qacct writes

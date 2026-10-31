@@ -89,6 +89,9 @@ strict = true
 testpaths = ["tests"]
 markers = [
     "integration: needs a live scheduler testbed (see docs/dev/testbed/TESTBED_PLAN.md)",
-    "flavour(*names): only holds on the listed scheduler flavours; skipped elsewhere",
+    "flavour(*names): only holds on the listed scheduler flavours; deselected elsewhere",
+    "slow_accounting: needs the master from `hpc-testbed up --slow-accounting`; run with --slow-accounting",
 ]
-addopts = "-m 'not integration'"
+# -r sxX: every skip, xfail and xpass is listed in the summary so a quietly
+# shrinking suite is visible in the log.
+addopts = "-m 'not integration' -r sxX"

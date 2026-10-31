@@ -155,12 +155,16 @@ def cmd_clean(stack: Stack) -> None:
     run(stack.compose("exec", "-T", "login", f"{TESTBED_DIR}/clean.sh"))
 
 
-def pytest_argv(stack: Stack, *, py: str, flavour: str, extra: Sequence[str]) -> list[str]:
+def pytest_argv(
+    stack: Stack, *, py: str, flavour: str, slow_accounting: bool, extra: Sequence[str]
+) -> list[str]:
     """The ``docker compose exec`` command that runs the suite inside ``login``.
 
     ``-m integration`` overrides pyproject's ``-m 'not integration'`` addopts
     and ``--require-cluster`` makes an unreachable scheduler a failure: inside
     the testbed a missing precondition is a broken testbed, never a skip.
+    ``--slow-accounting`` selects the tests marked ``slow_accounting`` instead
+    of the default set.
     """
     return stack.compose(
         "exec",
@@ -180,13 +184,19 @@ def pytest_argv(stack: Stack, *, py: str, flavour: str, extra: Sequence[str]) ->
         "--flavour",
         flavour,
         f"--junitxml={WORK_DIR}/junit-{py}.xml",
+        *(["--slow-accounting"] if slow_accounting else []),
         *extra,
     )
 
 
-def cmd_pytest(stack: Stack, *, py: str, junit: Path, extra: Sequence[str]) -> int:
+def cmd_pytest(
+    stack: Stack, *, py: str, junit: Path, slow_accounting: bool, extra: Sequence[str]
+) -> int:
     """Run ``tests/integration`` inside ``login``; copy the JUnit XML to *junit*."""
-    status = run(pytest_argv(stack, py=py, flavour=stack.flavour, extra=extra), check=False)
+    argv = pytest_argv(
+        stack, py=py, flavour=stack.flavour, slow_accounting=slow_accounting, extra=extra
+    )
+    status = run(argv, check=False)
     junit.parent.mkdir(parents=True, exist_ok=True)
     run(stack.compose("cp", f"login:{WORK_DIR}/junit-{py}.xml", str(junit)), check=False)
     return status
@@ -243,7 +253,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--up", action="store_true", help="bring the stack up first and take it down after"
     )
     test.add_argument("--keep", action="store_true", help="with --up: leave the stack running")
-    _add_slow_accounting(test, "with --up: start the master with the 15 s accounting flush")
+    _add_slow_accounting(
+        test,
+        "run only the slow_accounting tests (with --up: start that stack too)",
+    )
     test.add_argument(
         "--ready-timeout", type=int, default=90, help="with --up: seconds to wait for ready.sh"
     )
@@ -304,7 +317,13 @@ def dispatch(stack: Stack, args: argparse.Namespace) -> int:
                 build=True,
             )
         try:
-            return cmd_pytest(stack, py=args.py, junit=junit, extra=extra)
+            return cmd_pytest(
+                stack,
+                py=args.py,
+                junit=junit,
+                slow_accounting=args.slow_accounting,
+                extra=extra,
+            )
         finally:
             if args.up and not args.keep:
                 cmd_down(stack)

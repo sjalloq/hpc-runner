@@ -4,6 +4,14 @@ The suite runs inside the testbed's ``login`` container; the stack's
 lifecycle belongs to ``hpc-testbed up/down``, not to pytest. The
 session fixture only checks readiness and skips (or, with
 ``--require-cluster``, fails) when no scheduler is reachable.
+
+There are no conditional skips in the tests themselves: the testbed *is*
+the environment, so a missing precondition (no Docker socket, the wrong
+accounting flush) is a broken testbed and the test fails saying so.
+Variants are selected, never detected: ``--slow-accounting`` selects the
+tests marked ``slow_accounting`` (and only those); without it they are
+deselected. Flavour names, on ``--flavour`` and in ``@pytest.mark.flavour``,
+must name a directory under ``testbed/<family>/`` or collection fails.
 """
 
 from __future__ import annotations
@@ -19,7 +27,13 @@ import pytest
 from tests.integration.cluster import WORK_ROOT, Cluster, SGECluster, poll_ready
 
 HERE = Path(__file__).resolve().parent
+TESTBED_DIR = HERE.parent.parent / "testbed"
 CLEAN_SCRIPT = Path("/opt/testbed/clean.sh")
+
+
+def known_flavours(testbed_dir: Path = TESTBED_DIR) -> dict[str, str]:
+    """``{flavour: family}`` for every ``testbed/<family>/<flavour>/compose.yml``."""
+    return {p.parent.name: p.parent.parent.name for p in testbed_dir.glob("*/*/compose.yml")}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -32,19 +46,54 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="fail instead of skip when no scheduler is reachable",
     )
+    group.addoption(
+        "--slow-accounting",
+        action="store_true",
+        default=False,
+        help="run only the tests marked slow_accounting (the stack from "
+        "`hpc-testbed up --slow-accounting`); without it they are deselected",
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    flavour = config.getoption("--flavour")
+    flavours = known_flavours()
+    if flavour not in flavours:
+        raise pytest.UsageError(
+            f"--flavour {flavour!r} is not a testbed flavour; known: {', '.join(sorted(flavours))}"
+        )
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Mark every item here ``integration``; skip those not for the active flavour."""
+    """Mark every item here ``integration``; select the variant; validate flavour marks.
+
+    A test the active flavour cannot run is *deselected* (it is not a result
+    of this run), as is the slow-accounting variant not asked for.
+    """
     active = config.getoption("--flavour")
+    slow = config.getoption("--slow-accounting")
+    flavours = known_flavours()
+    kept: list[pytest.Item] = []
+    deselected: list[pytest.Item] = []
     for item in items:
         if not item.path.is_relative_to(HERE):
+            kept.append(item)
             continue
         item.add_marker(pytest.mark.integration)
         supported = {name for mark in item.iter_markers("flavour") for name in mark.args}
-        if supported and active not in supported:
-            item.add_marker(pytest.mark.skip(reason=f"not supported on flavour {active}"))
+        unknown = supported - flavours.keys()
+        if unknown:
+            raise pytest.UsageError(
+                f"{item.nodeid}: @pytest.mark.flavour names unknown flavour(s) "
+                f"{', '.join(sorted(unknown))}; known: {', '.join(sorted(flavours))}"
+            )
+        wrong_flavour = bool(supported) and active not in supported
+        wrong_variant = bool(item.get_closest_marker("slow_accounting")) != slow
+        (deselected if wrong_flavour or wrong_variant else kept).append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept
 
 
 @pytest.fixture(scope="session")
