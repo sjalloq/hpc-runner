@@ -197,6 +197,11 @@ why. Each item needs a yes/no or a correction.
   and documents the gpu case. **Open for you:** should hpc-runner pass
   `-w e` (or `-w w`) so an unsatisfiable request fails at submit instead of
   queueing forever? Policy, not taken here.
+  **Decision (2026-10-31): no.** Submit-time verification only works when
+  the site's complex configuration matches what `-w e` checks, which it
+  rarely does; the same idea on Slurm relied on optional features that
+  were not enabled and broke submissions. A request that cannot be met
+  queues, which is what the scheduler is for.
 - **D-T28 `qrsh -now no` schedules into BATCH-only queues.** Observed: with
   every `all.q` (BATCH INTERACTIVE) slot busy, the interactive job ran at
   once in `short.q` (BATCH only, `h_rt` 1 min). SGE treats a `-now no`
@@ -206,6 +211,11 @@ why. Each item needs a yes/no or a correction.
   site whose batch queues lack X forwarding or have short limits that may
   matter. Options would be a config `queue` for interactive jobs or passing
   `-q` with the INTERACTIVE queues; not taken here.
+  **Decision (2026-10-31): nothing to do.** "Interactive" means `qrsh`
+  instead of `qsub`, nothing more. Queues and consumables are the user's
+  to specify, through config or passthrough, and a job that does not
+  dispatch for lack of resources is behaving correctly. hpc-runner does
+  not second-guess queue selection.
 - **D-T29 accounting truncation must wait for the record.** `wait_for`
   returns via the exit sentinel before qmaster flushes the accounting line
   (1 s), so the aged-out test first polls `qacct -j` until the record
