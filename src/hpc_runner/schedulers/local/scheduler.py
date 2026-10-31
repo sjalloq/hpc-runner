@@ -158,11 +158,17 @@ class LocalScheduler(BaseScheduler):
         return self.shell_word(str(Path(job.workdir) / pattern), job=job, job_id=job_id)
 
     def cancel(self, job_id: str) -> bool:
-        """Cancel a local job."""
+        """Terminate a running local job; False if it is not running.
+
+        The job then reads as finished with exit code 128 + signal (143 for
+        SIGTERM), the shell convention SGE's qacct also uses for a signal
+        death, rather than vanishing into UNKNOWN.
+        """
         if job_id in self._processes:
             proc = self._processes[job_id]
             proc.terminate()
-            proc.wait()
+            returncode = proc.wait()
+            self._exit_codes[job_id] = 128 - returncode if returncode < 0 else returncode
             self._cleanup_process(job_id)
             return True
         return False

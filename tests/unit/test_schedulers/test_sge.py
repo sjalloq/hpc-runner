@@ -2,6 +2,7 @@
 
 import dataclasses
 import os
+import subprocess
 import time
 
 import pytest
@@ -1043,6 +1044,37 @@ class TestSGESubmissionContract:
             assert argv[idx : idx + len(pair)] == pair
         assert argv[-3:-1] == ["-l", "display=1"]
         assert argv[-1].endswith(".sh")
+
+    def test_interactive_seam_kwargs(self, scheduler, tmp_path):
+        """qrsh runs for the job's lifetime on the user's terminal: no timeout, no capture.
+
+        The argv is checked above; this pins how the seam is called, which a
+        default 60 s timeout or a swallowed terminal would otherwise pass.
+        """
+        from unittest.mock import patch
+
+        from hpc_runner.schedulers.base import BaseScheduler
+        from tests.fakes import SEAM
+
+        job = make_job("xterm", interactive=True, workdir=str(tmp_path))
+        with patch(SEAM) as seam:
+            seam.return_value = subprocess.CompletedProcess(["qrsh"], 0, "", "")
+            scheduler.submit(job)
+        (call,) = seam.call_args_list
+        assert call.args[0][0] == "qrsh"
+        assert call.kwargs["timeout"] is None
+        assert call.kwargs["check"] is False
+        assert call.kwargs["capture"] is False
+        assert call.kwargs["cwd"] == tmp_path
+
+        # The batch path is the opposite: qsub is a query-style call.
+        with patch(SEAM) as seam:
+            seam.return_value = subprocess.CompletedProcess(["qsub"], 0, *QSUB_OK[1:])
+            scheduler.submit(make_job(workdir=str(tmp_path)))
+        (call,) = seam.call_args_list
+        assert call.args[0][0] == "qsub"
+        assert call.kwargs["timeout"] == BaseScheduler.COMMAND_TIMEOUT
+        assert call.kwargs.get("capture", True) is True
 
     def test_interactive_preview_has_no_directives(self, scheduler):
         script = scheduler.preview(make_job("xterm", interactive=True))

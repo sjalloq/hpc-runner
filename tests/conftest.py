@@ -23,8 +23,10 @@ def pytest_addoption(parser):
 
 
 # Every job script rendered anywhere in the suite is syntax-checked with
-# `bash -n` once (by content): a quoting bug in a template fails the test that
-# rendered it, not only the golden tests.
+# `bash -n` once (by content): a syntax error in a template fails the test that
+# rendered it, not only the golden tests. (Quoting is a different matter: an
+# unquoted value is still valid shell; TestModuleArgumentsRoundTrip and
+# TestQuotingRoundTrip run scripts to prove values arrive intact.)
 _BASH = shutil.which("bash")
 _CHECKED_SCRIPTS: set[str] = set()
 

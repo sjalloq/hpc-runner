@@ -115,9 +115,16 @@ class TestLocalScheduler:
         job = make_job("sleep 60", workdir=str(temp_dir))
 
         result = scheduler.submit(job)
+        assert scheduler.get_status(result.job_id) is JobStatus.RUNNING
         success = scheduler.cancel(result.job_id)
 
         assert success is True
+        # The process is gone and the job is terminal with a signal exit code.
+        assert scheduler.get_status(result.job_id) is JobStatus.FAILED
+        assert scheduler.get_exit_code(result.job_id) == 143  # 128 + SIGTERM
+        assert result.status is JobStatus.FAILED
+        assert scheduler.cancel(result.job_id) is False  # nothing left to cancel
+        assert scheduler.cancel("nope") is False
 
     def test_generate_script(self, temp_dir):
         """Test script generation."""

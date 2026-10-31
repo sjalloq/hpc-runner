@@ -410,63 +410,60 @@ class TestConfigMerging:
         # tools from child
         assert config.tools["python"]["modules"] == ["python/3.11"]
 
-    def test_find_config_files_from_env_var(self, temp_dir):
-        """Test that HPC_RUNNER_CONFIG env var replaces git root (mutually exclusive)."""
-        # Create a fake git root with its own config
-        git_dir = temp_dir / ".git"
-        git_dir.mkdir()
-        git_config = temp_dir / "hpc-runner.toml"
-        git_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
+    @staticmethod
+    def _repo(temp_dir):
+        """A fake checkout: .git, a project config at the root, two subdirectories."""
+        (temp_dir / ".git").mkdir()
+        root_config = temp_dir / "hpc-runner.toml"
+        root_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
+        (temp_dir / "plain").mkdir()
+        local_dir = temp_dir / "override"
+        local_dir.mkdir()
+        (local_dir / "hpc-runner.toml").write_text('config_version = 1\n[defaults]\nmem = "16G"\n')
+        return root_config
 
-        # Create env var config in a different location
+    def test_git_root_config_found_from_a_subdirectory(self, temp_dir, monkeypatch):
+        """No env var: <git-root>/hpc-runner.toml is the project config wherever cwd is."""
+        root_config = self._repo(temp_dir)
+        monkeypatch.delenv(HPC_CONFIG_ENV_VAR, raising=False)
+        monkeypatch.chdir(temp_dir / "plain")
+        assert find_config_files() == [root_config.resolve()]
+        monkeypatch.chdir(temp_dir)  # at the root the two levels are the same file
+        assert find_config_files() == [root_config.resolve()]
+
+    def test_git_root_then_local_override_in_order(self, temp_dir, monkeypatch):
+        root_config = self._repo(temp_dir)
+        monkeypatch.delenv(HPC_CONFIG_ENV_VAR, raising=False)
+        monkeypatch.chdir(temp_dir / "override")
+        assert find_config_files() == [
+            root_config.resolve(),
+            (temp_dir / "override" / "hpc-runner.toml").resolve(),
+        ]
+        assert load_config().defaults == {"cpu": 1, "mem": "16G"}
+
+    def test_find_config_files_from_env_var(self, temp_dir, monkeypatch):
+        """HPC_RUNNER_CONFIG replaces the git-root config (mutually exclusive)."""
+        root_config = self._repo(temp_dir)
         env_config = temp_dir / "site" / "site.toml"
         env_config.parent.mkdir()
         env_config.write_text("config_version = 1\n[defaults]\ncpu = 2\n")
+        monkeypatch.setenv(HPC_CONFIG_ENV_VAR, str(env_config))
+        monkeypatch.chdir(temp_dir / "plain")
+        assert find_config_files() == [env_config.resolve()]
+        assert root_config.resolve() not in find_config_files()
 
-        # chdir to a subdirectory without hpc-runner.toml so Level 2 doesn't
-        # pick up git_config as a cwd override
-        subdir = temp_dir / "subdir"
-        subdir.mkdir()
-
-        os.environ[HPC_CONFIG_ENV_VAR] = str(env_config)
-        old_cwd = os.getcwd()
-        os.chdir(subdir)
-        try:
-            configs = find_config_files()
-            # env var config should be used
-            assert env_config.resolve() in configs
-            # git root config should NOT be included (env var replaces it)
-            assert git_config.resolve() not in configs
-        finally:
-            del os.environ[HPC_CONFIG_ENV_VAR]
-            os.chdir(old_cwd)
-
-    def test_env_var_with_cwd_override(self, temp_dir):
-        """Test two-level model: env var config + cwd local override."""
-        # Create env var config
+    def test_env_var_with_cwd_override(self, temp_dir, monkeypatch):
+        """Two-level model: env var config, then the cwd's hpc-runner.toml on top."""
+        self._repo(temp_dir)
         env_config = temp_dir / "site" / "site.toml"
         env_config.parent.mkdir()
         env_config.write_text("config_version = 1\n[defaults]\ncpu = 2\n")
-
-        # Create a local override in a subdirectory
-        subdir = temp_dir / "project"
-        subdir.mkdir()
-        local_config = subdir / "hpc-runner.toml"
-        local_config.write_text('config_version = 1\n[defaults]\nmem = "16G"\n')
-
-        os.environ[HPC_CONFIG_ENV_VAR] = str(env_config)
-        old_cwd = os.getcwd()
-        os.chdir(subdir)
-        try:
-            configs = find_config_files()
-            # Both configs should be present
-            assert env_config.resolve() in configs
-            assert local_config.resolve() in configs
-            # env var config should come first (lower priority)
-            assert configs.index(env_config.resolve()) < configs.index(local_config.resolve())
-        finally:
-            del os.environ[HPC_CONFIG_ENV_VAR]
-            os.chdir(old_cwd)
+        monkeypatch.setenv(HPC_CONFIG_ENV_VAR, str(env_config))
+        monkeypatch.chdir(temp_dir / "override")
+        assert find_config_files() == [
+            env_config.resolve(),
+            (temp_dir / "override" / "hpc-runner.toml").resolve(),
+        ]
 
     def test_config_tracks_source_paths(self, temp_dir):
         """Test that loaded config tracks its source paths."""

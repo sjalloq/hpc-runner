@@ -14,6 +14,7 @@ from hpc_runner.core.exceptions import (
     PipelineError,
     UnknownStepError,
 )
+from hpc_runner.core.job import Job
 from hpc_runner.core.spec import JobSpec
 from hpc_runner.core.units import Memory
 from hpc_runner.workflow import DependencyType, Pipeline
@@ -152,7 +153,8 @@ class TestPipeline:
             p.add("echo hello", name="step1")
 
         assert len(p) == 1
-        mock_scheduler.submit.assert_called_once()
+        (job,) = [c.args[0] for c in mock_scheduler.submit.call_args_list]
+        assert isinstance(job, Job) and job.name == "test_step1" and job.command == "echo hello"
         assert p.results["step1"].job_id == "1"
 
     def test_context_manager_skips_submit_on_exception(self):
@@ -239,7 +241,8 @@ class TestPipeline:
         p.add("echo hello", name="step1")
         p.submit()
 
-        mock_scheduler.submit.assert_called_once()
+        (job,) = [c.args[0] for c in mock_scheduler.submit.call_args_list]
+        assert isinstance(job, Job) and job.name == "test_step1"
 
 
 class TestPipelineConfig:
@@ -391,6 +394,35 @@ class TestPipelinePartialSubmission:
 
         with pytest.raises(PipelineError, match="already been submitted"):
             p.submit(scheduler=mock_scheduler)
+
+    def test_external_dependencies_are_kept(self):
+        """A step's own dependency on a job outside the pipeline survives injection."""
+        p = _pipeline()
+        p.add("echo step1", name="step1")
+        outside = Dependency("999", DependencyType.AFTERANY)
+        p.add(JobSpec("echo step2", dependencies=[outside]), name="step2", depends_on=["step1"])
+        _, step2 = _submitted_jobs(p)
+        assert step2.dependencies == (outside, Dependency("1", DependencyType.AFTEROK))
+
+    def test_submit_failure_leaves_the_submitted_steps_in_place(self):
+        """A submit that raises part-way keeps what was submitted and nothing more."""
+        p = _pipeline()
+        p.add("echo step1", name="step1")
+        p.add("echo step2", name="step2", depends_on=["step1"])
+        p.add("echo step3", name="step3", depends_on=["step2"])
+        mock_scheduler = MagicMock()
+        first = MagicMock(job_id="1")
+        mock_scheduler.submit.side_effect = [first, RuntimeError("submit failed")]
+
+        with pytest.raises(RuntimeError, match="submit failed"):
+            p.submit(scheduler=mock_scheduler)
+
+        assert mock_scheduler.submit.call_count == 2  # step3 was never attempted
+        assert dict(p.results) == {"step1": first}
+        assert p.get_job("step1").result is first
+        assert p.get_job("step2").result is None and p.get_job("step3").result is None
+        with pytest.raises(NotSubmittedError):
+            p.wait()
 
     def test_partial_failure_can_retry(self):
         """After a partial failure, submit() retries only unsubmitted jobs."""

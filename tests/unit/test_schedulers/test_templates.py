@@ -1,6 +1,7 @@
 """Rendered job scripts: the shared environment block, quoting, ${hpc.*}, D15."""
 
 import dataclasses
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -140,6 +141,31 @@ class TestQuotingRoundTrip:
         assert path.startswith("/pre bin:")
         assert pythonpath.endswith("/app lib")
         assert venv == "1"
+
+
+class TestModuleArgumentsRoundTrip:
+    """Module names and paths reach `module` as single arguments, spaces included."""
+
+    def test_module_sees_each_name_and_path_as_one_argument(self, tmp_path):
+        log = tmp_path / "module calls.log"
+        record = f'printf "%s\\n" "$#" "$@" >> {shlex.quote(str(log))}'
+        config = _sched_config(module_init_script=_stub_modules(tmp_path, body=record))
+        job = _full_job(tmp_path, workdir=str(tmp_path), stdout=str(tmp_path / "out.txt"))
+        result = LocalScheduler(config).submit(job)
+        assert result.wait(poll_interval=0.05) is JobStatus.COMPLETED
+
+        calls, lines = [], log.read_text().splitlines()
+        while lines:
+            count, lines = int(lines[0]), lines[1:]
+            calls.append(lines[:count])
+            lines = lines[count:]
+        assert calls == [
+            ["purge"],
+            ["use", "/mf one"],
+            ["use", "--append", "/mf two"],
+            ["load", "gcc/12"],
+            ["load", "odd name/1"],
+        ]
 
 
 class TestModuleCommands:
