@@ -41,6 +41,16 @@ def bash_syntax_error(script: str) -> str | None:
 
 
 @pytest.fixture(autouse=True)
+def _no_trace():
+    """A tracer installed by one test (``hpc --trace``) never outlives it."""
+    from hpc_runner.trace import deactivate
+
+    deactivate()
+    yield
+    deactivate()
+
+
+@pytest.fixture(autouse=True)
 def _plain_terminal(monkeypatch):
     """Make CLI output plain text.
 

@@ -47,6 +47,9 @@ class HPCConfig:
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     types: dict[str, dict[str, Any]] = field(default_factory=dict)
     schedulers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: The ``[trace]`` section (``enabled``, ``dir``, ``max_days``, ``dedupe``);
+    #: read by ``get_scheduler`` to start recording scheduler calls.
+    trace: dict[str, Any] = field(default_factory=dict)
 
     #: Non-fatal problems found while loading (e.g. a section for a
     #: scheduler this package does not have).
@@ -393,7 +396,13 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
     """
     config_files = _resolve_extends(Path(path)) if path is not None else find_config_files()
 
-    merged: dict[str, Any] = {"defaults": {}, "tools": {}, "types": {}, "schedulers": {}}
+    merged: dict[str, Any] = {
+        "defaults": {},
+        "tools": {},
+        "types": {},
+        "schedulers": {},
+        "trace": {},
+    }
     errors: list[ConfigError] = []
     warnings: list[str] = []
     texts: dict[Path, str] = {}
@@ -465,6 +474,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         tools=merged["tools"],
         types=merged["types"],
         schedulers=merged["schedulers"],
+        trace=merged["trace"],
         warnings=warnings,
     )
     config._source_paths = config_files

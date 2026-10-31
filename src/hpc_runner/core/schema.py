@@ -28,7 +28,15 @@ CONFIG_VERSION = 1
 PER_INVOCATION_FIELDS = frozenset({"command", "type", "dependencies", "array"})
 
 #: Top-level keys of a config file.
-TOP_LEVEL_KEYS = ("config_version", "extends", "defaults", "tools", "types", "schedulers")
+TOP_LEVEL_KEYS = (
+    "config_version",
+    "extends",
+    "defaults",
+    "tools",
+    "types",
+    "schedulers",
+    "trace",
+)
 
 
 class _Invalid(Exception):
@@ -534,6 +542,11 @@ def validate_file(
             lambda name, entry: _validate_scheduler(c, name, entry, scheduler_keys(name)),
         )
 
+    if "trace" in data:
+        from hpc_runner.trace import TRACE_KEYS
+
+        converted["trace"] = _validate_typed(c, ("trace",), data["trace"], TRACE_KEYS)
+
     return converted, c.errors, c.warnings
 
 
@@ -547,6 +560,16 @@ def _validate_scheduler(
     if declared is None:
         c.warning(section, f"no scheduler '{name}' in this hpc-runner; section not checked")
         return dict(table)
+    return _validate_typed(c, section, table, declared)
+
+
+def _validate_typed(
+    c: _Collector, section: tuple[str, ...], table: Any, declared: Mapping[str, type]
+) -> dict[str, Any]:
+    """A flat table of scalar keys with declared types (``[schedulers.x]``, ``[trace]``)."""
+    if not isinstance(table, dict):
+        c.error(section[:-1], section[-1], f"expected a table, got {_describe(table)}")
+        return {}
     result: dict[str, Any] = {}
     for key, value in table.items():
         expected = declared.get(key)

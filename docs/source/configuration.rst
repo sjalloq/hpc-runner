@@ -255,6 +255,56 @@ example ``[schedulers.slurm]`` today) is a warning and is not checked.
 ``[schedulers.local]`` (runs jobs as local subprocesses) reads
 ``module_init_script`` and ``module_system`` with the same meaning.
 
+.. _trace-settings:
+
+Trace settings
+--------------
+
+``[trace]`` turns on a recording of every scheduler command hpc-runner
+runs (``qsub``, ``qstat``, ``qacct``, ...), one JSON file per call with the
+argv, exit status, stdout and stderr, under one directory per day. It is
+the same recording ``hpc --trace DIR`` makes for a single invocation, kept
+across every invocation while the setting is on, so a period of normal use
+can be checked against the parsers afterwards and attached to a bug
+report.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 12 16 50
+
+   * - Key
+     - Type
+     - Default
+     - Meaning
+   * - ``enabled``
+     - bool
+     - ``false``
+     - Record scheduler calls.
+   * - ``dir``
+     - string
+     - ``~/.cache/hpc-runner/trace``
+     - Where the records go (``~`` is expanded). Private to you: nothing is
+       scrubbed until ``hpc trace bundle``.
+   * - ``max_days``
+     - integer
+     - ``14``
+     - Day directories older than this are removed when recording starts.
+   * - ``dedupe``
+     - bool
+     - ``true``
+     - Do not write a call whose argv and output equal the previous call
+       with that argv. ``hpc monitor`` polls every few seconds and most
+       snapshots are identical; the trace keeps the first of each run.
+
+.. code-block:: toml
+
+   [trace]
+   enabled = true
+   dir = "~/.cache/hpc-runner/trace"
+   max_days = 14
+
+The local scheduler runs no scheduler command and is not traced.
+
 
 Validation
 ----------
@@ -798,6 +848,9 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
 
    module_init_script = ""
    module_system = "modules"
+
+   [trace]
+   enabled = false             # record every scheduler call (see Trace settings)
 
    [tools.python]
    cpu = 4

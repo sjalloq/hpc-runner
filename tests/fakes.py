@@ -16,6 +16,7 @@ from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.spec import JobSpec
+from hpc_runner.trace import recorder
 
 SEAM = "hpc_runner.schedulers._subprocess.run_command"
 
@@ -28,7 +29,9 @@ def make_fake_run_command(respond: Responder) -> Callable[..., subprocess.Comple
     *respond* maps an argv to ``(returncode, stdout, stderr)`` (or raises a
     SchedulerError itself, e.g. ``SchedulerUnavailableError``).  The fake
     honours ``check`` the way the real seam does, so non-zero exits reach
-    scheduler code as ``SchedulerCommandError``.
+    scheduler code as ``SchedulerCommandError``, and hands every answer to
+    the trace recorder the way the real seam does, so ``hpc --trace`` can be
+    tested over the captured fixtures.
     """
 
     def fake(
@@ -42,6 +45,7 @@ def make_fake_run_command(respond: Responder) -> Callable[..., subprocess.Comple
     ) -> subprocess.CompletedProcess[str]:
         args = list(argv)
         rc, out, err = respond(args)
+        recorder.record(args, returncode=rc, stdout=out, stderr=err, elapsed=0.0)
         if check and rc != 0:
             raise SchedulerCommandError(args, rc, out, err)
         return subprocess.CompletedProcess(args, rc, out, err)

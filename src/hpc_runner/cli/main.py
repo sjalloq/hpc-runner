@@ -15,6 +15,7 @@ from hpc_runner.cli.kill import kill
 from hpc_runner.cli.monitor import monitor
 from hpc_runner.cli.run import run
 from hpc_runner.cli.status import status
+from hpc_runner.cli.trace import trace_cmd
 from hpc_runner.core.exceptions import HPCToolsError, SchedulerCommandError, SubmissionError
 
 # Configure rich-click
@@ -66,9 +67,18 @@ def _configure_logging(verbose: bool) -> None:
     is_flag=True,
     help="Log every scheduler command and show full scheduler errors",
 )
+@click.option(
+    "--trace",
+    "trace_dir",
+    type=click.Path(path_type=Path),
+    metavar="DIR",
+    help="Record every scheduler call (argv, exit, stdout, stderr) as JSON under DIR",
+)
 @click.version_option(package_name="hpc-runner")
 @pass_context
-def cli(ctx: Context, config: Path | None, scheduler: str | None, verbose: bool) -> None:
+def cli(
+    ctx: Context, config: Path | None, scheduler: str | None, verbose: bool, trace_dir: Path | None
+) -> None:
     """HPC job submission tool.
 
     Submit and manage jobs across different HPC schedulers (SGE, Slurm, PBS)
@@ -83,6 +93,11 @@ def cli(ctx: Context, config: Path | None, scheduler: str | None, verbose: bool)
     ctx.scheduler = scheduler
     ctx.verbose = verbose
     _configure_logging(verbose)
+    if trace_dir is not None:
+        # Before the config is read: the flag wins over [trace] (D-TR2).
+        from hpc_runner.trace import activate
+
+        activate(trace_dir)
 
 
 cli.add_command(run)
@@ -91,6 +106,7 @@ cli.add_command(cancel)
 cli.add_command(kill)
 cli.add_command(config_cmd, name="config")
 cli.add_command(monitor)
+cli.add_command(trace_cmd, name="trace")
 
 
 def _report_error(exc: HPCToolsError, verbose: bool) -> None:

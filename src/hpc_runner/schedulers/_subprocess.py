@@ -6,12 +6,17 @@ DEBUG, applies a timeout, and converts every ``subprocess`` failure into a
 :class:`~hpc_runner.core.exceptions.SchedulerError` subclass, so nothing
 from ``subprocess`` escapes the scheduler layer.  Tests patch this function
 instead of ``subprocess.run``.
+
+When a trace is active (``hpc --trace DIR`` or ``[trace] enabled``), every
+call, including one that timed out or found no binary, is handed to
+:func:`hpc_runner.trace.record` (docs/dev/trace/DESIGN.md D-TR1).
 """
 
 from __future__ import annotations
 
 import logging
 import subprocess
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -20,6 +25,7 @@ from hpc_runner.core.exceptions import (
     SchedulerTimeoutError,
     SchedulerUnavailableError,
 )
+from hpc_runner.trace import recorder
 
 logger = logging.getLogger("hpc_runner.schedulers")
 
@@ -51,6 +57,7 @@ def run_command(
     """
     args = [str(a) for a in argv]
     logger.debug("run: %s", subprocess.list2cmdline(args))
+    started = time.monotonic()
     try:
         result = subprocess.run(
             args,
@@ -63,10 +70,15 @@ def run_command(
             check=False,
         )
     except FileNotFoundError as exc:
+        _record(args, None, None, None, started, error=f"{args[0]} not found on PATH")
         raise SchedulerUnavailableError(f"{args[0]} not found on PATH") from exc
     except subprocess.TimeoutExpired as exc:
+        out = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout
+        err = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr
+        _record(args, None, out, err, started, error=f"timed out after {timeout}s")
         raise SchedulerTimeoutError(args, timeout) from exc
     logger.debug("exit %d: %s", result.returncode, args[0])
+    _record(args, result.returncode, result.stdout, result.stderr, started)
 
     if check and result.returncode != 0:
         raise SchedulerCommandError(
@@ -76,3 +88,22 @@ def run_command(
             result.stderr or "",
         )
     return result
+
+
+def _record(
+    args: list[str],
+    returncode: int | None,
+    stdout: str | None,
+    stderr: str | None,
+    started: float,
+    *,
+    error: str | None = None,
+) -> None:
+    recorder.record(
+        args,
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+        elapsed=time.monotonic() - started,
+        error=error,
+    )

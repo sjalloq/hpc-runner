@@ -17,6 +17,11 @@ These options come before the subcommand:
 - ``--verbose``: log every scheduler command (argv) to stderr, and on a
   scheduler error print the failing command and its full stderr (e.g. also
   shows script paths when ``--keep-script`` is used)
+- ``--trace DIR``: record every scheduler call (argv, exit status, stdout,
+  stderr) as one JSON file per call under ``DIR``, for this invocation. To
+  record every invocation during a period of use, set ``[trace] enabled =
+  true`` in the config instead (:ref:`trace-settings`); the flag wins when
+  both are given.
 
 Errors are printed as one line, ``error: <message>``, and ``hpc`` exits 1.
 A Python traceback means a bug in hpc-runner.

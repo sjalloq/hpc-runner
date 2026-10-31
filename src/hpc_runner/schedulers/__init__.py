@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from hpc_runner.core.config import load_config
 from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.schedulers.detection import detect_scheduler
+from hpc_runner.trace import activate_from_config
 
 if TYPE_CHECKING:
     from hpc_runner.core.config import HPCConfig
@@ -61,6 +62,9 @@ def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -
 
     if config is None:
         config = load_config()
+    # [trace] enabled: record every scheduler call from here on (no-op when
+    # `hpc --trace` already installed a tracer; docs/dev/trace/DESIGN.md D-TR2).
+    activate_from_config(config.trace)
     return scheduler_class(config)  # type: ignore[no-any-return]
 
 

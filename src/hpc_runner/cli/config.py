@@ -82,6 +82,11 @@ def show(ctx: Context, raw: bool) -> None:
                 for k, v in type_config.items():
                     lines.append(f"{k} = {_format_toml_value(v)}")
                 lines.append("")
+        if config.trace:
+            lines.append("[trace]")
+            for k, v in config.trace.items():
+                lines.append(f"{k} = {_format_toml_value(v)}")
+            lines.append("")
         content = "\n".join(lines)
 
         syntax = Syntax(content, "toml", theme="monokai", line_numbers=True)
