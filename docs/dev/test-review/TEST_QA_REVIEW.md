@@ -414,6 +414,14 @@ site login node was considered and parked: specialise the image instead.
 
 ## 6. Fix pass order (agreed 2026-10-31, each item one commit with tests)
 
+**Done 2026-10-31**, seven commits c515697..08df189 on `main` in this
+order. Beyond the list, the pass found and fixed: `ru_wallclock 7s`
+unparsed (no runtimes in history), a running array listed as pending, a
+lost job sorted off the history limit, `hpc status` reading `$USER` only,
+`hpc status <id>` of a finished job ignoring qacct, and a consumable
+`h_vmem` default of 0 giving unrequesting jobs a 10 MB limit (testbed).
+T1, T2 and T4 remain (D-T36..D-T39 in the testbed review).
+
 1. Array concurrency: per-scheduler render, `-tc` on SGE, golden
    corrected, integration test; audit `core/` for other scheduler text.
 2. Testbed driver: `hpc-testbed` entry point replaces the Makefile, CI
