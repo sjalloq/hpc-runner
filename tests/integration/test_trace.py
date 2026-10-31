@@ -77,3 +77,30 @@ def test_config_enabled_trace(cluster: Cluster, workdir: Path) -> None:
     assert len(records) == 1, [r["argv"] for r in records]
     assert records[0]["argv"][:2] == ["qstat", "-xml"]
     assert "<job_info" in records[0]["stdout"]
+
+
+def test_bundle_is_scrubbed_and_replays(cluster: Cluster, workdir: Path) -> None:
+    """A bundle of a live trace names no user or host and still passes compare."""
+    import tarfile
+
+    trace = workdir / "trace"
+    _hpc(cluster, "--trace", str(trace), "status")
+    _hpc(cluster, "--trace", str(trace), "status", "--history")
+    out = workdir / "issue.tar.gz"
+    proc = cluster.run([str(cluster.hpc_cli), "trace", "bundle", str(trace), "-o", str(out)])
+    assert proc.stdout.strip() == str(out), proc.stdout
+    assert "tester -> user" in proc.stderr, proc.stderr
+
+    extracted = workdir / "x"
+    with tarfile.open(out) as tar:
+        tar.extractall(extracted, filter="data")
+    (top,) = extracted.iterdir()
+    texts = [p.read_text() for p in (top / "trace").rglob("*.json")]
+    assert texts
+    for text in texts:
+        for word in ("tester", "exec1", "exec2", "login", "/home/"):
+            assert word not in text, (word, text[:300])
+    meta = json.loads((top / "meta.json").read_text())
+    assert meta["scrubbed"] is True and meta["scheduler"].startswith("SGE")
+    proc = cluster.run([str(cluster.hpc_cli), "trace", "compare", str(top / "trace")], check=False)
+    assert proc.returncode == 0, proc.stdout

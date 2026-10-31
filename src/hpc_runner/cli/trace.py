@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import rich_click as click
 from rich.console import Console
 from rich.table import Table
+
+from hpc_runner.cli._context import Context, pass_context
 
 console = Console()
 
@@ -72,3 +75,56 @@ def compare(directory: Path, fixtures: Path | None, use_json: bool) -> None:
     if failed:
         raise SystemExit(1)
     console.print("\n[green]Every record parsed.[/green]")
+
+
+@trace_cmd.command("bundle")
+@click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Archive to write (default hpc-trace-<timestamp>.tar.gz in the current directory)",
+)
+@click.option(
+    "--raw", is_flag=True, help="Do not scrub: keep user, host and job names (private use)"
+)
+@click.option(
+    "--scrub",
+    "extra",
+    multiple=True,
+    metavar="NAME",
+    help="Another name to replace everywhere (repeatable), e.g. a username the trace does not name",
+)
+@pass_context
+def bundle(
+    ctx: Context, directory: Path, output: Path | None, raw: bool, extra: tuple[str, ...]
+) -> None:
+    """Pack a trace for an issue report, with names scrubbed.
+
+    Usernames, hostnames, job names, projects, queues and job environments
+    are replaced by stable tokens; the map is printed to stderr so you can
+    check it before attaching the archive. Nothing is scrubbed with --raw.
+    """
+    from hpc_runner.core.exceptions import ConfigError
+    from hpc_runner.trace.bundle import bundle as make_bundle
+    from hpc_runner.trace.bundle import print_summary
+
+    if output is None:
+        output = Path.cwd() / f"hpc-trace-{datetime.now().strftime('%Y%m%d-%H%M%S')}.tar.gz"
+    try:
+        schedulers: dict[str, object] | None = dict(ctx.config.schedulers)
+    except ConfigError:
+        schedulers = None  # a broken config is no reason not to report a bug
+    path, scrubber = make_bundle(
+        directory,
+        output,
+        raw=raw,
+        extra=extra,
+        scheduler_config=schedulers,
+        log=lambda msg: click.echo(msg, err=True),
+    )
+    if scrubber is not None:
+        print_summary(scrubber)
+    else:
+        click.echo("not scrubbed (--raw): do not attach this to a public issue", err=True)
+    click.echo(str(path))

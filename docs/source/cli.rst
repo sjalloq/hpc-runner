@@ -168,3 +168,13 @@ Other commands
   no captured fixture covers are listed too. Exits 1 on any finding or
   uncovered shape, so it can run unattended over a trace directory. A
   finding is a parser bug: open an issue with the record attached.
+- ``hpc trace bundle DIR [-o FILE] [--raw] [--scrub NAME]``: pack the trace
+  for that issue. Usernames and hostnames are replaced everywhere by
+  ``user1``, ``host1``, ...; job names, projects, departments, accounts and
+  queues where the scheduler writes them; every value in a job's recorded
+  environment becomes ``[scrubbed]``. The map of what was replaced is
+  printed to stderr: read it before attaching the archive, and add
+  ``--scrub NAME`` for anything it missed. ``--raw`` skips the scrub for a
+  bundle that stays private. The archive holds ``meta.json`` (versions,
+  the scheduler banner, the ``[schedulers.*]`` config, scrubbed) and the
+  records under ``trace/``; ``hpc trace compare`` reads it extracted.

@@ -65,14 +65,24 @@ text attached.
   `max_days` (int), `dedupe` (bool). Strict like every other section:
   unknown keys and wrong types are errors. Scalars, later file wins.
 - **D-TR8 Scrubbing happens only on export.** The local trace is private
-  and raw so `compare` works on real names. `bundle` replaces values found
-  in structured places (qacct `owner`/`hostname`/`jobname`/`project`/
-  `department`, qstat XML `JB_owner`/`JB_name`/`queue_name`, qstat text
-  columns, argv `-u`/`-o`/`-N` values, the current user, the hostname,
-  `$HOME`) everywhere in every file, prints the map to stderr so the user
-  can check it, and refuses to write if a collected name is empty or a
-  single character (it would corrupt the text). No heuristic for free
-  text: a job's own stdout is never in a trace, only the scheduler's.
+  and raw so `compare` works on real names. `bundle` collects values from
+  structured places (qacct `owner`/`group`/`hostname`/`jobname`/`project`/
+  `department`/`account`/`qname`, qstat XML `JB_owner`/`JB_group`/
+  `JB_job_name`/`JB_name`/`queue_name`, qstat text columns, qsub's
+  `("name")`, qdel's `<user> has registered`, commlib's `on host "..."`,
+  argv `-u`/`-o`/`-N`/`-l hostname=` values, `/home/<user>`, the current
+  user and hostname). Users and hosts are replaced everywhere in every
+  file, longest first, at word boundaries (a name recurs in paths and
+  messages). Names (jobs, projects, queues) are replaced only where they
+  are written as such: a job may be called `array` or `ok` and a global
+  replacement would rewrite `job-array` and `state="running"` and break
+  the parsers. Every `VA_value` of a recorded job environment becomes
+  `[scrubbed]`. Values under two characters, non-identifier strings and
+  the scheduler's placeholders (`NONE`, `undefined`, `defaultdepartment`,
+  `sge`) are never tokens. The map is printed to stderr for review, and
+  `--scrub NAME` adds what it missed. No heuristic for free text: a job's
+  own stdout is never in a trace, only the scheduler's. The unit test
+  proves a scrubbed bundle still passes `compare` with the same shapes.
 - **D-TR9 `compare` is SGE-aware through one dispatch table.** It maps an
   argv shape to the parser that consumes it; another scheduler adds rows.
   Argv is normalised to a shape by replacing job ids (`\d+(\.\d+)?`),

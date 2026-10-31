@@ -266,7 +266,7 @@ argv, exit status, stdout and stderr, under one directory per day. It is
 the same recording ``hpc --trace DIR`` makes for a single invocation, kept
 across every invocation while the setting is on, so a period of normal use
 can be checked against the parsers afterwards with ``hpc trace compare``
-(:doc:`cli`) and attached to a bug report.
+and packed, scrubbed, for a bug report with ``hpc trace bundle`` (:doc:`cli`).
 
 .. list-table::
    :header-rows: 1
