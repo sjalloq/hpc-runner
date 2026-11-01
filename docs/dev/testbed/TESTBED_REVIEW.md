@@ -425,6 +425,20 @@ the suite is green now and the fix flips the test to a hard pass.
   job ends FAILED, a qdel'd pending job UNKNOWN" is accepted as a don't
   care: nothing branches on CANCELLED, and nobody's job can depend on one
   you cancelled since you cannot qdel another user's.
+- **D-T45 history lists a requeued job once; the other gap-plan items are
+  don't cares** (user, 2026-11-01; `docs/dev/test-review/GAP_PLAN.md` §2).
+  `list_completed_jobs` turned every qacct record into a row, so a requeued
+  job showed twice, its reschedule record as UNKNOWN `25 rescheduling`. The
+  record is permanent, not transitory, but only a requeued job has one; the
+  user's call was "fix it if it is easy". It is: `_final_records()` is now
+  the one rule for `_qacct` and the history listing, keyed by job number
+  and task. Not by submit time, as first written: the real capture shows
+  gridengine writes the reschedule record with `qsub_time` at the epoch.
+  Not acted on: `wait()` ending on one `SchedulerUnavailableError` (a
+  qmaster outage is not worth optimising polling for), the monitor's
+  Completed tab (a placeholder; column H is n/a for finished jobs until the
+  TUI rewrite), and the synthetic `failed 24` row (folded into the real
+  requeue row).
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does

@@ -7,7 +7,7 @@ import os
 import re
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -155,6 +155,24 @@ def get_exit_dir(sweep_ttl_days: float = DEFAULT_SENTINEL_TTL_DAYS) -> Path:
         pass
 
     return exit_dir
+
+
+def _final_records(records: Iterable[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """The final record of each job and task, keyed by (job number, task).
+
+    A requeued job has several records for one task; only the last one
+    :func:`qacct_status` can decide is its end (``failed 24``/``25`` is a
+    migration, not a result). The task is ``""`` for a plain job. Not keyed
+    by submit time: gridengine writes the reschedule record with
+    ``qsub_time`` at the epoch. Order is that of each key's first record.
+    """
+    final: dict[tuple[str, str], dict[str, Any]] = {}
+    for record in records:
+        task = record.get("taskid", "undefined")
+        key = (str(record.get("jobnumber", "")), "" if task == "undefined" else str(task))
+        if qacct_status(record) is not None or key not in final:
+            final[key] = record
+    return final
 
 
 class SGEScheduler(BaseScheduler):
@@ -674,13 +692,10 @@ class SGEScheduler(BaseScheduler):
         result = self._run(argv, check=False)
         if result.returncode != 0:
             return {}
-        final: dict[str, dict[str, Any]] = {}
-        for record in parse_qacct_records(result.stdout):
-            key = record.get("taskid", "undefined")
-            key = "" if key == "undefined" else key
-            if qacct_status(record) is not None or key not in final:
-                final[key] = record
-        return final
+        return {
+            task: record
+            for (_, task), record in _final_records(parse_qacct_records(result.stdout)).items()
+        }
 
     def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
         """Statuses from one ``qstat -xml``, then qacct and the exit sentinel.
@@ -897,7 +912,9 @@ class SGEScheduler(BaseScheduler):
             # No matching records
             return []
 
-        records = parse_qacct_records(result.stdout)
+        # One row per job (per task of an array): a requeued job's reschedule
+        # record is not its end, the same rule as _qacct.
+        records = _final_records(parse_qacct_records(result.stdout)).values()
         jobs = [qacct_to_job_info(r) for r in records]
 
         # Post-filter: qacct doesn't natively filter on exit_code or queue

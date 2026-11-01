@@ -551,6 +551,22 @@ class TestLifecycleStates:
                     with pytest.raises(TimeoutError):
                         handle.wait(poll_interval=0.01, timeout=0.05)
 
+    def test_history_lists_a_requeued_job_once(self, scheduler):
+        """The reschedule record (``failed 25``) is not a row of its own."""
+
+        def respond(argv):
+            assert argv[:2] == ["qacct", "-j"], argv
+            return 0, FX.text("qacct_requeued.txt") + FX.text("qacct_ok.txt"), ""
+
+        with patch_seam(respond):
+            jobs = scheduler.list_completed_jobs()
+        rows = {(j.job_id, j.status, j.exit_code, j.failed_code) for j in jobs}
+        assert rows == {
+            (FX.job("requeued"), JobStatus.FAILED, 137, 100),
+            (FX.job("ok"), JobStatus.COMPLETED, 0, 0),
+        }
+        assert len(jobs) == 2
+
     def test_timeout_record_carries_sges_reason(self):
         info = qacct_to_job_info(parse_qacct_output(FX.text("qacct_timeout.txt")))
         assert info.failed_reason == "qmaster enforced h_rt, h_cpu, or h_vmem limit"

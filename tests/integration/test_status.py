@@ -171,6 +171,8 @@ def test_requeued_job_ends_with_its_final_record(cluster: Cluster) -> None:
     failed = [ln.split(None, 1)[1] for ln in out.splitlines() if ln.startswith("failed")]
     assert failed[0].startswith("25") and failed[-1].startswith("0"), failed
     assert cluster.scheduler().get_status(job_id) is JobStatus.COMPLETED
+    history = [j for j in cluster.scheduler().list_completed_jobs() if j.job_id == job_id]
+    assert [(j.status, j.exit_code) for j in history] == [(JobStatus.COMPLETED, 0)]
 
 
 def test_deleted_while_pending_waits_out_to_unknown(cluster: Cluster) -> None:
