@@ -6,26 +6,26 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      vmem                
-jobnumber    256                 
+jobnumber    553                 
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 19:37:12 2026
-start_time   Sun Nov  1 19:37:12 2026
-end_time     Sun Nov  1 19:37:12 2026
+qsub_time    Sun Nov  1 22:00:52 2026
+start_time   Sun Nov  1 22:00:52 2026
+end_time     Sun Nov  1 22:00:52 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  2                   
 ru_wallclock 0s
-ru_utime     0.051s
-ru_stime     0.023s
-ru_maxrss    8.109KB
+ru_utime     0.045s
+ru_stime     0.027s
+ru_maxrss    7.914KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2476                
+ru_minflt    2475                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -33,9 +33,9 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     18                  
-ru_nivcsw    8                   
-cpu          0.074s
+ru_nvcsw     17                  
+ru_nivcsw    10                  
+cpu          0.072s
 mem          0.000Bs
 io           0.000B
 iow          0.000s

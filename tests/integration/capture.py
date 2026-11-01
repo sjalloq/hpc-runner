@@ -27,7 +27,7 @@ texts do not depend on hpc-runner's own rendering:
 * ``deleted_pending``: a held job deleted with ``qdel`` before it ran: no
   accounting record ever (``qacct`` "not found", JSON).
 * ``suspended``, ``queue_suspended``, ``requeued``: alive together for one
-  snapshot (``qstat_lifecycle.xml``/``.txt``, ``qstat_j_suspended.xml``): ``qmod -sj`` (``s``), its
+  snapshot (``qstat_lifecycle.xml``/``.txt``): ``qmod -sj`` (``s``), its
   queue instance suspended with ``qmod -sq`` (``S``), and a ``-r y`` job
   rescheduled with ``qmod -rj`` running again (``Rr``). The requeued job's
   ``qacct -j`` after ``qdel`` has two records, ``failed 25`` then its end.
@@ -35,15 +35,23 @@ texts do not depend on hpc-runner's own rendering:
   paused, so qstat holds it in ``dr`` (``qstat_deleting.xml``, and
   ``qdel``'s "registered for deletion" stdout).
 * ``threshold``, ``requeue_pending``, ``deleting_transfer``: alive together
-  for one snapshot (``qstat_transient.xml``/``.txt``, ``qstat_j_threshold.xml``): a queue suspend
+  for one snapshot (``qstat_transient.xml``/``.txt``): a queue suspend
   threshold (``T``), a rescheduled job hard-pinned to its host (``Rq``) and
   a job deleted while it cannot be delivered (``dt``).
 * ``running``, ``held``, ``dependent``, ``eqw``, ``array``: alive together
   for one ``qstat -xml -u '*'`` (and plain ``qstat``) snapshot: ``r``,
   ``hqw`` (user hold and ``-hold_jid`` on the running job), ``Eqw`` and an
   array with running and queued tasks; ``qstat -j -xml`` of the running one.
-* ``master_down``: ``qstat -xml -u '*'`` with the qmaster stopped (exit
-  status, stdout, stderr as JSON).
+* ``xml_defects``: a held job named ``a<b`` with ``<``, ``&`` and ``"`` in its
+  arguments and environment, and a raw ESC in one environment value
+  (``qstat_xml_defects.xml``, ``qstat_j_xml_defects.xml``; the second is not
+  well-formed XML, docs/dev/sge-xml-defects.md).
+* ``master_down``: ``qstat -xml -u '*'``, ``qstat -j``, ``qacct -j <id>`` and
+  ``qacct -j -o bob`` with the qmaster stopped (exit status, stdout,
+  stderr as JSON).
+
+Every job alive at a snapshot also gets ``qstat_j_<scenario>.xml``, its
+``qstat -j <id> -xml`` in that state.
 
 ``manifest.json`` records the job id of every scenario and, for each file,
 what it is and the argv that produced it (``hpc trace compare --fixtures``
@@ -158,6 +166,20 @@ class Capture:
                 return proc.stdout
             assert time.monotonic() < deadline, f"no qacct record for {job_id}: {proc.stderr}"
             time.sleep(POLL)
+
+    def qstat_j(self, *scenarios: str) -> None:
+        """``qstat -j <id> -xml`` of each scenario's job, as ``qstat_j_<scenario>.xml``.
+
+        Taken at a snapshot, so each file is the details of a job in the
+        state that snapshot records (lifecycle matrix column F).
+        """
+        for scenario in scenarios:
+            state = self.qstat_states().get(self.jobs[scenario], "gone")
+            self.capture(
+                f"qstat_j_{scenario}.xml",
+                ["qstat", "-j", self.jobs[scenario], "-xml"],
+                f"qstat -j <id> -xml of the {scenario} job (state {state})",
+            )
 
     # -- scenarios ------------------------------------------------------------
 
@@ -314,11 +336,7 @@ class Capture:
             self.capture(
                 "qstat_lifecycle.txt", ["qstat", "-u", "*"], "plain qstat -u '*' of the same moment"
             )
-            self.capture(
-                "qstat_j_suspended.xml",
-                ["qstat", "-j", susp, "-xml"],
-                "qstat -j -xml of the user-suspended job",
-            )
+            self.qstat_j("suspended", "queue_suspended", "requeued")
         finally:
             self.cluster.run(["qmod", "-usq", "all.q@exec2"], user="root")
         self.wait_state(qsusp, {"r"})
@@ -334,6 +352,7 @@ class Capture:
                 ["qstat", "-xml", "-u", "*"],
                 "qstat -xml -u '*' with a deleted job still in dr (its node paused)",
             )
+            self.qstat_j("deleting")
         finally:
             self.cluster.run(["sudo", "docker", "unpause", "exec2"])
         self.wait_gone(qsusp)
@@ -399,11 +418,7 @@ class Capture:
                     ["qstat", "-u", "*"],
                     "plain qstat -u '*' of the same moment",
                 )
-                self.capture(
-                    "qstat_j_threshold.xml",
-                    ["qstat", "-j", threshold, "-xml"],
-                    "qstat -j -xml of the threshold-suspended job",
-                )
+                self.qstat_j("threshold", "requeue_pending", "deleting_transfer")
             finally:
                 self.cluster.run(["sudo", "docker", "unpause", "exec2"])
         finally:
@@ -441,11 +456,7 @@ class Capture:
         self.capture(
             "qstat_mixed.txt", ["qstat", "-u", "*"], "plain qstat -u '*' of the same moment"
         )
-        self.capture(
-            "qstat_j_running.xml",
-            ["qstat", "-j", running, "-xml"],
-            "qstat -j <id> -xml of the running job",
-        )
+        self.qstat_j("running", "held", "dependent", "eqw", "array")
         self.capture(
             "qstat_j_missing.txt",
             ["qstat", "-j", "999999", "-xml"],
@@ -464,6 +475,36 @@ class Capture:
             as_json=True,
         )
 
+    def xml_defects(self) -> None:
+        """gridengine's XML escaping defects (docs/dev/sge-xml-defects.md 2, 3).
+
+        A held job whose name, arguments and environment hold ``<`` (written
+        ``%lt;``), ``&`` and ``"``, and one environment value with a raw ESC,
+        which XML forbids, so ``qstat -j -xml`` is not well-formed.
+        """
+        job_id = self.qsub(
+            "xml_defects",
+            "-h",
+            "-N",
+            "a<b",
+            "-v",
+            'PROBE=a<b&c"d',
+            "-v",
+            "CTRL=x\x1b[0my",
+            "/bin/echo",
+            "a<b",
+            "x&y",
+        )
+        self.wait_state(job_id, {"hqw"})
+        self.capture(
+            "qstat_xml_defects.xml",
+            ["qstat", "-xml", "-u", "*"],
+            "qstat -xml -u '*' with a job named a<b (written a%lt;b)",
+        )
+        self.qstat_j("xml_defects")
+        self.cluster.run(["qdel", job_id])
+        self.wait_gone(job_id)
+
     def master_down(self) -> None:
         self.cluster.stop_master()
         try:
@@ -474,6 +515,20 @@ class Capture:
                 "qstat -xml -u '*' with the qmaster stopped (JSON, BUG-T6)",
                 proc.args,
             )
+            # Accounting reads a file, not the qmaster; what still works is the
+            # question (lifecycle matrix row 23).
+            ok = self.jobs["ok"]
+            for name, argv, what in (
+                ("qacct_master_down.json", ["qacct", "-j", ok], "qacct -j <ok>"),
+                (
+                    "qacct_history_master_down.json",
+                    ["qacct", "-j", "-o", "bob", "-b", "200001010000"],
+                    "qacct -j -o bob -b <since>",
+                ),
+                ("qstat_j_master_down.json", ["qstat", "-j", ok, "-xml"], "qstat -j <ok> -xml"),
+            ):
+                proc = self.cluster.run(argv, check=False, timeout=120)
+                self.save(name, _as_json(proc), f"{what} with the qmaster stopped (JSON)", argv)
         finally:
             self.cluster.start_master()
             self.cluster.wait_ready()
@@ -485,6 +540,7 @@ class Capture:
                 old.unlink()
         self.cluster.run([str(Path("/opt/testbed/clean.sh"))])
         self.empty()
+        self.xml_defects()
         timeout = self.timeout_submit()
         self.finished_jobs()
         self.vmem()

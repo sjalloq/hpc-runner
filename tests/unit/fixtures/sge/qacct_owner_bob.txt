@@ -1,48 +1,48 @@
 ==============================================================
-qname        all.q               
+qname        short.q             
 hostname     exec1               
 group        bob                 
 owner        bob                 
 project      NONE                
 department   defaultdepartment   
 jobname      bob                 
-jobnumber    252                 
+jobnumber    549                 
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 19:37:08 2026
-start_time   Sun Nov  1 19:37:09 2026
-end_time     Sun Nov  1 19:37:11 2026
+qsub_time    Sun Nov  1 22:00:49 2026
+start_time   Sun Nov  1 22:00:49 2026
+end_time     Sun Nov  1 22:00:51 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  0                   
 ru_wallclock 2s
-ru_utime     0.039s
-ru_stime     0.026s
-ru_maxrss    8.340KB
+ru_utime     0.044s
+ru_stime     0.027s
+ru_maxrss    8.461KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2543                
+ru_minflt    2541                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
-ru_oublock   8                   
+ru_oublock   40                  
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     23                  
-ru_nivcsw    6                   
-cpu          0.065s
-mem          7.340KBs
+ru_nvcsw     21                  
+ru_nivcsw    3                   
+cpu          0.071s
+mem          8.389KBs
 io           0.000B
 iow          0.000s
-maxvmem      1.488MB
+maxvmem      1.578MB
 arid         undefined
 ar_sub_time  undefined
 category     NONE
 OWNER     WALLCLOCK         UTIME         STIME           CPU             MEMORY                 IO                IOW
 ======================================================================================================================
-bob               2         0.039         0.026         0.065              0.000              0.000              0.000
+bob               2         0.044         0.027         0.071              0.000              0.000              0.000

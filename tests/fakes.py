@@ -145,12 +145,16 @@ def _must_match(pattern: str, text: str) -> str:
     return match.group(1)
 
 
+#: The jobs alive in ``qstat_mixed.xml``, each with a ``qstat_j_<scenario>.xml``.
+MIXED_SNAPSHOT_JOBS = ("running", "held", "dependent", "eqw", "array")
+
+
 def make_sge_responder(fixtures: SGEFixtures) -> Responder:
     """A responder that answers SGE argv the way the captured testbed did.
 
     It selects by the *whole* argv, not the command name: ``qstat -xml -u
-    '*'`` is the mixed snapshot, ``qstat -j <id> -xml`` the running job's
-    details for its id and ``unknown_jobs`` for any other, ``qacct -j <id>``
+    '*'`` is the mixed snapshot, ``qstat -j <id> -xml`` the details of a
+    job alive in that snapshot and ``unknown_jobs`` for any other, ``qacct -j <id>``
     the record for a captured finished job and ``job id not found`` for the
     rest, ``qsub <script>`` the plain or array qsub text depending on whether
     the script has a ``#$ -t`` directive. Anything else is an AssertionError
@@ -169,12 +173,12 @@ def make_sge_responder(fixtures: SGEFixtures) -> Responder:
             return 0, fixtures.text("qsub_array.txt" if is_array else "qsub.txt"), ""
         if cmd == "qstat":
             if args[:1] == ["-j"]:
-                if args[1] == fixtures.job("running"):
-                    return 0, fixtures.text("qstat_j_running.xml"), ""
-                if args[1] == fixtures.job("suspended"):
-                    return 0, fixtures.text("qstat_j_suspended.xml"), ""
-                if args[1] == fixtures.job("threshold"):
-                    return 0, fixtures.text("qstat_j_threshold.xml"), ""
+                # This responder is the moment of the mixed snapshot: only
+                # the jobs alive in it have details. Other snapshots' jobs
+                # finished later; their tests route their qstat -j themselves.
+                for scenario in MIXED_SNAPSHOT_JOBS:
+                    if args[1] == fixtures.job(scenario):
+                        return 0, fixtures.text(f"qstat_j_{scenario}.xml"), ""
                 return fixtures.result("qstat_j_missing.txt")
             if "-xml" in args:
                 return 0, fixtures.text("qstat_mixed.xml"), ""

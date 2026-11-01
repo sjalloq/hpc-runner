@@ -971,7 +971,8 @@ class SGEScheduler(BaseScheduler):
             if not records:
                 raise JobNotFoundError(f"job {job_id} not found")
             tasks = [qacct_to_job_info(r) for _, r in sorted(records.items(), key=_task_order)]
-            if len(tasks) == 1 and not tasks[0].array_task_id:
+            # A plain job, or one task asked for by its own id (<base>.<n>).
+            if len(tasks) == 1 and (not tasks[0].array_task_id or "." in job_id):
                 return tasks[0], {}
             return _array_job_info(job_id, tasks), {"tasks": tasks}
 

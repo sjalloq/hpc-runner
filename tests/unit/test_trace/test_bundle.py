@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tarfile
 
 import pytest
@@ -30,7 +31,8 @@ class TestCollect:
     def test_qacct(self, scrubber, sge_fixtures):
         scrubber.collect(load_records(sge_fixtures.root))  # the master-down JSON
         scrubber._collect_text(sge_fixtures.text("qacct_ok.txt"))
-        assert scrubber.tokens["user"]["tester"] == "user2"
+        # The number depends on the order the JSON fixtures are read.
+        assert re.fullmatch(r"user\d+", scrubber.tokens["user"]["tester"])
         assert "exec1" in scrubber.tokens["host"] or "exec2" in scrubber.tokens["host"]
         assert scrubber.tokens["host"]["master"]  # from `on host "master"`
         names = scrubber.tokens["name"]

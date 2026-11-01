@@ -959,10 +959,20 @@ class TestSGEParserStates:
         assert _expand_task_list("1,5-6") == [1, 5, 6]
         assert _expand_task_list("junk") == []
 
-    def test_bad_xml(self):
-        from hpc_runner.schedulers.sge.parser import parse_qstat_xml_states
+    def test_bad_xml_raises_not_empty(self):
+        """Broken XML is an error, never "no jobs" (docs/dev/sge-xml-defects.md)."""
+        from hpc_runner.core.exceptions import SchedulerOutputError
+        from hpc_runner.schedulers.sge.parser import (
+            parse_qstat_j_xml,
+            parse_qstat_xml,
+            parse_qstat_xml_states,
+        )
 
-        assert parse_qstat_xml_states("<not xml") == {}
+        for parse in (parse_qstat_xml_states, parse_qstat_xml, parse_qstat_j_xml):
+            with pytest.raises(SchedulerOutputError, match="not XML"):
+                parse("<not xml")
+            assert parse("") == {}
+            assert parse("error: denied\n") == {}  # stderr text: no XML at all
 
     def test_qacct_to_job_info_skipped_and_timeout(self):
         from hpc_runner.schedulers.sge.parser import qacct_to_job_info

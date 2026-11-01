@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>264</JB_job_number>
+      <JB_job_number>561</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/264</JB_exec_file>
-      <JB_submission_time>1793561910</JB_submission_time>
+      <JB_exec_file>job_scripts/561</JB_exec_file>
+      <JB_submission_time>1793570530</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -80,7 +80,7 @@
         <ulong_sublist>
           <JAT_status>128</JAT_status>
           <JAT_task_number>1</JAT_task_number>
-          <JAT_start_time>1793561910</JAT_start_time>
+          <JAT_start_time>1793570530</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
       </JB_ja_tasks>
@@ -127,7 +127,7 @@
       <SME_global_message_list>
         <element>
           <MES_message_number>26</MES_message_number>
-          <MES_message>queue instance &quot;short.q@exec1&quot; is in suspend alarm: np_load_avg=0.214669 (no load adjustment) &gt;= 0.0</MES_message>
+          <MES_message>queue instance &quot;short.q@exec1&quot; is in suspend alarm: np_load_avg=0.092146 (= 0.092146 + 0.50 * 0.000000 with nproc=14) &gt;= 0.0</MES_message>
         </element>
       </SME_global_message_list>
     </element>

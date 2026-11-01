@@ -181,6 +181,8 @@ def _check_qstat(rec: Record) -> list[str]:
     if "-j" in rec.argv:
         if rec.returncode != 0 or "unknown_jobs" in rec.stdout:
             return []  # a finished or unknown job: the scheduler falls back to qacct
+        if parser.qstat_unreachable(rec.stderr or ""):
+            return []  # exits 0 with a comunication_error document (qstat_j_master_down)
         if not parser.parse_qstat_j_xml(rec.stdout):
             return ["qstat -j -xml held a job but no details were parsed"]
         return []
@@ -227,7 +229,8 @@ def _check_qacct(rec: Record) -> list[str]:
         who = f"job {info.job_id or '?'}"
         if not info.job_id:
             problems.append(f"{who}: no jobnumber parsed")
-        if info.status is JobStatus.UNKNOWN:
+        rerun = parser._leading_int(raw.get("failed")) in (24, 25)  # not the job's end
+        if info.status is JobStatus.UNKNOWN and not rerun:
             exit_status, failed = raw.get("exit_status"), raw.get("failed")
             problems.append(
                 f"{who}: status UNKNOWN (exit_status {exit_status!r}, failed {failed!r})"

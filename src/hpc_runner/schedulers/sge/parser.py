@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from hpc_runner.core.exceptions import SchedulerOutputError
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus, status_from_exit_code
 
@@ -17,9 +18,8 @@ def parse_qstat_xml(xml_output: str) -> dict[str, Any]:
     """
     jobs: dict[str, Any] = {}
 
-    try:
-        root = ET.fromstring(xml_output)
-    except ET.ParseError:
+    root = _parse_xml_root(xml_output, "qstat -xml")
+    if root is None:
         return jobs
     _strip_namespaces(root)
 
@@ -44,9 +44,8 @@ def parse_qstat_xml_states(xml_output: str) -> dict[str, str]:
     is enough for listing but not for per-task status.
     """
     states: dict[str, str] = {}
-    try:
-        root = ET.fromstring(xml_output)
-    except ET.ParseError:
+    root = _parse_xml_root(xml_output, "qstat -xml")
+    if root is None:
         return states
     _strip_namespaces(root)
     for elem in root.iter("job_list"):
@@ -603,7 +602,7 @@ def parse_qstat_j_xml(xml_output: str) -> dict[str, object]:
 
     data: dict[str, object] = {}
 
-    root = _parse_xml_root(xml_output)
+    root = _parse_xml_root(xml_output, "qstat -j -xml")
     if root is None:
         return data
     _strip_namespaces(root)
@@ -770,18 +769,66 @@ def _normalize_qrsh_command(value: str) -> str:
     return " ".join(cleaned.split())
 
 
-def _parse_xml_root(xml_output: str) -> ET.Element | None:
-    """Parse XML output, tolerating leading/trailing non-XML noise."""
+# gridengine's XML writer (sge_cull_xml.c) has defects that break or corrupt
+# its output; docs/dev/sge-xml-defects.md has the mechanisms. The repairs
+# below are applied to every document before parsing; anything else that
+# does not parse raises SchedulerOutputError rather than reading as "no
+# jobs" or "no details".
 
+#: A tag name with a space. gridengine writes a CULL list's internal name as
+#: the wrapper tag unchecked; ``"job ids"`` (scheduler messages added for one
+#: job) is the one seen in qstat output (``qstat_j_requeue_pending.xml``).
+#: In XML a space inside a tag only separates attributes, which need ``=``,
+#: and text never holds a raw ``<``, so a spaced name with no ``=`` can only
+#: be this defect.
+_SPACED_TAG_RE = re.compile(r"<(/?)([A-Za-z_][\w.-]*(?: [A-Za-z_][\w.-]*)+)>")
+
+#: Characters XML 1.0 forbids even escaped (C0 controls but tab, LF, CR).
+#: gridengine passes them through, so one in a job's environment (``-V``
+#: copies the submit shell's: an exported value with a raw ESC) makes the
+#: whole ``qstat -j -xml`` unparseable (``qstat_j_xml_defects.xml``).
+_XML_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+#: gridengine 8.1.9 escapes ``<`` as ``%lt;`` (a typo; OCS writes ``&lt;``).
+#: Rewritten to the entity, not to ``<``, which would break the document.
+#: Applied for every flavour: on OCS it would only alter a value in which
+#: the user typed ``%lt;`` literally.
+_BAD_LT_ESCAPE = "%lt;"
+
+
+def _repair_sge_xml(xml_output: str) -> str:
+    """The text with gridengine's known XML defects repaired."""
+    xml_output = _XML_ILLEGAL_RE.sub("", xml_output)
+    xml_output = _SPACED_TAG_RE.sub(lambda m: f"<{m[1]}{m[2].replace(' ', '_')}>", xml_output)
+    return xml_output.replace(_BAD_LT_ESCAPE, "&lt;")
+
+
+def _parse_xml_root(xml_output: str, what: str = "scheduler output") -> ET.Element | None:
+    """Parse gridengine XML, after the known repairs.
+
+    None when there is no XML at all (empty, or text with no ``<``, such as
+    an error on stderr): the caller decides what absence means. Leading or
+    trailing non-XML noise (a site banner) is tolerated.
+
+    Raises:
+        SchedulerOutputError: the text is XML that still does not parse.
+    """
+    if "<" not in xml_output:
+        return None
+    xml_output = _repair_sge_xml(xml_output)
     try:
         return ET.fromstring(xml_output)
-    except ET.ParseError:
-        pass
+    except ET.ParseError as exc:
+        error = exc
     start = xml_output.find("<")
     end = xml_output.rfind(">")
-    if start == -1 or end == -1 or end <= start:
-        return None
-    try:
-        return ET.fromstring(xml_output[start : end + 1])
-    except ET.ParseError:
-        return None
+    if end > start:
+        try:
+            return ET.fromstring(xml_output[start : end + 1])
+        except ET.ParseError:
+            pass
+    line_no = error.position[0] if error.position else 0
+    lines = xml_output.splitlines()
+    line = lines[line_no - 1].strip() if 0 < line_no <= len(lines) else ""
+    where = f": {line[:120]!r}" if line else ""
+    raise SchedulerOutputError(f"{what} output is not XML ({error}){where}")

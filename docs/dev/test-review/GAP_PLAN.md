@@ -132,11 +132,13 @@ If the Completed tab is built:
 Also fix the provider's catch-all (F3) so an unreachable scheduler shows
 as unreachable.
 
-## 4. Order
+## 4. Done (2026-11-01)
 
-1. Remaining: W1, W2, W3, W4, W5, W6 and W7 (rows 21 and 22). None of
-   them needs a decision or a `src/` change unless a test finds a bug.
-   W2 and W5 need a capture run.
-2. W8 is dropped (D3).
-
-After these, every cell in §3.1 is `F`, `I` or `n/a`.
+W1-W7 landed together. Every matrix cell is now `F`, `I`, `u` or `n/a`.
+The tests are `TestMatrixGaps` in `test_sge_fixtures.py`, plus the array
+in `TestLifecycleStates.SNAPSHOTS`. The new captures are `qstat_j_<scenario>.xml`
+for every job alive at a snapshot, and the qmaster-down
+`qacct_master_down.json`, `qacct_history_master_down.json` and
+`qstat_j_master_down.json`. Three bugs were found and fixed (D-T46): the
+`<job ids>` tag, the "array of one" for a task id, and two `trace compare`
+false findings.

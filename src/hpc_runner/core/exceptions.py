@@ -86,6 +86,11 @@ class SchedulerCommandError(SchedulerError):
         super().__init__(message)
 
 
+class SchedulerOutputError(SchedulerError):
+    """A scheduler command's output could not be read (e.g. XML that does not
+    parse after the known repairs); never mistaken for "nothing there"."""
+
+
 class SchedulerTimeoutError(SchedulerError):
     """A scheduler command did not finish in time; caught by callers that retry later."""
 

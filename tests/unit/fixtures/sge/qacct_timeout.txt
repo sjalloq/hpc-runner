@@ -6,26 +6,26 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      timeout             
-jobnumber    248                 
+jobnumber    545                 
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 19:37:08 2026
-start_time   Sun Nov  1 19:37:10 2026
-end_time     Sun Nov  1 19:38:11 2026
+qsub_time    Sun Nov  1 22:00:49 2026
+start_time   Sun Nov  1 22:00:49 2026
+end_time     Sun Nov  1 22:01:50 2026
 granted_pe   NONE                
 slots        1                   
 failed       37  : qmaster enforced h_rt, h_cpu, or h_vmem limit
 exit_status  137                  (Killed)
 ru_wallclock 61s
-ru_utime     0.044s
-ru_stime     0.021s
-ru_maxrss    8.012KB
+ru_utime     0.036s
+ru_stime     0.029s
+ru_maxrss    8.094KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2534                
+ru_minflt    2531                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -34,12 +34,12 @@ ru_msgsnd    0
 ru_msgrcv    0                   
 ru_nsignals  0                   
 ru_nvcsw     18                  
-ru_nivcsw    14                  
-cpu          0.066s
+ru_nivcsw    3                   
+cpu          0.065s
 mem          8.389KBs
 io           0.000B
 iow          0.000s
-maxvmem      1.594MB
+maxvmem      1.578MB
 arid         undefined
 ar_sub_time  undefined
 category     -q short.q -l hostname=exec2

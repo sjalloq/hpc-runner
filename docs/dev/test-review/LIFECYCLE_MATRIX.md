@@ -46,32 +46,32 @@ Capture scenario names are from `tests/unit/fixtures/sge/manifest.json`.
 
 | # | State (SGE) | → JobStatus | Capture | A | B | C | D | E | F | G | H | J |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | queued `qw` | PENDING | `array` tail tasks | F | F | n/a | F | n/a | · | · | F (`TestJobTableFromCapturedSnapshots`) | I (`wait_for`) |
-| 2 | user hold `hqw` | PENDING | `held` | F | F | n/a | F | n/a | · | I (`test_hold_flag_forwards`, `test_status_active_history_and_details`), F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | I (`test_queued_running_done`), F (`test_wait_holds_on..`) |
-| 3 | dependency hold (`-hold_jid`) `hqw` | PENDING | `dependent` (`qstat_mixed`) | F (the same `hqw` as 2) | F (`test_every_reader_agrees`), I (`test_dependencies`) | n/a | F | n/a | · | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`), I |
-| 4 | error `Eqw` | FAILED | `eqw` | F | F | · (no record; sentinel missing → None) | F | n/a | · | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`: returns FAILED) |
+| 1 | queued `qw` | PENDING | `array` tail tasks | F | F | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`, array in the mixed snapshot) | F (`TestJobTableFromCapturedSnapshots`) | I (`wait_for`) |
+| 2 | user hold `hqw` | PENDING | `held` | F | F | n/a | F | n/a | F (`test_details_of_every_active_state`) | I (`test_hold_flag_forwards`, `test_status_active_history_and_details`), F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | I (`test_queued_running_done`), F (`test_wait_holds_on..`) |
+| 3 | dependency hold (`-hold_jid`) `hqw` | PENDING | `dependent` (`qstat_mixed`) | F (the same `hqw` as 2) | F (`test_every_reader_agrees`), I (`test_dependencies`) | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`), I |
+| 4 | error `Eqw` | FAILED | `eqw` | F | F | F (`test_no_record_no_exit_code`) | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`: returns FAILED) |
 | 5 | running `r` | RUNNING | `running` | F | F | n/a | F | n/a | F (`test_running_job_details`, `..merges_listing_and_details`) | I (`test_status_active..`) | F (`TestJobTableFromCapturedSnapshots`) | I |
-| 6 | transferring `t` | RUNNING | `array` (some tasks) | F | F | n/a | F | n/a | · | · | F (via `array`) | · |
+| 6 | transferring `t` | RUNNING | `array` (some tasks) | F | F | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`, array in the mixed snapshot) | F (via `array`) | F (`test_wait_holds_on..`, array in the mixed snapshot) |
 | 7 | user suspended `s` (`qmod -sj`) | SUSPENDED | `suspended` (`qstat_lifecycle`, `qstat_j_suspended`) | F | F (`TestLifecycleStates`) | n/a | F | n/a | F (`qstat_j_suspended`) | F (`test_hpc_status_table`, `..of_one_suspended_job`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`), I (`test_suspended_job_is_waited_through`) |
-| 8 | queue suspended `S` (`qmod -sq`) | SUSPENDED | `queue_suspended` | F | F | n/a | F | n/a | · | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`) |
+| 8 | queue suspended `S` (`qmod -sq`) | SUSPENDED | `queue_suspended` | F | F | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`) |
 | 9 | threshold `T` / restarted `Rr` `Rq` | SUSPENDED / RUNNING / PENDING | `threshold` (`T`, `qstat_transient`, `qstat_j_threshold`), `requeued` (`Rr`), `requeue_pending` (`Rq`) | F | F (`test_every_reader_agrees`) | n/a | F | n/a | F (`T`) | F (`test_hpc_status_table`, `..of_one_suspended_job`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`) |
-| 10 | deleting `dr` `dt` | CANCELLED | `deleting` (`qstat_deleting`, node paused), `deleting_transfer` (`dt`, `qstat_transient`) | F | F (`test_deleting_is_cancelled..`, `test_every_reader_agrees`) | n/a | F | n/a | · | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`: returns CANCELLED) |
+| 10 | deleting `dr` `dt` | CANCELLED | `deleting` (`qstat_deleting`, node paused), `deleting_transfer` (`dt`, `qstat_transient`) | F | F (`test_deleting_is_cancelled..`, `test_every_reader_agrees`) | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`) | F (`TestJobTableFromCapturedSnapshots`) | F (`test_wait_holds_on..`: returns CANCELLED) |
 | 11 | done, exit 0 | COMPLETED | `ok` | F | F | F | n/a | F (`test_records`), I (`test_two_users`) | F (`TestFinishedJobDetails`) | I (`test_tool_alias..`) | n/a (no Completed tab, D-T45) | I |
 | 12 | done, exit ≠ 0 | FAILED | `exit1` | F | F | F | n/a | F | F (`TestFinishedJobDetails`) | I (`test_status_active_history_and_details`: exit 3 in history and `<id>`) | n/a (no Completed tab, D-T45) | I |
-| 13 | guard skipped, exit 113 | SKIPPED | `skipped` | F (`test_records`) | F (`TestFinishedJobDetails`), u, I (`test_dependencies`) | F | n/a | F (`test_records`), u | F (`TestFinishedJobDetails`) | · | n/a (no Completed tab, D-T45) | I |
+| 13 | guard skipped, exit 113 | SKIPPED | `skipped` | F (`test_records`) | F (`TestFinishedJobDetails`), u, I (`test_dependencies`) | F | n/a | F (`test_records`), u | F (`TestFinishedJobDetails`) | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I |
 | 14 | qdel while running: `failed 100`, `exit 137` | FAILED | `signal` | F | F | F | n/a | F, I (`test_status_shows_the_schedulers_failure_reason`) | F (`TestFinishedJobDetails`) | I (history shows `100: assumedly after job`) | n/a (no Completed tab, D-T45) | I (`test_signal_exit_code` accepts CANCELLED **or** FAILED) |
-| 15 | `h_rt` kill: `failed 37`, `exit 137` | TIMEOUT | `timeout` | F | F, u, I (`test_h_rt_kill`) | F, I | n/a | F (`test_records`, `..carries_sges_reason`) | F (`TestFinishedJobDetails`) | · | n/a (no Completed tab, D-T45) | I |
-| 16 | `h_vmem` over limit | FAILED (`failed 0`, exit 2: setrlimit, the process fails itself; no execd kill on this stack) | `vmem` | F | F, I (`test_h_vmem`) | F, I | n/a | F | F | · | n/a (no Completed tab, D-T45) | I |
-| 17 | node lost: `failed 19`, `exit 0` | FAILED | `lost_node` | F | F, I (`test_node_killed`) | F | n/a | F, I | F (`TestFinishedJobDetails`) | · | n/a (no Completed tab, D-T45) | I |
-| 18 | deleted while pending (`qdel` of `hqw`) | UNKNOWN (no record ever; accepted, §4.2) | `deleted_pending` | n/a | F (`test_deleted_while_pending..`) | F | n/a | n/a | F (`JobNotFoundError`) | · | n/a (no Completed tab, D-T45) | I (`test_deleted_while_pending_waits_out_to_unknown`) |
-| 19 | rescheduled / requeued: `failed 25` record, `Rq` → `Rr`, then its end | RUNNING while active, then the final record | `requeued` (`qacct_requeued`: 25 then 100) | F | F, u | F | F (`Rr`) | F (`test_history_lists_a_requeued_job_once`), I | F | · | n/a (no Completed tab, D-T45) | I (`test_requeued_job_ends_with_its_final_record`) |
-| 20 | aged out of qacct, sentinel gone | UNKNOWN | · | n/a | I (`test_aged_out`) | I (`test_aged_out`) | n/a | n/a | · | · | n/a (no Completed tab, D-T45) | u (`test_unknown_after..`) |
-| 21 | sentinel only (qacct not yet flushed) | from sentinel | · | n/a | u (`test_qacct_without_exit_status_uses_sentinel`, `..wins_over_sentinel`), I (`test_slow_accounting_window`, slow stack) | u, I | n/a | n/a | · | · | n/a (no Completed tab, D-T45) | · |
-| 22 | unknown id | UNKNOWN / `JobNotFoundError` | `qacct_missing`, `qstat_j_missing` | F | F (`test_get_status_unknown_id`) | · | n/a | n/a | F (`test_unknown_id_is_not_found`) | · | n/a (no Completed tab, D-T45) | · |
-| 23 | qmaster unreachable | `SchedulerUnavailableError` | `master_down` | F | F (`test_get_status_raises`) | · | F (`test_list_active_jobs_raises`) | · | · | · | n/a (no Completed tab, D-T45) | n/a (D-T45) |
-| 24 | array, tasks running + queued, task id | per task | `array` | F | F (`array`,1 / `array`,9) | n/a | F | n/a | · | · | n/a (no Completed tab, D-T45) | I (`test_array_1_to_5`) |
-| 25 | array, base id while active | reduction of the tasks (RUNNING > SUSPENDED > PENDING) | `array` | F (`..running_array_wins`) | F, u (`test_base_id_of_active_array_is_the_reduction..`) | n/a | F | n/a | · | · | n/a (no Completed tab, D-T45) | u (`TestArrayJobResult`) |
-| 26 | array, finished task id | per task | `array_done`,2 | F | F | F | n/a | F (`test_array_task_record_names_its_task`) | · | · | n/a (no Completed tab, D-T45) | I |
+| 15 | `h_rt` kill: `failed 37`, `exit 137` | TIMEOUT | `timeout` | F | F, u, I (`test_h_rt_kill`) | F, I | n/a | F (`test_records`, `..carries_sges_reason`) | F (`TestFinishedJobDetails`) | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I |
+| 16 | `h_vmem` over limit | FAILED (`failed 0`, exit 2: setrlimit, the process fails itself; no execd kill on this stack) | `vmem` | F | F, I (`test_h_vmem`) | F, I | n/a | F | F | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I |
+| 17 | node lost: `failed 19`, `exit 0` | FAILED | `lost_node` | F | F, I (`test_node_killed`) | F | n/a | F, I | F (`TestFinishedJobDetails`) | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I |
+| 18 | deleted while pending (`qdel` of `hqw`) | UNKNOWN (no record ever; accepted, §4.2) | `deleted_pending` | n/a | F (`test_deleted_while_pending..`) | F | n/a | n/a | F (`JobNotFoundError`) | F (`test_status_of_a_job_deleted_while_pending`) | n/a (no Completed tab, D-T45) | I (`test_deleted_while_pending_waits_out_to_unknown`) |
+| 19 | rescheduled / requeued: `failed 25` record, `Rq` → `Rr`, then its end | RUNNING while active, then the final record | `requeued` (`qacct_requeued`: 25 then 100) | F | F, u | F | F (`Rr`) | F (`test_history_lists_a_requeued_job_once`), I | F | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I (`test_requeued_job_ends_with_its_final_record`) |
+| 20 | aged out of qacct, sentinel gone | UNKNOWN | · | n/a | I (`test_aged_out`) | I (`test_aged_out`) | n/a | n/a | F (same inputs as 22) | F (`test_status_of_an_unknown_id`) | n/a (no Completed tab, D-T45) | u (`test_unknown_after..`) |
+| 21 | sentinel only (qacct not yet flushed) | from sentinel | · | n/a | u (`test_qacct_without_exit_status_uses_sentinel`, `..wins_over_sentinel`), I (`test_slow_accounting_window`, slow stack) | u, I | n/a | n/a | F (`test_status_of_a_sentinel_only_job`) | F (`test_status_of_a_sentinel_only_job`) | n/a (no Completed tab, D-T45) | F (`test_wait_on_a_sentinel_only_job`) |
+| 22 | unknown id | UNKNOWN / `JobNotFoundError` | `qacct_missing`, `qstat_j_missing` | F | F (`test_get_status_unknown_id`) | F (`test_unknown_id_has_no_exit_code`) | n/a | n/a | F (`test_unknown_id_is_not_found`) | F (`test_status_of_an_unknown_id`) | n/a (no Completed tab, D-T45) | F (`test_wait_on_an_unknown_id`) |
+| 23 | qmaster unreachable | `SchedulerUnavailableError` | `master_down` | F | F (`test_get_status_raises`) | F (`test_finished_job_is_still_readable_with_the_master_down`: qacct needs no qmaster) | F (`test_list_active_jobs_raises`) | F (`test_history_with_the_master_down`) | F (`test_finished_job_is_still_readable..`) | n/a (D-T45: master down is a don't care) | n/a (no Completed tab, D-T45) | n/a (D-T45) |
+| 24 | array, tasks running + queued, task id | per task | `array` | F | F (`array`,1 / `array`,9) | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`, array in the mixed snapshot) | n/a (no Completed tab, D-T45) | I (`test_array_1_to_5`) |
+| 25 | array, base id while active | reduction of the tasks (RUNNING > SUSPENDED > PENDING) | `array` | F (`..running_array_wins`) | F, u (`test_base_id_of_active_array_is_the_reduction..`) | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`, array in the mixed snapshot) | n/a (no Completed tab, D-T45) | u (`TestArrayJobResult`) |
+| 26 | array, finished task id | per task | `array_done`,2 | F | F | F | n/a | F (`test_array_task_record_names_its_task`) | F (`test_status_of_one_finished_array_task`) | F (`test_status_of_one_finished_array_task`) | n/a (no Completed tab, D-T45) | I |
 | 27 | array, finished **base** id | reduction of the tasks (COMPLETED only if all are) | `array_done` (`qacct_array_base`) | F (`..one_record_per_task`) | F (`TestFinishedArrayBaseId`), u (`..reduces_over_every_qacct_record`), I (`test_array_1_to_5`) | F, I | n/a | F | F (`..whole_and_every_task`), I | F (`..prints_the_task_table`, `..json_lists_the_tasks`), I | n/a (no Completed tab, D-T45) | u, I |
 | 28 | interactive (`qrsh`) | exit code only | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 
@@ -120,22 +120,13 @@ pending (`tests/integration/test_status.py`).
 
 ### 3.1 Cells still empty
 
-No capture is possible for rows 20 and 21: they are defined by a record
-being *absent* (aged out; not yet flushed), so they are covered live
-(`test_aged_out`, `test_slow_accounting_window`). The `·` cells left are reader coverage, not captures:
-
-| Col | Empty in rows | What is missing |
-|---|---|---|
-| C | 4, 22, 23 | exit code of an Eqw, unknown or unreachable job (`None` or raise; untested). Row 20 is `I` (`test_aged_out`) |
-| E | 23 | the listing with the master down (row 19 is pinned: D-T45, `test_history_lists_a_requeued_job_once`) |
-| F | 1-4, 6, 8, 10, 24, 25; 20, 21, 23, 26 | active: a `qstat -j -xml` capture per state (the state comes from the listing, which is pinned; only the merge of details is untested). Finished: details of an aged-out, sentinel-only, unreachable job and of one array task |
-| G | 1, 6, 24-26; 13, 15-23 | `hpc status` over the queued and array snapshots, and `<id>` / `--history` over the qacct captures (12, 14, 27 have it) |
-| H | 11-27 | n/a: the monitor's Completed tab is a placeholder until the TUI rewrite (D-T45) |
-| J | 6, 21, 22 | 6 is an array task in `t` (row 24 covers the array); 23 is n/a (D-T45) |
-
-Surveying these found two behaviours worth a decision (history lists a
-requeued job twice; one failed poll ends `wait()`) and that the monitor's
-Completed tab is a placeholder. Plan: `GAP_PLAN.md`.
+None (2026-11-01, `GAP_PLAN.md` W1-W7). Every cell is `F`, `I`, `u` or
+`n/a`; the `n/a`s are column H for finished jobs (no Completed tab) and
+the master-down rows of G and J (D-T45). Closing the reader gaps found
+three bugs (D-T46): `qstat -j` of a job with scheduling messages did not
+parse when it carried some scheduler messages (gridengine writes `<job ids>`; `docs/dev/sge-xml-defects.md`), `hpc status <base>.<task>` showed
+an "array of one", and `hpc trace compare` flagged a reschedule record and
+a master-down `qstat -j` as parser problems.
 
 ## 4. Decisions in flight
 

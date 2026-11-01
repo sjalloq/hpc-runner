@@ -6,7 +6,7 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      requeued            
-jobnumber    263                 
+jobnumber    560                 
 taskid       undefined
 account      sge                 
 priority     0                   
@@ -51,26 +51,26 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      requeued            
-jobnumber    263                 
+jobnumber    560                 
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 19:38:25 2026
-start_time   Sun Nov  1 19:38:26 2026
-end_time     Sun Nov  1 19:38:28 2026
+qsub_time    Sun Nov  1 22:02:04 2026
+start_time   Sun Nov  1 22:02:05 2026
+end_time     Sun Nov  1 22:02:08 2026
 granted_pe   NONE                
 slots        1                   
 failed       100 : assumedly after job
 exit_status  137                  (Killed)
-ru_wallclock 2s
-ru_utime     0.036s
-ru_stime     0.029s
-ru_maxrss    8.230KB
+ru_wallclock 3s
+ru_utime     0.043s
+ru_stime     0.025s
+ru_maxrss    8.191KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2519                
+ru_minflt    2538                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -79,12 +79,12 @@ ru_msgsnd    0
 ru_msgrcv    0                   
 ru_nsignals  0                   
 ru_nvcsw     18                  
-ru_nivcsw    9                   
-cpu          0.065s
+ru_nivcsw    16                  
+cpu          0.068s
 mem          8.389KBs
 io           0.000B
 iow          0.000s
-maxvmem      1.582MB
+maxvmem      1.637MB
 arid         undefined
 ar_sub_time  undefined
 category     -soft -l hostname=exec2

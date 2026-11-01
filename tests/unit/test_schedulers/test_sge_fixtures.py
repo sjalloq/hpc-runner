@@ -32,6 +32,31 @@ from tests.fakes import SGEFixtures, make_sge_responder, patch_seam
 
 FX = SGEFixtures()
 
+#: Every captured finished job: (scenario, status, exit code, qacct failed code).
+FINISHED = [
+    ("ok", JobStatus.COMPLETED, 0, 0),
+    ("exit1", JobStatus.FAILED, 1, 0),
+    ("signal", JobStatus.FAILED, 137, 100),
+    ("lost_node", JobStatus.FAILED, 0, 19),
+    ("timeout", JobStatus.TIMEOUT, 137, 37),
+    ("vmem", JobStatus.FAILED, 2, 0),
+    ("requeued", JobStatus.FAILED, 137, 100),
+    ("skipped", JobStatus.SKIPPED, 113, 0),
+]
+
+#: The qacct files behind FINISHED, plus the three-task array (task 3 failed).
+FINISHED_RECORDS = [
+    "qacct_ok.txt",
+    "qacct_exit1.txt",
+    "qacct_signal.txt",
+    "qacct_lost_node.txt",
+    "qacct_timeout.txt",
+    "qacct_vmem.txt",
+    "qacct_requeued.txt",
+    "qacct_skipped.txt",
+    "qacct_array_base.txt",
+]
+
 
 def test_manifest_names_every_scenario_and_file():
     assert set(FX.jobs) >= {
@@ -346,19 +371,7 @@ class TestFinishedArrayBaseId:
 class TestFinishedJobDetails:
     """``get_job_details`` of every captured finished job comes from its qacct record."""
 
-    @pytest.mark.parametrize(
-        ("scenario", "status", "exit_code", "failed"),
-        [
-            ("ok", JobStatus.COMPLETED, 0, 0),
-            ("exit1", JobStatus.FAILED, 1, 0),
-            ("signal", JobStatus.FAILED, 137, 100),
-            ("lost_node", JobStatus.FAILED, 0, 19),
-            ("timeout", JobStatus.TIMEOUT, 137, 37),
-            ("vmem", JobStatus.FAILED, 2, 0),
-            ("requeued", JobStatus.FAILED, 137, 100),
-            ("skipped", JobStatus.SKIPPED, 113, 0),
-        ],
-    )
+    @pytest.mark.parametrize(("scenario", "status", "exit_code", "failed"), FINISHED)
     def test_details(self, monkeypatch, tmp_path, scenario, status, exit_code, failed):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
         with patch_seam(make_sge_responder(FX)):
@@ -368,13 +381,19 @@ class TestFinishedJobDetails:
         assert info.job_id == FX.job(scenario) and info.array_task_id is None
 
 
-def _with_snapshot(name: str):
-    """The captured responder, but ``qstat -xml -u '*'`` answers with *name*."""
+def _with_snapshot(name: str, details: dict[str, str] | None = None):
+    """The captured responder, but ``qstat -xml -u '*'`` answers with *name*.
+
+    *details* maps a job id to the ``qstat -j`` file to answer for it, for a
+    job captured in more than one state.
+    """
     base = make_sge_responder(FX)
 
     def respond(argv: list[str]) -> tuple[int, str, str]:
         if argv == ["qstat", "-xml", "-u", "*"]:
             return 0, FX.text(name), ""
+        if details and argv[:2] == ["qstat", "-j"] and argv[2] in details:
+            return 0, FX.text(details[argv[2]]), ""
         return base(argv)
 
     return respond
@@ -398,6 +417,7 @@ class TestLifecycleStates:
             "held": JobStatus.PENDING,
             "dependent": JobStatus.PENDING,
             "eqw": JobStatus.FAILED,
+            "array": JobStatus.RUNNING,  # its r, t and qw tasks reduced (rows 1, 6, 24, 25)
         },
         "qstat_lifecycle.xml": {
             "suspended": JobStatus.SUSPENDED,
@@ -534,7 +554,8 @@ class TestLifecycleStates:
         job_id = FX.job(scenario)
         assert parse_qstat_j_xml(FX.text(f"qstat_j_{scenario}.xml"))["name"] == scenario
         monkeypatch.setenv("HPC_SCHEDULER", "sge")
-        with patch_seam(_with_snapshot(snapshot)):
+        details = {job_id: f"qstat_j_{scenario}.xml"}
+        with patch_seam(_with_snapshot(snapshot, details)):
             result = CliRunner().invoke(cli, ["status", job_id])
         assert result.exit_code == 0, result.output
         assert "SUSPENDED" in result.output and scenario in result.output
@@ -571,3 +592,293 @@ class TestLifecycleStates:
         info = qacct_to_job_info(parse_qacct_output(FX.text("qacct_timeout.txt")))
         assert info.failed_reason == "qmaster enforced h_rt, h_cpu, or h_vmem limit"
         assert info.queue == "short.q"
+
+
+def _cli(argv: list[str], respond, monkeypatch, tmp_path):
+    from click.testing import CliRunner
+
+    from hpc_runner.cli.main import cli
+
+    monkeypatch.setenv("HPC_SCHEDULER", "sge")
+    monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+    monkeypatch.setenv("COLUMNS", "200")  # rich truncates cells at the default 80
+    with patch_seam(respond):
+        result = CliRunner().invoke(cli, argv)
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
+class TestMatrixGaps:
+    """Readers over captures the matrix had no test for (GAP_PLAN.md W1, W3, W4, W6, W7)."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        return SGEScheduler(HPCConfig())
+
+    # -- W1: exit codes where there is no record (column C) -----------------
+
+    @pytest.mark.parametrize(
+        ("scenario", "snapshot"),
+        [("eqw", "qstat_mixed.xml"), ("deleted_pending", "qstat_empty.xml")],
+    )
+    def test_no_record_no_exit_code(self, scheduler, scenario, snapshot):
+        """Row 4 (Eqw never ran) and row 18: no qacct record, no sentinel: None."""
+        with patch_seam(_with_snapshot(snapshot)):
+            assert scheduler.get_exit_code(FX.job(scenario)) is None
+
+    def test_unknown_id_has_no_exit_code(self, scheduler):
+        """Row 22."""
+        with patch_seam(make_sge_responder(FX)):
+            assert scheduler.get_exit_code("999999") is None
+
+    # -- W3: history over every finished capture (columns E, G) -------------
+
+    @staticmethod
+    def _history(argv: list[str]) -> tuple[int, str, str]:
+        assert argv[:3] == ["qacct", "-j", "-b"], argv
+        return 0, "".join(FX.text(n) for n in FINISHED_RECORDS), ""
+
+    def test_history_has_one_row_per_job_and_task(self, monkeypatch, tmp_path):
+        import json
+
+        out = _cli(["status", "--history", "--all", "--json"], self._history, monkeypatch, tmp_path)
+        rows = json.loads(out)
+        keys = [(r["job_id"], r["array_task_id"]) for r in rows]
+        assert len(keys) == len(set(keys)) == len(FINISHED) + 3
+        by_id = {r["job_id"]: r for r in rows if r["array_task_id"] is None}
+        for scenario, status, exit_code, failed in FINISHED:
+            row = by_id[FX.job(scenario)]
+            assert (row["status"], row["exit_code"], row["failed_code"]) == (
+                status.name,
+                exit_code,
+                failed,
+            ), scenario
+        tasks = {r["array_task_id"]: r["status"] for r in rows if r["array_task_id"]}
+        assert tasks == {1: "COMPLETED", 2: "COMPLETED", 3: "FAILED"}
+
+    def test_history_table_shows_each_status(self, monkeypatch, tmp_path):
+        out = _cli(["status", "--history", "--all"], self._history, monkeypatch, tmp_path)
+        for scenario, status, exit_code, _ in FINISHED:
+            line = next(ln for ln in out.splitlines() if f" {FX.job(scenario)} " in ln)
+            assert status.name in line and f" {exit_code} " in line, line
+
+    # -- W4: hpc status <id> of every finished capture (column G) -----------
+
+    @pytest.mark.parametrize(("scenario", "status", "exit_code", "failed"), FINISHED)
+    def test_status_of_a_finished_job(
+        self, monkeypatch, tmp_path, scenario, status, exit_code, failed
+    ):
+        import json
+
+        respond = make_sge_responder(FX)
+        job_id = FX.job(scenario)
+        data = json.loads(_cli(["status", job_id, "--json"], respond, monkeypatch, tmp_path))
+        assert (data["status"], data["exit_code"], data["failed_code"]) == (
+            status.name,
+            exit_code,
+            failed,
+        )
+        out = _cli(["status", job_id], respond, monkeypatch, tmp_path)
+        assert status.name in out and f"Job {job_id}" in out
+        if failed:
+            assert f"{failed}: " in out  # the reason SGE gave
+
+    def test_status_of_a_job_deleted_while_pending(self, monkeypatch, tmp_path):
+        """Row 18: no record anywhere; UNKNOWN, not a traceback."""
+        out = _cli(
+            ["status", FX.job("deleted_pending")], make_sge_responder(FX), monkeypatch, tmp_path
+        )
+        assert "UNKNOWN" in out
+
+    def test_status_of_one_finished_array_task(self, monkeypatch, tmp_path):
+        """Row 26: ``hpc status <base>.<task>`` is that task's record."""
+        import json
+
+        task = f"{FX.job('array_done')}.2"
+        data = json.loads(
+            _cli(["status", task, "--json"], make_sge_responder(FX), monkeypatch, tmp_path)
+        )
+        assert (data["status"], data["exit_code"], data["array_task_id"]) == ("COMPLETED", 0, 2)
+        assert "tasks" not in data  # the task itself, not an array of one
+
+    # -- W7: wait() where the matrix had none (column J) --------------------
+
+    def test_wait_on_a_sentinel_only_job(self, scheduler, tmp_path):
+        """Row 21: gone from qstat, qacct not flushed yet; the sentinel ends the wait."""
+        job_id = "424242"
+        (tmp_path / f"{job_id}.rc").write_text("0\n")
+        with patch_seam(_with_snapshot("qstat_empty.xml")):
+            status = scheduler.result(job_id).wait(poll_interval=0.01, timeout=1)
+        assert status is JobStatus.COMPLETED
+
+    def test_wait_on_an_unknown_id(self, scheduler):
+        """Row 22: UNKNOWN once unknown_after has passed, not a hang."""
+        with patch_seam(make_sge_responder(FX)):
+            handle = scheduler.result("999999")
+            assert handle.wait(poll_interval=0.01, unknown_after=0.05, timeout=2) is (
+                JobStatus.UNKNOWN
+            )
+
+    # -- W5: details of a job in every captured active state (column F) -----
+
+    @pytest.mark.parametrize(
+        ("snapshot", "scenario"),
+        [
+            (snap, scenario)
+            for snap, jobs in TestLifecycleStates.SNAPSHOTS.items()
+            for scenario in jobs
+        ],
+    )
+    def test_details_of_every_active_state(self, scheduler, snapshot, scenario):
+        """``qstat -j`` gives the details, the listing gives the state."""
+        job_id = FX.job(scenario)
+        status = TestLifecycleStates.SNAPSHOTS[snapshot][scenario]
+        details = {job_id: f"qstat_j_{scenario}.xml"}
+        with patch_seam(_with_snapshot(snapshot, details)):
+            info, extra = scheduler.get_job_details(job_id)
+        assert info.job_id == job_id and info.status is status
+        # `deleting` is the queue_suspended job, deleted later.
+        name = "queue_suspended" if scenario == "deleting" else scenario
+        assert info.name == name and info.user == "tester"
+        assert extra.get("script_file") or extra.get("command") or extra.get("job_args"), extra
+
+    # -- W2: accounting with the qmaster down (row 23) ----------------------
+
+    @staticmethod
+    def _master_down(argv: list[str]) -> tuple[int, str, str]:
+        if argv[0] == "qstat":
+            name = "qstat_j_master_down.json" if argv[1] == "-j" else "qstat_master_down.json"
+            return FX.result(name)
+        if argv == ["qacct", "-j", FX.job("ok")]:
+            return FX.result("qacct_master_down.json")
+        if argv[:4] == ["qacct", "-j", "-o", "bob"]:
+            return FX.result("qacct_history_master_down.json")
+        raise AssertionError(argv)
+
+    def test_master_down_capture_says_what_works(self):
+        """qacct reads the accounting file, so it answers; ``qstat -j`` exits 0
+        with a ``comunication_error`` document (sic) and the reason on stderr."""
+        assert FX.result("qacct_master_down.json")[0] == 0
+        assert FX.result("qacct_history_master_down.json")[0] == 0
+        rc, out, err = FX.result("qstat_j_master_down.json")
+        assert rc == 0 and "comunication_error" in out and "commlib" in err
+
+    def test_finished_job_is_still_readable_with_the_master_down(self, scheduler):
+        """Row 23, C and F: the exit code and details of a finished job come
+        from accounting, which does not need the qmaster."""
+        ok = FX.job("ok")
+        with patch_seam(self._master_down):
+            assert scheduler.get_exit_code(ok) == 0
+            info, _ = scheduler.get_job_details(ok)
+        assert (info.status, info.exit_code) == (JobStatus.COMPLETED, 0)
+
+    def test_history_with_the_master_down(self, scheduler):
+        """Row 23, E: the listing reads accounting too."""
+        with patch_seam(self._master_down):
+            jobs = scheduler.list_completed_jobs(user="bob")
+        # Every bob job the stack has run, so the capture's is one of them.
+        assert FX.job("bob") in {j.job_id for j in jobs}
+        assert {j.user for j in jobs} == {"bob"}
+
+    def test_active_state_with_the_master_down_raises(self, scheduler):
+        """Row 23, B: what does need the qmaster says so (not "not found")."""
+        from hpc_runner.core.exceptions import SchedulerUnavailableError
+
+        with patch_seam(self._master_down), pytest.raises(SchedulerUnavailableError):
+            scheduler.get_status(FX.job("running"))
+
+    def test_qstat_j_with_scheduler_messages_parses(self):
+        """gridengine writes ``<job ids>`` (not XML) when a job has scheduling
+        messages; the details must still parse (found by W5, D-T46)."""
+        text = FX.text("qstat_j_requeue_pending.xml")
+        assert "<job ids>" in text
+        assert parse_qstat_j_xml(text)["name"] == "requeue_pending"
+
+    def test_status_of_a_sentinel_only_job(self, monkeypatch, tmp_path):
+        """Row 21, F and G: no qstat, no qacct yet; the sentinel gives the status."""
+        (tmp_path / "424242.rc").write_text("3\n")
+        out = _cli(["status", "424242"], _with_snapshot("qstat_empty.xml"), monkeypatch, tmp_path)
+        assert "FAILED" in out and "Exit Code" in out and " 3 " in out
+
+    def test_status_of_an_unknown_id(self, monkeypatch, tmp_path):
+        """Rows 20 and 22, G: nothing anywhere (aged out looks the same); UNKNOWN."""
+        out = _cli(["status", "999999"], make_sge_responder(FX), monkeypatch, tmp_path)
+        assert "UNKNOWN" in out
+
+
+class TestXmlDefects:
+    """gridengine's XML defects (docs/dev/sge-xml-defects.md) against the
+    ``xml_defects`` capture: repaired where the fix is certain, an error
+    otherwise, never an empty answer."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        return SGEScheduler(HPCConfig())
+
+    def test_capture_shows_both_defects(self):
+        import xml.etree.ElementTree as ET
+
+        text = FX.text("qstat_j_xml_defects.xml")
+        assert "<JB_job_name>a%lt;b</JB_job_name>" in text  # defect 2
+        assert "\x1b" in text  # defect 3: the ESC of CTRL, passed through
+        with pytest.raises(ET.ParseError):
+            ET.fromstring(text)
+
+    def test_details_survive_both(self):
+        data = parse_qstat_j_xml(FX.text("qstat_j_xml_defects.xml"))
+        assert data["name"] == "a<b"
+        assert data["job_args"] == ["a<b", "x&y"]
+
+    def test_listing_and_details_through_the_scheduler(self, scheduler):
+        job_id = FX.job("xml_defects")
+        details = {job_id: "qstat_j_xml_defects.xml"}
+        with patch_seam(_with_snapshot("qstat_xml_defects.xml", details)):
+            [listed] = scheduler.list_active_jobs()
+            info, extra = scheduler.get_job_details(job_id)
+        assert (listed.job_id, listed.name, listed.status) == (job_id, "a<b", JobStatus.PENDING)
+        assert info.name == "a<b" and extra["job_args"] == ["a<b", "x&y"]
+
+    def test_hpc_status_shows_the_name(self, monkeypatch, tmp_path):
+        job_id = FX.job("xml_defects")
+        respond = _with_snapshot("qstat_xml_defects.xml", {job_id: "qstat_j_xml_defects.xml"})
+        assert "a<b" in _cli(["status", job_id], respond, monkeypatch, tmp_path)
+
+    def test_any_spaced_tag_name_is_repaired(self):
+        """Defect 1 is a class (unchecked CULL list names), not one tag."""
+        text = FX.text("qstat_j_running.xml").replace(
+            "<JB_job_name>", "<env list><x/></env list><JB_job_name>", 1
+        )
+        assert parse_qstat_j_xml(text)["name"] == "running"
+
+    def test_attributes_are_not_touched(self):
+        """``<job_list state="running">`` has a space and an ``=``: valid, left alone."""
+        assert parse_qstat_xml_states(FX.text("qstat_mixed.xml"))[FX.job("running")] == "r"
+
+    def test_unknown_defect_is_an_error_naming_the_line(self, scheduler, monkeypatch, capsys):
+        """Anything not repaired raises; ``hpc status`` prints it in one line."""
+        from hpc_runner.cli.main import main
+        from hpc_runner.core.exceptions import SchedulerOutputError
+
+        job_id = FX.job("running")
+        broken = FX.text("qstat_j_running.xml").replace(
+            "<JB_job_name>running", "<JB_job_name>a&b", 1
+        )
+
+        def respond(argv):
+            if argv[:2] == ["qstat", "-j"]:
+                return 0, broken, ""
+            return make_sge_responder(FX)(argv)
+
+        with patch_seam(respond), pytest.raises(SchedulerOutputError, match="JB_job_name"):
+            scheduler.get_job_details(job_id)
+        # Through main(), the console script, which turns HPCToolsError into
+        # one line on stderr and exit 1.
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        monkeypatch.setattr("sys.argv", ["hpc", "status", job_id])
+        with patch_seam(respond), pytest.raises(SystemExit) as exit_info:
+            main()
+        assert exit_info.value.code == 1
+        err = capsys.readouterr().err
+        assert err.startswith("error: qstat -j -xml output is not XML") and "a&b" in err

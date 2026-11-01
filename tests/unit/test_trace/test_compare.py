@@ -79,9 +79,14 @@ class TestCompareCleanTrace:
         assert report.uncovered == [] and report.covered is None
 
     def test_json_fixtures_are_records(self, sge_fixtures):
-        """The fixture root's own JSON files (master down) replay clean."""
+        """The fixture root's own JSON files (master down, deleted pending) replay clean."""
         report = compare(sge_fixtures.root)
-        assert [r.argv for r in report.records] == [["qstat", "-xml", "-u", "*"]]
+        expected = [
+            entry["argv"]
+            for name, entry in sge_fixtures.manifest["files"].items()
+            if name.endswith(".json") and name != "manifest.json"
+        ]
+        assert sorted(r.argv for r in report.records) == sorted(expected)
         assert report.findings == []
 
     def test_coverage_against_the_captured_fixtures(
@@ -138,7 +143,10 @@ class TestFindings:
     def test_qstat_broken_xml(self, sge_fixtures):
         rec = self._rec(["qstat", "-xml", "-u", "*"])
         rec.stdout = sge_fixtures.text("qstat_mixed.xml")[:-40]
-        assert check(rec) == ["qstat -xml lists jobs but none were parsed"]
+        [finding] = check(rec)
+        assert finding.startswith(
+            "parser raised SchedulerOutputError: qstat -xml output is not XML"
+        )
 
     def test_qstat_unrecognised_failure(self):
         rec = self._rec(["qstat", "-xml", "-u", "*"], returncode=1, stderr="error: disk on fire\n")
@@ -244,3 +252,11 @@ class TestCli:
             {"shape": "qdel <arg>", "calls": 1, "findings": 0, "fixture": None}
         ]
         assert data["findings"] == [] and data["uncovered"] == []
+
+
+def test_a_requeued_jobs_reschedule_record_is_not_a_finding(sge_fixtures):
+    """``failed 25`` is a record of a job that ran again, not an unparsed status."""
+    text = sge_fixtures.text("qacct_requeued.txt")
+    assert "rescheduling" in text
+    rec = Record(Path("t.json"), ["qacct", "-j", sge_fixtures.job("requeued")], 0, text, "")
+    assert check(rec) == []

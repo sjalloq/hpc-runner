@@ -439,6 +439,41 @@ the suite is green now and the fix flips the test to a hard pass.
   Completed tab (a placeholder; column H is n/a for finished jobs until the
   TUI rewrite), and the synthetic `failed 24` row (folded into the real
   requeue row).
+- **D-T46 three bugs found closing the matrix's reader gaps** (2026-11-01;
+  `docs/dev/test-review/GAP_PLAN.md` W1-W7). (1) gridengine 8.1.9 writes
+  the scheduler messages of `qstat -j -xml` under a tag with a space,
+  `<job ids>`, which is not XML. Not every message uses it: the wrapper
+  depends on which scheduler code path built the message, not on its
+  number, so any message can come with `<job ids>`, `<ulong_sublist>` or no
+  wrapper (`docs/dev/sge-xml-defects.md` §1). In the captures the `Rq`
+  job's messages had it and the hold message did not. A job with one
+  parsed to nothing, so `get_job_details` fell through to qacct and said
+  "not found". Only with `schedd_job_info true` (the testbed's setting). `_parse_xml_root` now repairs the tag (capture
+  `qstat_j_requeue_pending.xml`). (2) `hpc status <base>.<task>` of a
+  finished task built an array of one: the title "Array job" and a
+  one-row task table. It now returns the task's own record. (3) `hpc trace
+  compare` reported a requeue's `failed 24`/`25` record as an unparsed
+  status, and a master-down `qstat -j` (exit 0, a `comunication_error`
+  document, sic) as unparsed details; both would have been noise on a
+  real trace. Also found: with the qmaster down, qacct still answers (it
+  reads the accounting file), so a finished job's exit code, details and
+  history keep working; captured, not changed.
+- **D-T47 gridengine XML is repaired where the fix is certain, and an
+  error otherwise** (user, 2026-11-01; research in
+  `docs/dev/sge-xml-defects.md`). Every SGE XML parser now goes through
+  `_parse_xml_root`. Before parsing it (1) strips the characters XML 1.0
+  forbids, which gridengine passes through: with `inherit_env = true`, the
+  default, one exported value holding a raw ESC broke `qstat -j -xml` for
+  every job the user submitted; (2) replaces the spaces in any tag name
+  that has no `=`, the general form of `<job ids>` (gridengine writes CULL
+  list names unchecked); (3) rewrites gridengine 8.1.9's `%lt;` as `&lt;`,
+  for every flavour, not keyed on version as the note suggested: on OCS it
+  would only alter a value in which the user typed `%lt;`. Anything that
+  still does not parse raises `SchedulerOutputError` naming the line,
+  where before `qstat -xml` read as "no jobs" (so `wait()` would have seen
+  every running job vanish) and `qstat -j -xml` as "not found". Text with
+  no `<` at all (stderr) is still "nothing". Capture `xml_defects` pins
+  defects 2 and 3 against real output.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does

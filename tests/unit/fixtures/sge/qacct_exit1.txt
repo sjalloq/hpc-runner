@@ -6,26 +6,26 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      exit1               
-jobnumber    250                 
+jobnumber    547                 
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 19:37:08 2026
-start_time   Sun Nov  1 19:37:08 2026
-end_time     Sun Nov  1 19:37:08 2026
+qsub_time    Sun Nov  1 22:00:49 2026
+start_time   Sun Nov  1 22:00:49 2026
+end_time     Sun Nov  1 22:00:49 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  1                   
 ru_wallclock 0s
-ru_utime     0.042s
-ru_stime     0.024s
-ru_maxrss    8.309KB
+ru_utime     0.039s
+ru_stime     0.025s
+ru_maxrss    8.176KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    2482                
+ru_minflt    2480                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -33,9 +33,9 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     18                  
-ru_nivcsw    10                  
-cpu          0.066s
+ru_nvcsw     16                  
+ru_nivcsw    11                  
+cpu          0.064s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
