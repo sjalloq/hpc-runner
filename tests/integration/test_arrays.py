@@ -5,6 +5,8 @@ See docs/dev/testbed/TESTBED_PLAN.md section 5.
 
 from __future__ import annotations
 
+import time
+
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import ArrayJobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
@@ -39,6 +41,13 @@ def test_array_1_to_5(cluster: Cluster) -> None:
     assert cluster.scheduler().get_status(job_id) is JobStatus.FAILED
     assert cluster.scheduler().get_exit_code(job_id) == 1
     assert result.returncode == 1
+    # Status and exit code above may come from the exit sentinels before
+    # qmaster flushes accounting; details are read from accounting only, so
+    # wait for all five task records (CI 41356547233 lost this race).
+    deadline = time.monotonic() + 30
+    while cluster.run(["qacct", "-j", job_id], check=False).stdout.count("jobnumber") < 5:
+        assert time.monotonic() < deadline, f"qacct has not got the five records of {job_id}"
+        time.sleep(0.5)
     info, extra = cluster.scheduler().get_job_details(job_id)
     assert (info.status, info.exit_code) == (JobStatus.FAILED, 1)
     per_task = extra["tasks"]
