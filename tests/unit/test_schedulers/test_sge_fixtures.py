@@ -45,6 +45,18 @@ def test_manifest_names_every_scenario_and_file():
         "held",
         "eqw",
         "array",
+        "timeout",
+        "vmem",
+        "deleted_pending",
+        "suspended",
+        "queue_suspended",
+        "requeued",
+        "deleting",
+        "threshold",
+        "requeue_pending",
+        "deleting_transfer",
+        "skipped",
+        "dependent",
     }
     assert all(v.isdigit() for v in FX.jobs.values())
     for name, entry in FX.manifest["files"].items():
@@ -68,6 +80,7 @@ class TestQstatMixed:
         array = FX.job("array")
         assert states[FX.job("running")] == "r"
         assert states[FX.job("held")] == "hqw"
+        assert states[FX.job("dependent")] == "hqw"  # -hold_jid looks like a user hold
         assert states[FX.job("eqw")] == "Eqw"
         assert array not in states  # an array is known by its tasks only
         task_states = {k: v for k, v in states.items() if k.startswith(f"{array}.")}
@@ -104,7 +117,7 @@ class TestQstatMixed:
 
     def test_one_entry_per_id_running_array_wins(self):
         jobs = parse_qstat_xml(FX.text("qstat_mixed.xml"))
-        assert set(jobs) == {FX.job(s) for s in ("running", "held", "eqw", "array")}
+        assert set(jobs) == {FX.job(s) for s in ("running", "held", "dependent", "eqw", "array")}
         array = jobs[FX.job("array")]
         assert state_to_status(array["state"]) is JobStatus.RUNNING
         assert array["array_task_id"] == "1"
@@ -175,6 +188,11 @@ class TestQacct:
             ("qacct_signal.txt", JobStatus.FAILED, 137, 100),
             ("qacct_lost_node.txt", JobStatus.FAILED, 0, 19),
             ("qacct_array_task.txt", JobStatus.COMPLETED, 0, 0),
+            ("qacct_timeout.txt", JobStatus.TIMEOUT, 137, 37),
+            # h_vmem is a setrlimit here: the allocation fails inside the
+            # process, which exits by itself; no execd kill, failed 0.
+            ("qacct_vmem.txt", JobStatus.FAILED, 2, 0),
+            ("qacct_skipped.txt", JobStatus.SKIPPED, 113, 0),
         ],
     )
     def test_records(self, name, status, exit_code, failed):
@@ -202,6 +220,49 @@ class TestQacct:
         # feed it whole stdout (LIFECYCLE_MATRIX row 27).
         folded = parse_qacct_output(FX.text("qacct_array_base.txt"))
         assert folded["taskid"] == records[-1]["taskid"]
+
+    def test_unknown_id(self):
+        rc, stdout, stderr = FX.result("qacct_missing.txt")
+        assert rc == 1 and stdout == "" and "not found" in stderr
+
+    def test_completed_listing_places_a_lost_job_by_its_submit_time(self, monkeypatch, tmp_path):
+        """A ``failed 19`` record has no start or end time; it must not sort last."""
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        lost, ok = FX.text("qacct_lost_node.txt"), FX.text("qacct_ok.txt")
+        assert "end_time     -/-" in lost
+
+        def respond(argv):
+            assert argv == ["qacct", "-j", "-o", "tester"]
+            return 0, ok + lost, ""
+
+        with patch_seam(respond):
+            jobs = SGEScheduler(HPCConfig()).list_completed_jobs(user="tester", limit=1)
+        assert [j.job_id for j in jobs] == [FX.job("lost_node")]  # submitted after `ok`
+        assert jobs[0].end_time is None and jobs[0].submit_time is not None
+        assert (jobs[0].failed_code, jobs[0].status) == (19, JobStatus.FAILED)
+
+    def test_owner_listing(self):
+        """``qacct -j -o bob -b <since>``: bob's records, then the owner-summary block.
+
+        The block is a header, a rule and one row per owner. The header
+        follows the last record with no separator and lands in it as an
+        ``OWNER`` key, harmlessly; the row after the rule is a block of its
+        own with no ``jobnumber`` and must not come back as a job (BUG-T2).
+        """
+        text = FX.text("qacct_owner_bob.txt")
+        summary = text.rstrip().rsplit("\n", 1)[-1]
+        assert summary.startswith("bob "), summary  # the row BUG-T2 tripped on
+        records = parse_qacct_records(text)
+        assert records and all(r.get("owner") == "bob" for r in records)
+        assert all(r["jobnumber"].isdigit() for r in records)
+        assert "OWNER" in records[-1]
+        jobs = [qacct_to_job_info(r) for r in records]
+        assert all(j.job_id and j.status is not JobStatus.UNKNOWN for j in jobs)
+
+
+def test_responder_refuses_what_was_not_captured():
+    with pytest.raises(AssertionError, match="no captured answer"):
+        make_sge_responder(FX)(["qhost"])
 
 
 class TestFinishedArrayBaseId:
@@ -292,6 +353,10 @@ class TestFinishedJobDetails:
             ("exit1", JobStatus.FAILED, 1, 0),
             ("signal", JobStatus.FAILED, 137, 100),
             ("lost_node", JobStatus.FAILED, 0, 19),
+            ("timeout", JobStatus.TIMEOUT, 137, 37),
+            ("vmem", JobStatus.FAILED, 2, 0),
+            ("requeued", JobStatus.FAILED, 137, 100),
+            ("skipped", JobStatus.SKIPPED, 113, 0),
         ],
     )
     def test_details(self, monkeypatch, tmp_path, scenario, status, exit_code, failed):
@@ -302,45 +367,191 @@ class TestFinishedJobDetails:
         assert (info.status, info.exit_code, info.failed_code) == (status, exit_code, failed)
         assert info.job_id == FX.job(scenario) and info.array_task_id is None
 
-    def test_unknown_id(self):
-        rc, stdout, stderr = FX.result("qacct_missing.txt")
-        assert rc == 1 and stdout == "" and "not found" in stderr
 
-    def test_completed_listing_places_a_lost_job_by_its_submit_time(self, monkeypatch, tmp_path):
-        """A ``failed 19`` record has no start or end time; it must not sort last."""
+def _with_snapshot(name: str):
+    """The captured responder, but ``qstat -xml -u '*'`` answers with *name*."""
+    base = make_sge_responder(FX)
+
+    def respond(argv: list[str]) -> tuple[int, str, str]:
+        if argv == ["qstat", "-xml", "-u", "*"]:
+            return 0, FX.text(name), ""
+        return base(argv)
+
+    return respond
+
+
+class TestLifecycleStates:
+    """The states the lifecycle matrix had no capture for (rows 7-10, 15, 16, 18, 19).
+
+    Every active state the testbed can produce is in one of four snapshots:
+    ``qstat_mixed`` (``r``, ``hqw``, ``Eqw``; the array's ``t``/``qw`` are
+    TestQstatMixed's), ``qstat_lifecycle`` (``s``, ``S``, ``Rr``),
+    ``qstat_deleting`` (``dr``) and ``qstat_transient`` (``T``, ``Rq``,
+    ``dt``). ``SNAPSHOTS`` maps each to the status every reader must give;
+    ``hpc status`` (column G) and ``wait()`` (column J) are checked over all
+    of them.
+    """
+
+    SNAPSHOTS = {
+        "qstat_mixed.xml": {
+            "running": JobStatus.RUNNING,
+            "held": JobStatus.PENDING,
+            "dependent": JobStatus.PENDING,
+            "eqw": JobStatus.FAILED,
+        },
+        "qstat_lifecycle.xml": {
+            "suspended": JobStatus.SUSPENDED,
+            "queue_suspended": JobStatus.SUSPENDED,
+            "requeued": JobStatus.RUNNING,
+        },
+        "qstat_deleting.xml": {
+            "deleting": JobStatus.CANCELLED,
+            "suspended": JobStatus.SUSPENDED,
+        },
+        "qstat_transient.xml": {
+            "threshold": JobStatus.SUSPENDED,
+            "requeue_pending": JobStatus.PENDING,
+            "deleting_transfer": JobStatus.CANCELLED,
+        },
+    }
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
-        lost, ok = FX.text("qacct_lost_node.txt"), FX.text("qacct_ok.txt")
-        assert "end_time     -/-" in lost
+        return SGEScheduler(HPCConfig())
 
-        def respond(argv):
-            assert argv == ["qacct", "-j", "-o", "tester"]
-            return 0, ok + lost, ""
+    def test_suspended_and_requeued_snapshot(self, scheduler):
+        susp, qsusp, requeued = (FX.job(s) for s in ("suspended", "queue_suspended", "requeued"))
+        states = parse_qstat_xml_states(FX.text("qstat_lifecycle.xml"))
+        assert (states[susp], states[qsusp], states[requeued]) == ("s", "S", "Rr")
+        with patch_seam(_with_snapshot("qstat_lifecycle.xml")):
+            statuses = scheduler.get_statuses([susp, qsusp, requeued])
+            listed = {j.job_id: j for j in scheduler.list_active_jobs()}
+        assert statuses == {
+            susp: JobStatus.SUSPENDED,
+            qsusp: JobStatus.SUSPENDED,
+            requeued: JobStatus.RUNNING,
+        }
+        assert listed[susp].status is JobStatus.SUSPENDED and listed[susp].is_active
+        assert listed[qsusp].node == "exec2" and listed[requeued].node == "exec1"
 
-        with patch_seam(respond):
-            jobs = SGEScheduler(HPCConfig()).list_completed_jobs(user="tester", limit=1)
-        assert [j.job_id for j in jobs] == [FX.job("lost_node")]  # submitted after `ok`
-        assert jobs[0].end_time is None and jobs[0].submit_time is not None
-        assert (jobs[0].failed_code, jobs[0].status) == (19, JobStatus.FAILED)
+    def test_plain_listing_of_the_lifecycle_snapshot(self):
+        plain = parse_qstat_plain(FX.text("qstat_lifecycle.txt"))
+        assert plain[FX.job("suspended")]["state"] == "s"
+        assert plain[FX.job("queue_suspended")]["state"] == "S"
+        assert plain[FX.job("requeued")]["state"] == "Rr"
 
-    def test_owner_listing(self):
-        """``qacct -j -o bob -b <since>``: bob's records, then the owner-summary block.
+    def test_deleting_is_cancelled_until_it_leaves_qstat(self, scheduler):
+        deleting = FX.job("deleting")
+        assert parse_qstat_xml_states(FX.text("qstat_deleting.xml"))[deleting] == "dr"
+        with patch_seam(_with_snapshot("qstat_deleting.xml")):
+            assert scheduler.get_status(deleting) is JobStatus.CANCELLED
+            assert scheduler.get_status(FX.job("suspended")) is JobStatus.SUSPENDED
 
-        The block is a header, a rule and one row per owner. The header
-        follows the last record with no separator and lands in it as an
-        ``OWNER`` key, harmlessly; the row after the rule is a block of its
-        own with no ``jobnumber`` and must not come back as a job (BUG-T2).
-        """
-        text = FX.text("qacct_owner_bob.txt")
-        summary = text.rstrip().rsplit("\n", 1)[-1]
-        assert summary.startswith("bob "), summary  # the row BUG-T2 tripped on
-        records = parse_qacct_records(text)
-        assert records and all(r.get("owner") == "bob" for r in records)
-        assert all(r["jobnumber"].isdigit() for r in records)
-        assert "OWNER" in records[-1]
-        jobs = [qacct_to_job_info(r) for r in records]
-        assert all(j.job_id and j.status is not JobStatus.UNKNOWN for j in jobs)
+    def test_qdel_answers_are_both_success(self, scheduler):
+        """``qdel`` of a job its execd cannot reach only registers the deletion."""
+        assert "registered the job" in FX.text("qdel_deleting.txt")
+        assert "has deleted job" in FX.text("qdel_pending.txt")
+        with patch_seam(make_sge_responder(FX)):
+            assert scheduler.cancel(FX.job("deleting")) is True
+            assert scheduler.cancel(FX.job("deleted_pending")) is True
 
+    def test_deleted_while_pending_leaves_no_record(self, scheduler):
+        """Accepted (matrix §4.2): no qacct record, no sentinel, so UNKNOWN."""
+        rc, stdout, stderr = FX.result("qacct_deleted_pending.txt")
+        assert rc == 1 and stdout == "" and "not found" in stderr
+        job_id = FX.job("deleted_pending")
+        with patch_seam(make_sge_responder(FX)):
+            assert scheduler.get_status(job_id) is JobStatus.UNKNOWN
+            assert scheduler.get_exit_code(job_id) is None
+            with pytest.raises(JobNotFoundError):
+                scheduler.get_job_details(job_id)
 
-def test_responder_refuses_what_was_not_captured():
-    with pytest.raises(AssertionError, match="no captured answer"):
-        make_sge_responder(FX)(["qhost"])
+    def test_requeued_job_reads_its_final_record(self, scheduler):
+        records = parse_qacct_records(FX.text("qacct_requeued.txt"))
+        assert [_leading_int(r["failed"]) for r in records] == [25, 100]
+        assert records[0]["failed"].endswith("rescheduling")
+        job_id = FX.job("requeued")
+        with patch_seam(make_sge_responder(FX)):
+            assert scheduler.get_status(job_id) is JobStatus.FAILED
+            assert scheduler.get_exit_code(job_id) == 137
+
+    def test_transient_snapshot(self, scheduler):
+        threshold, rq, dt = (
+            FX.job(s) for s in ("threshold", "requeue_pending", "deleting_transfer")
+        )
+        states = parse_qstat_xml_states(FX.text("qstat_transient.xml"))
+        assert (states[threshold], states[rq], states[dt]) == ("T", "Rq", "dt")
+        plain = parse_qstat_plain(FX.text("qstat_transient.txt"))
+        assert [plain[j]["state"] for j in (threshold, rq, dt)] == ["T", "Rq", "dt"]
+        with patch_seam(_with_snapshot("qstat_transient.xml")):
+            listed = {j.job_id: j for j in scheduler.list_active_jobs()}
+        assert listed[threshold].queue == "short.q" and listed[threshold].node == "exec1"
+        assert listed[rq].node is None and listed[dt].node == "exec2"
+
+    @pytest.mark.parametrize("snapshot", sorted(SNAPSHOTS))
+    def test_every_reader_agrees(self, scheduler, snapshot):
+        expected = {FX.job(s): st for s, st in self.SNAPSHOTS[snapshot].items()}
+        with patch_seam(_with_snapshot(snapshot)):
+            batched = scheduler.get_statuses(list(expected))
+            single = {j: scheduler.get_status(j) for j in expected}
+            listed = {j.job_id: j.status for j in scheduler.list_active_jobs()}
+        assert batched == expected and single == expected
+        assert {j: listed[j] for j in expected} == expected
+
+    @pytest.mark.parametrize("snapshot", sorted(SNAPSHOTS))
+    def test_hpc_status_table(self, monkeypatch, snapshot):
+        """Column G: the active table (``--json`` for the exact field, then the table)."""
+        import json
+
+        from click.testing import CliRunner
+
+        from hpc_runner.cli.main import cli
+
+        expected = {FX.job(s): st.name for s, st in self.SNAPSHOTS[snapshot].items()}
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        with patch_seam(_with_snapshot(snapshot)):
+            as_json = CliRunner().invoke(cli, ["status", "--all", "--json"])
+            table = CliRunner().invoke(cli, ["status", "--all"])
+        assert as_json.exit_code == 0, as_json.output
+        rows = {r["job_id"]: r["status"] for r in json.loads(as_json.output)}
+        assert {j: rows[j] for j in expected} == expected
+        assert table.exit_code == 0, table.output
+        for job_id, status in expected.items():
+            line = next(ln for ln in table.output.splitlines() if f" {job_id} " in ln)
+            assert status in line, line
+
+    @pytest.mark.parametrize(
+        ("snapshot", "scenario"),
+        [("qstat_lifecycle.xml", "suspended"), ("qstat_transient.xml", "threshold")],
+    )
+    def test_hpc_status_of_one_suspended_job(self, monkeypatch, snapshot, scenario):
+        """Column G, ``hpc status <id>``: ``qstat -j`` details, the state from the listing."""
+        from click.testing import CliRunner
+
+        from hpc_runner.cli.main import cli
+
+        job_id = FX.job(scenario)
+        assert parse_qstat_j_xml(FX.text(f"qstat_j_{scenario}.xml"))["name"] == scenario
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        with patch_seam(_with_snapshot(snapshot)):
+            result = CliRunner().invoke(cli, ["status", job_id])
+        assert result.exit_code == 0, result.output
+        assert "SUSPENDED" in result.output and scenario in result.output
+
+    @pytest.mark.parametrize("snapshot", sorted(SNAPSHOTS))
+    def test_wait_holds_on_active_states_and_ends_on_terminal(self, scheduler, snapshot):
+        """Column J: ``wait()`` polls on through every active state; Eqw, dr and dt end it."""
+        with patch_seam(_with_snapshot(snapshot)):
+            for scenario, status in self.SNAPSHOTS[snapshot].items():
+                handle = scheduler.result(FX.job(scenario))
+                if status.is_terminal:
+                    assert handle.wait(poll_interval=0.01, timeout=1) is status
+                else:
+                    with pytest.raises(TimeoutError):
+                        handle.wait(poll_interval=0.01, timeout=0.05)
+
+    def test_timeout_record_carries_sges_reason(self):
+        info = qacct_to_job_info(parse_qacct_output(FX.text("qacct_timeout.txt")))
+        assert info.failed_reason == "qmaster enforced h_rt, h_cpu, or h_vmem limit"
+        assert info.queue == "short.q"

@@ -126,6 +126,10 @@ class SGEFixtures:
             self.job("signal"): "qacct_signal.txt",
             self.job("lost_node"): "qacct_lost_node.txt",
             self.job("array_done"): "qacct_array_base.txt",
+            self.job("timeout"): "qacct_timeout.txt",
+            self.job("vmem"): "qacct_vmem.txt",
+            self.job("requeued"): "qacct_requeued.txt",
+            self.job("skipped"): "qacct_skipped.txt",
         }
         if task is not None:
             if job_id == self.job("array_done") and task == "2":
@@ -167,6 +171,10 @@ def make_sge_responder(fixtures: SGEFixtures) -> Responder:
             if args[:1] == ["-j"]:
                 if args[1] == fixtures.job("running"):
                     return 0, fixtures.text("qstat_j_running.xml"), ""
+                if args[1] == fixtures.job("suspended"):
+                    return 0, fixtures.text("qstat_j_suspended.xml"), ""
+                if args[1] == fixtures.job("threshold"):
+                    return 0, fixtures.text("qstat_j_threshold.xml"), ""
                 return fixtures.result("qstat_j_missing.txt")
             if "-xml" in args:
                 return 0, fixtures.text("qstat_mixed.xml"), ""
@@ -182,6 +190,8 @@ def make_sge_responder(fixtures: SGEFixtures) -> Responder:
                     for n in ("qacct_ok.txt", "qacct_exit1.txt", "qacct_signal.txt")
                 )
                 return 0, "".join(records), ""
+            if args == ["-j", fixtures.job("deleted_pending")]:
+                return fixtures.result("qacct_deleted_pending.txt")
             task = args[args.index("-t") + 1] if "-t" in args else None
             record = fixtures.qacct_record(args[1], task)
             if record is None:
@@ -189,6 +199,10 @@ def make_sge_responder(fixtures: SGEFixtures) -> Responder:
                 return rc, out, err.replace("999999", args[1])
             return 0, record, ""
         if cmd == "qdel":
+            if args[-1] == fixtures.job("deleting"):
+                return 0, fixtures.text("qdel_deleting.txt"), ""
+            if args[-1] == fixtures.job("deleted_pending"):
+                return 0, fixtures.text("qdel_pending.txt"), ""
             if args[-1] in fixtures.jobs.values():
                 return 0, fixtures.text("qdel.txt"), ""
             return 1, "", f'denied: job "{args[-1]}" does not exist\n'

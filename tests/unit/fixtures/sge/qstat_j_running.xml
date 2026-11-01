@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>11</JB_job_number>
+      <JB_job_number>267</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/11</JB_exec_file>
-      <JB_submission_time>1793548039</JB_submission_time>
+      <JB_exec_file>job_scripts/267</JB_exec_file>
+      <JB_submission_time>1793561925</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -60,10 +60,41 @@
         <ulong_sublist>
           <JAT_status>128</JAT_status>
           <JAT_task_number>1</JAT_task_number>
-          <JAT_start_time>1793548039</JAT_start_time>
+          <JAT_scaled_usage_list>
+            <scaled>
+              <UA_name>cpu</UA_name>
+              <UA_value>0.020000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>mem</UA_name>
+              <UA_value>0.000014</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>io</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>iow</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>vmem</UA_name>
+              <UA_value>1601536.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>maxvmem</UA_name>
+              <UA_value>1601536.000000</UA_value>
+            </scaled>
+          </JAT_scaled_usage_list>
+          <JAT_start_time>1793561925</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
       </JB_ja_tasks>
+      <JB_jid_successor_list>
+        <ulong_sublist>
+          <JRE_job_number>269</JRE_job_number>
+        </ulong_sublist>
+      </JB_jid_successor_list>
       <JB_deadline>0</JB_deadline>
       <JB_execution_time>0</JB_execution_time>
       <JB_checkpoint_attr>0</JB_checkpoint_attr>
@@ -107,11 +138,7 @@
       <SME_global_message_list>
         <element>
           <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;all.q@exec1&quot; dropped because it is full</MES_message>
-        </element>
-        <element>
-          <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;short.q@exec1&quot; dropped because it is full</MES_message>
+          <MES_message>queue instance &quot;all.q@exec2&quot; dropped because it is full</MES_message>
         </element>
         <element>
           <MES_message_number>37</MES_message_number>
@@ -119,7 +146,11 @@
         </element>
         <element>
           <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;all.q@exec2&quot; dropped because it is full</MES_message>
+          <MES_message>queue instance &quot;short.q@exec1&quot; dropped because it is full</MES_message>
+        </element>
+        <element>
+          <MES_message_number>37</MES_message_number>
+          <MES_message>queue instance &quot;all.q@exec1&quot; dropped because it is full</MES_message>
         </element>
       </SME_global_message_list>
     </element>

@@ -1,31 +1,31 @@
 ==============================================================
-qname        all.q               
+qname        short.q             
 hostname     exec1               
 group        tester              
 owner        tester              
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    4                   
-taskid       2                   
+jobnumber    251                 
+taskid       1                   
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 15:47:07 2026
-start_time   Sun Nov  1 15:47:08 2026
-end_time     Sun Nov  1 15:47:08 2026
+qsub_time    Sun Nov  1 19:37:08 2026
+start_time   Sun Nov  1 19:37:08 2026
+end_time     Sun Nov  1 19:37:08 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.008s
-ru_stime     0.009s
-ru_maxrss    4.559KB
+ru_utime     0.003s
+ru_stime     0.015s
+ru_maxrss    6.379KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    268                 
+ru_minflt    266                 
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -34,8 +34,8 @@ ru_msgsnd    0
 ru_msgrcv    0                   
 ru_nsignals  0                   
 ru_nvcsw     1                   
-ru_nivcsw    3                   
-cpu          0.017s
+ru_nivcsw    2                   
+cpu          0.018s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
@@ -51,26 +51,26 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    4                   
-taskid       3                   
+jobnumber    251                 
+taskid       2                   
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 15:47:07 2026
-start_time   Sun Nov  1 15:47:08 2026
-end_time     Sun Nov  1 15:47:08 2026
+qsub_time    Sun Nov  1 19:37:08 2026
+start_time   Sun Nov  1 19:37:08 2026
+end_time     Sun Nov  1 19:37:08 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
-exit_status  1                   
+exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.004s
-ru_stime     0.013s
-ru_maxrss    4.656KB
+ru_utime     0.007s
+ru_stime     0.011s
+ru_maxrss    8.402KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    269                 
+ru_minflt    270                 
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -90,32 +90,32 @@ ar_sub_time  undefined
 category     NONE
 ==============================================================
 qname        all.q               
-hostname     exec2               
+hostname     exec1               
 group        tester              
 owner        tester              
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    4                   
-taskid       1                   
+jobnumber    251                 
+taskid       3                   
 account      sge                 
 priority     0                   
-qsub_time    Sun Nov  1 15:47:07 2026
-start_time   Sun Nov  1 15:47:08 2026
-end_time     Sun Nov  1 15:47:08 2026
+qsub_time    Sun Nov  1 19:37:08 2026
+start_time   Sun Nov  1 19:37:09 2026
+end_time     Sun Nov  1 19:37:09 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
-exit_status  0                   
+exit_status  1                   
 ru_wallclock 0s
-ru_utime     0.003s
-ru_stime     0.013s
-ru_maxrss    4.617KB
+ru_utime     0.004s
+ru_stime     0.012s
+ru_maxrss    8.293KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    268                 
+ru_minflt    265                 
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -123,9 +123,9 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     1                   
+ru_nvcsw     2                   
 ru_nivcsw    1                   
-cpu          0.017s
+cpu          0.016s
 mem          0.000Bs
 io           0.000B
 iow          0.000s

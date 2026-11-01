@@ -1,0 +1,45 @@
+==============================================================
+qname        short.q             
+hostname     exec1               
+group        tester              
+owner        tester              
+project      NONE                
+department   defaultdepartment   
+jobname      skipped             
+jobnumber    253                 
+taskid       undefined
+account      sge                 
+priority     0                   
+qsub_time    Sun Nov  1 19:37:08 2026
+start_time   Sun Nov  1 19:37:09 2026
+end_time     Sun Nov  1 19:37:09 2026
+granted_pe   NONE                
+slots        1                   
+failed       0    
+exit_status  113                 
+ru_wallclock 0s
+ru_utime     0.007s
+ru_stime     0.010s
+ru_maxrss    8.223KB
+ru_ixrss     0.000B
+ru_ismrss    0.000B
+ru_idrss     0.000B
+ru_isrss     0.000B
+ru_minflt    264                 
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   8                   
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     6                   
+ru_nivcsw    2                   
+cpu          0.017s
+mem          0.000Bs
+io           0.000B
+iow          0.000s
+maxvmem      0.000B
+arid         undefined
+ar_sub_time  undefined
+category     NONE

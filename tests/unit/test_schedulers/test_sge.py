@@ -281,13 +281,13 @@ class TestSGEScheduler:
         assert "#$ -l h_vmem=1G" in script  # requested as given (memory_per = "job")
 
     def test_list_active_jobs(self, mock_sge_commands, sge_fixtures):
-        """One entry per job id from the mixed snapshot: r, hqw, Eqw and a 10-task array."""
+        """One entry per job id from the mixed snapshot: r, two hqw, Eqw and a 10-task array."""
         scheduler = SGEScheduler(HPCConfig())
         jobs = {j.job_id: j for j in scheduler.list_active_jobs()}
         argv = mock_sge_commands.call_args[0][0]
         assert argv == ["qstat", "-xml", "-u", "*"]
 
-        ids = {sge_fixtures.job(s) for s in ("running", "held", "eqw", "array")}
+        ids = {sge_fixtures.job(s) for s in ("running", "held", "dependent", "eqw", "array")}
         assert set(jobs) == ids
 
         running = jobs[sge_fixtures.job("running")]
@@ -317,7 +317,7 @@ class TestSGEScheduler:
         running = {j.job_id for j in scheduler.list_active_jobs(status={JobStatus.RUNNING})}
         assert running == {sge_fixtures.job("running"), sge_fixtures.job("array")}
         pending = {j.job_id for j in scheduler.list_active_jobs(status={JobStatus.PENDING})}
-        assert pending == {sge_fixtures.job("held")}
+        assert pending == {sge_fixtures.job("held"), sge_fixtures.job("dependent")}
         failed = {j.job_id for j in scheduler.list_active_jobs(status={JobStatus.FAILED})}
         assert failed == {sge_fixtures.job("eqw")}
 

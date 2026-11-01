@@ -270,3 +270,68 @@ class TestJobTable:
             assert len(displayed_name) < len(long_name)
             # Should end with ellipsis
             assert displayed_name.endswith("…")
+
+
+class TestJobTableFromCapturedSnapshots:
+    """The table over ``list_active_jobs`` of real testbed snapshots (matrix rows 1-10)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("snapshot", "expected"),
+        [
+            (
+                "qstat_mixed.xml",
+                {
+                    "running": "RUNNING",
+                    "held": "PENDING",
+                    "dependent": "PENDING",
+                    "eqw": "FAILED",
+                    "array": "RUNNING",
+                },
+            ),
+            (
+                "qstat_lifecycle.xml",
+                {"suspended": "SUSPEND", "queue_suspended": "SUSPEND", "requeued": "RUNNING"},
+            ),
+            ("qstat_deleting.xml", {"deleting": "CANCEL", "suspended": "SUSPEND"}),
+            (
+                "qstat_transient.xml",
+                {
+                    "threshold": "SUSPEND",
+                    "requeue_pending": "PENDING",
+                    "deleting_transfer": "CANCEL",
+                },
+            ),
+        ],
+    )
+    async def test_status_column(self, monkeypatch, tmp_path, snapshot, expected):
+        from textual.app import App, ComposeResult
+
+        from hpc_runner.core.config import HPCConfig
+        from hpc_runner.schedulers.sge import SGEScheduler
+        from tests.fakes import SGEFixtures, patch_seam
+
+        fx = SGEFixtures()
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+
+        def respond(argv):
+            assert argv == ["qstat", "-xml", "-u", "*"], argv
+            return 0, fx.text(snapshot), ""
+
+        with patch_seam(respond):
+            jobs = SGEScheduler(HPCConfig()).list_active_jobs()
+
+        class TestApp(App):
+            def compose(self) -> ComposeResult:
+                yield JobTable(id="jobs")
+
+        async with TestApp().run_test() as pilot:
+            table = pilot.app.query_one(JobTable)
+            table.update_jobs(jobs)
+            status_col = 4
+            shown = {
+                str(table.get_row_at(i)[0]): str(table.get_row_at(i)[status_col])
+                for i in range(table.row_count)
+            }
+        for scenario, label in expected.items():
+            assert shown[fx.job(scenario)] == label, (scenario, shown)

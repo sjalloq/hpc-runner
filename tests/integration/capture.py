@@ -17,12 +17,31 @@ texts do not depend on hpc-runner's own rendering:
 * ``signal``: a running job deleted with ``qdel`` (``exit_status 137 (Killed)``,
   ``failed 100``; also ``qdel``'s stdout).
 * ``lost_node``: a job whose node is killed (``failed 19``, ``exit_status 0``).
+* ``skipped``: a job that exits 113, the dependency guard's skip code.
 * ``bob``: a job of another user (``qacct -j -o bob -b <since>``, with the
   trailing owner summary header, rule and row, BUG-T2).
-* ``running``, ``held``, ``eqw``, ``array``: alive together for one
-  ``qstat -xml -u '*'`` (and plain ``qstat``) snapshot: ``r``, ``hqw``,
-  ``Eqw`` and an array with running and queued tasks; ``qstat -j -xml`` of
-  the running one.
+* ``timeout``: a ``short.q`` job (``h_rt`` one minute) killed by qmaster
+  (``failed 37``, ``exit_status 137``). Submitted first, collected last.
+* ``vmem``: a 200 MB allocation under ``-l h_vmem=50M``; the limit is a
+  setrlimit, so the process fails by itself (``failed 0``, non-zero exit).
+* ``deleted_pending``: a held job deleted with ``qdel`` before it ran: no
+  accounting record ever (``qacct`` "not found", JSON).
+* ``suspended``, ``queue_suspended``, ``requeued``: alive together for one
+  snapshot (``qstat_lifecycle.xml``/``.txt``, ``qstat_j_suspended.xml``): ``qmod -sj`` (``s``), its
+  queue instance suspended with ``qmod -sq`` (``S``), and a ``-r y`` job
+  rescheduled with ``qmod -rj`` running again (``Rr``). The requeued job's
+  ``qacct -j`` after ``qdel`` has two records, ``failed 25`` then its end.
+* ``deleting``: the ``queue_suspended`` job deleted while its node is
+  paused, so qstat holds it in ``dr`` (``qstat_deleting.xml``, and
+  ``qdel``'s "registered for deletion" stdout).
+* ``threshold``, ``requeue_pending``, ``deleting_transfer``: alive together
+  for one snapshot (``qstat_transient.xml``/``.txt``, ``qstat_j_threshold.xml``): a queue suspend
+  threshold (``T``), a rescheduled job hard-pinned to its host (``Rq``) and
+  a job deleted while it cannot be delivered (``dt``).
+* ``running``, ``held``, ``dependent``, ``eqw``, ``array``: alive together
+  for one ``qstat -xml -u '*'`` (and plain ``qstat``) snapshot: ``r``,
+  ``hqw`` (user hold and ``-hold_jid`` on the running job), ``Eqw`` and an
+  array with running and queued tasks; ``qstat -j -xml`` of the running one.
 * ``master_down``: ``qstat -xml -u '*'`` with the qmaster stopped (exit
   status, stdout, stderr as JSON).
 
@@ -107,6 +126,14 @@ class Capture:
                 states.setdefault(parts[0], parts[4])
         return states
 
+    def queue_of(self, job_id: str) -> str | None:
+        """The queue instance a running job is in, from plain ``qstat``."""
+        for line in self.cluster.run(["qstat", "-u", "*"]).stdout.splitlines()[2:]:
+            parts = line.split()
+            if len(parts) >= 8 and parts[0] == job_id:
+                return parts[7]
+        return None
+
     def wait_state(self, job_id: str, want: set[str], timeout: float = STATE_WAIT) -> str:
         deadline = time.monotonic() + timeout
         while True:
@@ -144,6 +171,9 @@ class Capture:
         # Non-zero wallclock, so `qacct -o bob` ends with bob's summary row
         # (BUG-T2); an owner whose jobs all ran in 0s gets the header and rule only.
         bob = self.qsub("bob", "sleep", "2", user="bob")
+        # The guard's skip code (core/job.py SKIP_EXIT_CODE); a script, since
+        # `-b y sh -c "exit 113"` loses the quoting.
+        skipped = self.qsub_script("skipped", "exit 113\n")
         # Submitted as scripts, the way hpc-runner submits (`qsub <script>`), so
         # the recorded argv has the shape `hpc trace compare` sees in a trace.
         plain_script = self.script("qsubtxt.sh", "")
@@ -170,6 +200,12 @@ class Capture:
             self.qacct(array, records=3),
             "qacct -j <id> of a finished three-task array: one record per task, task 3 exited 1",
             ["qacct", "-j", array],
+        )
+        self.save(
+            "qacct_skipped.txt",
+            self.qacct(skipped),
+            "qacct -j of a job that exited 113 (the dependency guard's skip code)",
+            ["qacct", "-j", skipped],
         )
         self.qacct(bob)
         # With -b, as `hpc status --history` asks (list_completed_jobs).
@@ -206,9 +242,182 @@ class Capture:
             ["qacct", "-j", job_id],
         )
 
+    def timeout_submit(self) -> str:
+        """The ``h_rt`` job; qmaster kills it a minute after it starts.
+
+        Pinned to exec2 and collected before ``lost_node`` (kills exec1) and
+        ``lifecycle`` (pauses exec2), so nothing but the limit ends it.
+        """
+        return self.qsub("timeout", "-q", "short.q", "-l", "hostname=exec2", "sleep", "120")
+
+    def timeout_collect(self, job_id: str) -> None:
+        self.save(
+            "qacct_timeout.txt",
+            self.qacct(job_id, timeout=180),
+            "qacct -j of a short.q job killed at h_rt (failed 37, exit_status 137)",
+            ["qacct", "-j", job_id],
+        )
+
+    def vmem(self) -> None:
+        job_id = self.qsub(
+            "vmem", "-l", "h_vmem=50M", "python3", "-c", "b = bytearray(200 * 1024 * 1024)"
+        )
+        self.save(
+            "qacct_vmem.txt",
+            self.qacct(job_id),
+            "qacct -j of a 200 MB allocation under h_vmem=50M (failed 0, non-zero exit)",
+            ["qacct", "-j", job_id],
+        )
+
+    def deleted_pending(self) -> None:
+        job_id = self.qsub("deleted_pending", "-h", "sleep", "600")
+        self.wait_state(job_id, {"hqw"})
+        self.capture("qdel_pending.txt", ["qdel", job_id], "qdel stdout for a job that never ran")
+        self.wait_gone(job_id)
+        # qmaster flushes accounting within a second on this stack (the other
+        # scenarios' records appear in under one); wait well past that so
+        # "not found" means no record, not "not yet".
+        time.sleep(5)
+        self.capture(
+            "qacct_deleted_pending.txt",
+            ["qacct", "-j", job_id],
+            "qacct -j of a job deleted while pending: no record is ever written (JSON)",
+            as_json=True,
+        )
+
+    def lifecycle(self) -> None:
+        """Suspended, queue-suspended, requeued, then deleting (``dr``)."""
+        susp = self.qsub("suspended", "-l", "hostname=exec1", "sleep", "600")
+        qsusp = self.qsub("queue_suspended", "-l", "hostname=exec2", "-q", "all.q", "sleep", "600")
+        # Starts on exec2 (soft request) and must be free to come back on exec1:
+        # SGE will not rerun a rescheduled job on a host until that host has
+        # cleaned up its previous run, so a hard pin leaves it in Rq.
+        requeued = self.qsub(
+            "requeued", "-soft", "-l", "hostname=exec2", "-hard", "-r", "y", "sleep", "600"
+        )
+        for job_id in (susp, qsusp, requeued):
+            self.wait_state(job_id, {"r"})
+        assert self.queue_of(requeued) == "all.q@exec2", self.queue_of(requeued)
+        self.cluster.run(["qmod", "-rj", requeued], user="root")
+        self.wait_state(requeued, {"Rr"})
+        assert self.queue_of(requeued) == "all.q@exec1", self.queue_of(requeued)
+        self.cluster.run(["qmod", "-sj", susp])
+        self.cluster.run(["qmod", "-sq", "all.q@exec2"], user="root")
+        try:
+            self.wait_state(susp, {"s"})
+            self.wait_state(qsusp, {"S"})
+            self.capture(
+                "qstat_lifecycle.xml",
+                ["qstat", "-xml", "-u", "*"],
+                "qstat -xml -u '*': user-suspended (s), queue-suspended (S), requeued (Rr)",
+            )
+            self.capture(
+                "qstat_lifecycle.txt", ["qstat", "-u", "*"], "plain qstat -u '*' of the same moment"
+            )
+            self.capture(
+                "qstat_j_suspended.xml",
+                ["qstat", "-j", susp, "-xml"],
+                "qstat -j -xml of the user-suspended job",
+            )
+        finally:
+            self.cluster.run(["qmod", "-usq", "all.q@exec2"], user="root")
+        self.wait_state(qsusp, {"r"})
+
+        # A paused execd cannot confirm the kill, so qstat holds the job in dr.
+        self.cluster.run(["sudo", "docker", "pause", "exec2"])
+        try:
+            self.capture("qdel_deleting.txt", ["qdel", qsusp], "qdel stdout when execd is away")
+            self.jobs["deleting"] = qsusp
+            self.wait_state(qsusp, {"dr"})
+            self.capture(
+                "qstat_deleting.xml",
+                ["qstat", "-xml", "-u", "*"],
+                "qstat -xml -u '*' with a deleted job still in dr (its node paused)",
+            )
+        finally:
+            self.cluster.run(["sudo", "docker", "unpause", "exec2"])
+        self.wait_gone(qsusp)
+
+        self.cluster.run(["qdel", requeued, susp])
+        self.wait_gone(requeued)
+        self.save(
+            "qacct_requeued.txt",
+            self.qacct(requeued, records=2),
+            "qacct -j of a rescheduled job: failed 25 (rescheduling), then its end (qdel)",
+            ["qacct", "-j", requeued],
+        )
+        self.wait_gone(susp)
+
+    def transient_states(self) -> None:
+        """``T``, ``Rq`` and ``dt`` alive together for one snapshot.
+
+        * ``T``: a ``short.q@exec1`` job, then that queue instance gets
+          ``suspend_thresholds np_load_avg=0.0`` (``np_load_avg`` compares
+          with ``>=``, so it always trips). Set after the job starts: a queue
+          in suspend alarm dispatches nothing.
+        * ``Rq``: a ``-r y`` job hard-pinned to exec1, rescheduled with
+          ``qmod -rj``. SGE will not rerun it on exec1 until exec1 has
+          cleaned up the previous run, so it stays ``Rq``.
+        * ``dt``: a held job pinned to exec2; exec2 is paused, the hold is
+          released, the job is dispatched but cannot be delivered (``t``),
+          then deleted (``dt``).
+        """
+        threshold = self.qsub("threshold", "-q", "short.q", "-l", "hostname=exec1", "sleep", "600")
+        requeue = self.qsub(
+            "requeue_pending", "-q", "all.q", "-l", "hostname=exec1", "-r", "y", "sleep", "600"
+        )
+        transfer = self.qsub(
+            "deleting_transfer", "-h", "-q", "all.q", "-l", "hostname=exec2", "sleep", "600"
+        )
+        for job_id in (threshold, requeue):
+            self.wait_state(job_id, {"r"})
+        self.wait_state(transfer, {"hqw"})
+        self.cluster.run(["qmod", "-rj", requeue], user="root")
+        self.wait_state(requeue, {"Rq"})
+        self.cluster.run(
+            ["qconf", "-mattr", "queue", "suspend_thresholds", "np_load_avg=0.0", "short.q@exec1"],
+            user="root",
+        )
+        try:
+            self.wait_state(threshold, {"T"})
+            self.cluster.run(["sudo", "docker", "pause", "exec2"])
+            try:
+                self.cluster.run(["qrls", transfer])
+                self.wait_state(transfer, {"t"})
+                self.cluster.run(["qdel", transfer])
+                self.wait_state(transfer, {"dt"})
+                states = self.qstat_states()
+                assert states.get(requeue) == "Rq" and states.get(threshold) == "T", states
+                self.capture(
+                    "qstat_transient.xml",
+                    ["qstat", "-xml", "-u", "*"],
+                    "qstat -xml -u '*': threshold-suspended (T), requeued waiting (Rq), "
+                    "deleted while transferring (dt)",
+                )
+                self.capture(
+                    "qstat_transient.txt",
+                    ["qstat", "-u", "*"],
+                    "plain qstat -u '*' of the same moment",
+                )
+                self.capture(
+                    "qstat_j_threshold.xml",
+                    ["qstat", "-j", threshold, "-xml"],
+                    "qstat -j -xml of the threshold-suspended job",
+                )
+            finally:
+                self.cluster.run(["sudo", "docker", "unpause", "exec2"])
+        finally:
+            self.cluster.run(
+                ["qconf", "-purge", "queue", "suspend_thresholds", "short.q@exec1"], user="root"
+            )
+        self.cluster.run(["qdel", threshold, requeue], check=False)
+        for job_id in (threshold, requeue, transfer):
+            self.wait_gone(job_id)
+
     def snapshot(self) -> None:
         running = self.qsub("running", "sleep", "600")
         self.qsub("held", "-h", "sleep", "600")
+        self.qsub("dependent", "-hold_jid", running, "sleep", "1")
         eqw = self.qsub("eqw", "-wd", "/nonexistent", "sleep", "1")
         array = self.qsub("array", "-t", "1-10", "sleep", "600")
         self.wait_state(running, {"r"})
@@ -227,7 +436,7 @@ class Capture:
         self.capture(
             "qstat_mixed.xml",
             ["qstat", "-xml", "-u", "*"],
-            "qstat -xml -u '*': running, hqw, Eqw and an array with r and qw tasks",
+            "qstat -xml -u '*': running, hqw (user hold, -hold_jid), Eqw, array with r and qw",
         )
         self.capture(
             "qstat_mixed.txt", ["qstat", "-u", "*"], "plain qstat -u '*' of the same moment"
@@ -276,9 +485,15 @@ class Capture:
                 old.unlink()
         self.cluster.run([str(Path("/opt/testbed/clean.sh"))])
         self.empty()
+        timeout = self.timeout_submit()
         self.finished_jobs()
+        self.vmem()
+        self.deleted_pending()
         self.signal()
+        self.timeout_collect(timeout)
         self.lost_node()
+        self.lifecycle()
+        self.transient_states()
         self.snapshot()
         self.master_down()
         self.cluster.run([str(Path("/opt/testbed/clean.sh"))])

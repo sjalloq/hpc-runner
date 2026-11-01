@@ -1,18 +1,30 @@
 {
-  "captured": "2026-11-01T15:48:40Z",
+  "captured": "2026-11-01T19:40:15Z",
   "flavour": "soge",
   "scheduler": "SGE 8.1.9",
   "jobs": {
-    "ok": "2",
-    "exit1": "3",
-    "array_done": "4",
-    "bob": "5",
-    "signal": "8",
-    "lost_node": "9",
-    "running": "11",
-    "held": "12",
-    "eqw": "13",
-    "array": "14"
+    "timeout": "248",
+    "ok": "249",
+    "exit1": "250",
+    "array_done": "251",
+    "bob": "252",
+    "skipped": "253",
+    "vmem": "256",
+    "deleted_pending": "257",
+    "signal": "258",
+    "lost_node": "259",
+    "suspended": "261",
+    "queue_suspended": "262",
+    "requeued": "263",
+    "deleting": "262",
+    "threshold": "264",
+    "requeue_pending": "265",
+    "deleting_transfer": "266",
+    "running": "267",
+    "held": "268",
+    "dependent": "269",
+    "eqw": "270",
+    "array": "271"
   },
   "files": {
     "qstat_empty.xml": {
@@ -51,7 +63,7 @@
       "argv": [
         "qacct",
         "-j",
-        "2"
+        "249"
       ]
     },
     "qacct_exit1.txt": {
@@ -59,7 +71,7 @@
       "argv": [
         "qacct",
         "-j",
-        "3"
+        "250"
       ]
     },
     "qacct_array_task.txt": {
@@ -67,7 +79,7 @@
       "argv": [
         "qacct",
         "-j",
-        "4",
+        "251",
         "-t",
         "2"
       ]
@@ -77,7 +89,15 @@
       "argv": [
         "qacct",
         "-j",
-        "4"
+        "251"
+      ]
+    },
+    "qacct_skipped.txt": {
+      "what": "qacct -j of a job that exited 113 (the dependency guard's skip code)",
+      "argv": [
+        "qacct",
+        "-j",
+        "253"
       ]
     },
     "qacct_owner_bob.txt": {
@@ -91,11 +111,34 @@
         "200001010000"
       ]
     },
+    "qacct_vmem.txt": {
+      "what": "qacct -j of a 200 MB allocation under h_vmem=50M (failed 0, non-zero exit)",
+      "argv": [
+        "qacct",
+        "-j",
+        "256"
+      ]
+    },
+    "qdel_pending.txt": {
+      "what": "qdel stdout for a job that never ran",
+      "argv": [
+        "qdel",
+        "257"
+      ]
+    },
+    "qacct_deleted_pending.txt": {
+      "what": "qacct -j of a job deleted while pending: no record is ever written (JSON)",
+      "argv": [
+        "qacct",
+        "-j",
+        "257"
+      ]
+    },
     "qdel.txt": {
       "what": "qdel stdout",
       "argv": [
         "qdel",
-        "8"
+        "258"
       ]
     },
     "qacct_signal.txt": {
@@ -103,7 +146,15 @@
       "argv": [
         "qacct",
         "-j",
-        "8"
+        "258"
+      ]
+    },
+    "qacct_timeout.txt": {
+      "what": "qacct -j of a short.q job killed at h_rt (failed 37, exit_status 137)",
+      "argv": [
+        "qacct",
+        "-j",
+        "248"
       ]
     },
     "qacct_lost_node.txt": {
@@ -111,11 +162,87 @@
       "argv": [
         "qacct",
         "-j",
-        "9"
+        "259"
+      ]
+    },
+    "qstat_lifecycle.xml": {
+      "what": "qstat -xml -u '*': user-suspended (s), queue-suspended (S), requeued (Rr)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_lifecycle.txt": {
+      "what": "plain qstat -u '*' of the same moment",
+      "argv": [
+        "qstat",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_suspended.xml": {
+      "what": "qstat -j -xml of the user-suspended job",
+      "argv": [
+        "qstat",
+        "-j",
+        "261",
+        "-xml"
+      ]
+    },
+    "qdel_deleting.txt": {
+      "what": "qdel stdout when execd is away",
+      "argv": [
+        "qdel",
+        "262"
+      ]
+    },
+    "qstat_deleting.xml": {
+      "what": "qstat -xml -u '*' with a deleted job still in dr (its node paused)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qacct_requeued.txt": {
+      "what": "qacct -j of a rescheduled job: failed 25 (rescheduling), then its end (qdel)",
+      "argv": [
+        "qacct",
+        "-j",
+        "263"
+      ]
+    },
+    "qstat_transient.xml": {
+      "what": "qstat -xml -u '*': threshold-suspended (T), requeued waiting (Rq), deleted while transferring (dt)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_transient.txt": {
+      "what": "plain qstat -u '*' of the same moment",
+      "argv": [
+        "qstat",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_threshold.xml": {
+      "what": "qstat -j -xml of the threshold-suspended job",
+      "argv": [
+        "qstat",
+        "-j",
+        "264",
+        "-xml"
       ]
     },
     "qstat_mixed.xml": {
-      "what": "qstat -xml -u '*': running, hqw, Eqw and an array with r and qw tasks",
+      "what": "qstat -xml -u '*': running, hqw (user hold, -hold_jid), Eqw, array with r and qw",
       "argv": [
         "qstat",
         "-xml",
@@ -136,7 +263,7 @@
       "argv": [
         "qstat",
         "-j",
-        "11",
+        "267",
         "-xml"
       ]
     },
