@@ -13,6 +13,7 @@ from hpc_runner.core.result import (
     ArrayJobResult,
     JobResult,
     JobStatus,
+    reduce_statuses,
     status_from_exit_code,
 )
 from tests.fakes import make_job
@@ -247,15 +248,32 @@ class TestArrayJobResult:
         assert res.task_id(2) == "7.2"
         res.scheduler.task_job_id.assert_called_once_with("7", 2)
 
-    def test_wait_returns_per_task_statuses(self):
+    def test_wait_returns_the_array_status_one_failed_task_fails_the_array(self):
         res = self._array(
             {"7.1": JobStatus.COMPLETED, "7.2": JobStatus.FAILED, "7.3": JobStatus.COMPLETED}
         )
-        assert res.wait(poll_interval=0) == {
-            1: JobStatus.COMPLETED,
-            2: JobStatus.FAILED,
-            3: JobStatus.COMPLETED,
-        }
+        assert res.wait(poll_interval=0) is JobStatus.FAILED
+        tasks = res.task_statuses()
+        assert tasks.tasks == {1: JobStatus.COMPLETED, 2: JobStatus.FAILED, 3: JobStatus.COMPLETED}
+        assert tasks.overall is JobStatus.FAILED
+        assert tasks.failed == [2] and tasks.unfinished == []
+        assert tasks.counts == {JobStatus.COMPLETED: 2, JobStatus.FAILED: 1}
+        assert tasks.is_terminal
+
+    def test_status_is_the_reduction_and_active_while_any_task_is(self):
+        res = self._array(
+            {"7.1": JobStatus.COMPLETED, "7.2": JobStatus.RUNNING, "7.3": JobStatus.PENDING}
+        )
+        assert res.status is JobStatus.RUNNING
+        assert not res.is_complete
+        tasks = res.task_statuses()
+        assert tasks.unfinished == [2, 3] and not tasks.is_terminal
+        res.scheduler.get_statuses.assert_called_with(["7.1", "7.2", "7.3"])
+
+    def test_all_completed_is_completed(self):
+        res = self._array({f"7.{i}": JobStatus.COMPLETED for i in (1, 2, 3)})
+        assert res.status is JobStatus.COMPLETED
+        assert res.task_statuses().failed == []
 
     def test_wait_timeout(self):
         res = self._array({f"7.{i}": JobStatus.RUNNING for i in (1, 2, 3)})
@@ -272,7 +290,8 @@ class TestArrayJobResult:
         res = self._array(
             {"7.1": JobStatus.COMPLETED, "7.2": JobStatus.UNKNOWN, "7.3": JobStatus.SKIPPED}
         )
-        assert res.wait(poll_interval=0, unknown_after=0) == {
+        assert res.wait(poll_interval=0, unknown_after=0) is JobStatus.UNKNOWN
+        assert res.task_statuses().tasks == {
             1: JobStatus.COMPLETED,
             2: JobStatus.UNKNOWN,
             3: JobStatus.SKIPPED,
@@ -288,6 +307,53 @@ class TestArrayJobResult:
         res.cancel()
         res.scheduler.cancel.assert_called_once_with("7")
 
-    def test_result_not_supported(self):
-        with pytest.raises(NotSupportedError):
-            self._array({}).result()
+    def test_result_raises_naming_the_failed_tasks(self):
+        res = self._array(
+            {"7.1": JobStatus.FAILED, "7.2": JobStatus.COMPLETED, "7.3": JobStatus.TIMEOUT}
+        )
+        with pytest.raises(JobFailedError) as info:
+            res.result(poll_interval=0)
+        assert info.value.status is JobStatus.FAILED
+        assert info.value.failed_tasks == [1, 3]
+        assert "tasks 1, 3" in str(info.value)
+
+    def test_result_returns_the_exit_code_when_every_task_completed(self):
+        res = self._array({f"7.{i}": JobStatus.COMPLETED for i in (1, 2, 3)})
+        res.scheduler.get_exit_code.return_value = 0
+        assert res.result(poll_interval=0) == 0
+        res.scheduler.get_exit_code.assert_called_once_with("7")
+
+    def test_task_exit_code_is_per_task(self):
+        res = self._array({})
+        res.scheduler.get_exit_code.return_value = 3
+        assert res.task_exit_code(2) == 3
+        res.scheduler.get_exit_code.assert_called_once_with("7.2")
+
+
+class TestReduceStatuses:
+    def test_empty_is_an_error(self):
+        with pytest.raises(ValueError):
+            reduce_statuses([])
+
+    @pytest.mark.parametrize(
+        ("statuses", "want"),
+        [
+            ([JobStatus.COMPLETED], JobStatus.COMPLETED),
+            ([JobStatus.COMPLETED, JobStatus.COMPLETED], JobStatus.COMPLETED),
+            ([JobStatus.COMPLETED, JobStatus.FAILED], JobStatus.FAILED),
+            ([JobStatus.SKIPPED, JobStatus.COMPLETED], JobStatus.SKIPPED),
+            ([JobStatus.SKIPPED, JobStatus.TIMEOUT], JobStatus.TIMEOUT),
+            ([JobStatus.CANCELLED, JobStatus.FAILED], JobStatus.FAILED),
+            ([JobStatus.TIMEOUT, JobStatus.FAILED], JobStatus.FAILED),
+            # One task the scheduler cannot report on: not a result.
+            ([JobStatus.COMPLETED, JobStatus.UNKNOWN], JobStatus.UNKNOWN),
+            ([JobStatus.FAILED, JobStatus.UNKNOWN], JobStatus.UNKNOWN),
+            # Anything active keeps the whole active, running first.
+            ([JobStatus.FAILED, JobStatus.PENDING], JobStatus.PENDING),
+            ([JobStatus.PENDING, JobStatus.SUSPENDED], JobStatus.SUSPENDED),
+            ([JobStatus.SUSPENDED, JobStatus.RUNNING, JobStatus.UNKNOWN], JobStatus.RUNNING),
+        ],
+    )
+    def test_order(self, statuses, want):
+        assert reduce_statuses(statuses) is want
+        assert reduce_statuses(reversed(statuses)) is want

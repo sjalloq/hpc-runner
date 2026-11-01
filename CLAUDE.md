@@ -96,7 +96,7 @@ A job is three values: `JobSpec` → `resolve(spec, config, host)` → `Job`.
 - **Job** (`job.py`) - Frozen and fully resolved; schedulers render it and never mutate it
 - **Host** (`host.py`) - Submit-side facts (env, cwd, user) passed explicitly to `resolve`; `Host.capture()` snapshots the process
 - **JobResult/ArrayJobResult** (`result.py`) - A handle: status, `wait()`, `result()`, output paths recorded at submit; `scheduler.result(job_id)` rebuilds one from an id
-- **JobStatus** - Unified enum: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, TIMEOUT, SKIPPED, UNKNOWN
+- **JobStatus** - Unified enum: PENDING, RUNNING, SUSPENDED, COMPLETED, FAILED, CANCELLED, TIMEOUT, SKIPPED, UNKNOWN. `reduce_statuses()` gives one status for several (an array, a pipeline step): active while any is, COMPLETED only when all are, else the worst
 - **ResourceSet** - Collection of named resources (gpu, licenses, etc.)
 - **HPCConfig** (`config.py`, schema in `schema.py`) - Typed, validated TOML (`config_version = 1`; unknown keys are errors) with two-level discovery: $HPC_RUNNER_CONFIG or <git-root>/hpc-runner.toml (project), then ./hpc-runner.toml (local override). Always passed explicitly; no global cache
 

@@ -213,6 +213,7 @@ class JobTable(DataTable[str]):
         status_map = {
             JobStatus.RUNNING: "RUNNING",
             JobStatus.PENDING: "PENDING",
+            JobStatus.SUSPENDED: "SUSPEND",
             JobStatus.COMPLETED: "COMPLETE",
             JobStatus.FAILED: "FAILED",
             JobStatus.CANCELLED: "CANCEL",

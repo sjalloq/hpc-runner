@@ -169,6 +169,7 @@ class TestJobTable:
             # Check status formatting
             assert table._format_status(JobStatus.RUNNING) == "RUNNING"
             assert table._format_status(JobStatus.PENDING) == "PENDING"
+            assert table._format_status(JobStatus.SUSPENDED) == "SUSPEND"
             assert table._format_status(JobStatus.COMPLETED) == "COMPLETE"
             assert table._format_status(JobStatus.FAILED) == "FAILED"
             assert table._format_status(JobStatus.CANCELLED) == "CANCEL"

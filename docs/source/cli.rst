@@ -129,6 +129,12 @@ Show job status. ``JOB_ID`` is optional — without it, active jobs are listed.
    hpc status 12345        # details for a single job
    hpc status --history    # recently completed jobs (via accounting)
 
+For the base id of a finished array job the details are the array as a
+whole (``COMPLETED`` only when every task is, else the worst task) followed
+by a table with one row per task: index, status, exit code, the
+scheduler's failure code and reason, node and runtime. With ``--json`` the
+tasks are the ``tasks`` list.
+
 Options:
 
 - ``--history / -H``: show recently completed jobs

@@ -61,6 +61,7 @@ class JobInfo:
         return self.status in (
             JobStatus.PENDING,
             JobStatus.RUNNING,
+            JobStatus.SUSPENDED,
             JobStatus.UNKNOWN,
         )
 

@@ -1,18 +1,18 @@
 {
-  "captured": "2026-10-31T18:12:05Z",
+  "captured": "2026-11-01T15:48:40Z",
   "flavour": "soge",
   "scheduler": "SGE 8.1.9",
   "jobs": {
-    "ok": "61",
-    "exit1": "62",
-    "array_done": "63",
-    "bob": "64",
-    "signal": "67",
-    "lost_node": "68",
-    "running": "70",
-    "held": "71",
-    "eqw": "72",
-    "array": "73"
+    "ok": "2",
+    "exit1": "3",
+    "array_done": "4",
+    "bob": "5",
+    "signal": "8",
+    "lost_node": "9",
+    "running": "11",
+    "held": "12",
+    "eqw": "13",
+    "array": "14"
   },
   "files": {
     "qstat_empty.xml": {
@@ -51,7 +51,7 @@
       "argv": [
         "qacct",
         "-j",
-        "61"
+        "2"
       ]
     },
     "qacct_exit1.txt": {
@@ -59,17 +59,25 @@
       "argv": [
         "qacct",
         "-j",
-        "62"
+        "3"
       ]
     },
     "qacct_array_task.txt": {
-      "what": "qacct -j <id> -t 2 of a finished array",
+      "what": "qacct -j <id> -t 2 of a finished array (task 2 exited 0)",
       "argv": [
         "qacct",
         "-j",
-        "63",
+        "4",
         "-t",
         "2"
+      ]
+    },
+    "qacct_array_base.txt": {
+      "what": "qacct -j <id> of a finished three-task array: one record per task, task 3 exited 1",
+      "argv": [
+        "qacct",
+        "-j",
+        "4"
       ]
     },
     "qacct_owner_bob.txt": {
@@ -87,7 +95,7 @@
       "what": "qdel stdout",
       "argv": [
         "qdel",
-        "67"
+        "8"
       ]
     },
     "qacct_signal.txt": {
@@ -95,7 +103,7 @@
       "argv": [
         "qacct",
         "-j",
-        "67"
+        "8"
       ]
     },
     "qacct_lost_node.txt": {
@@ -103,7 +111,7 @@
       "argv": [
         "qacct",
         "-j",
-        "68"
+        "9"
       ]
     },
     "qstat_mixed.xml": {
@@ -128,7 +136,7 @@
       "argv": [
         "qstat",
         "-j",
-        "70",
+        "11",
         "-xml"
       ]
     },

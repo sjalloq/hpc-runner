@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>70</JB_job_number>
+      <JB_job_number>11</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/70</JB_exec_file>
-      <JB_submission_time>1793470222</JB_submission_time>
+      <JB_exec_file>job_scripts/11</JB_exec_file>
+      <JB_submission_time>1793548039</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -60,7 +60,7 @@
         <ulong_sublist>
           <JAT_status>128</JAT_status>
           <JAT_task_number>1</JAT_task_number>
-          <JAT_start_time>1793470222</JAT_start_time>
+          <JAT_start_time>1793548039</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
       </JB_ja_tasks>
@@ -107,11 +107,7 @@
       <SME_global_message_list>
         <element>
           <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;all.q@exec2&quot; dropped because it is full</MES_message>
-        </element>
-        <element>
-          <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;short.q@exec2&quot; dropped because it is full</MES_message>
+          <MES_message>queue instance &quot;all.q@exec1&quot; dropped because it is full</MES_message>
         </element>
         <element>
           <MES_message_number>37</MES_message_number>
@@ -119,7 +115,11 @@
         </element>
         <element>
           <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;all.q@exec1&quot; dropped because it is full</MES_message>
+          <MES_message>queue instance &quot;short.q@exec2&quot; dropped because it is full</MES_message>
+        </element>
+        <element>
+          <MES_message_number>37</MES_message_number>
+          <MES_message>queue instance &quot;all.q@exec2&quot; dropped because it is full</MES_message>
         </element>
       </SME_global_message_list>
     </element>

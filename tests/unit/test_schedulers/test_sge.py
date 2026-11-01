@@ -782,14 +782,14 @@ class TestSGEExitSentinelFallback:
 
     def test_qacct_without_exit_status_uses_sentinel(self, scheduler, tmp_path):
         (tmp_path / "123.rc").write_text("0\n")
-        run = self._fake_run(qacct_stdout="qname  all.q\n", qacct_rc=0)
+        run = self._fake_run(qacct_stdout="qname  all.q\njobnumber 123\n", qacct_rc=0)
         with patch_seam(run):
             assert scheduler.get_status("123") == JobStatus.COMPLETED
             assert scheduler.get_exit_code("123") == 0
 
     def test_qacct_wins_over_sentinel(self, scheduler, tmp_path):
         (tmp_path / "123.rc").write_text("0\n")
-        qacct = "==============\nqname        all.q\nexit_status  2\n"
+        qacct = "==============\nqname        all.q\njobnumber    123\nexit_status  2\n"
         with patch_seam(self._fake_run(qacct, 0)):
             assert scheduler.get_status("123") == JobStatus.FAILED
             assert scheduler.get_exit_code("123") == 2
@@ -868,9 +868,44 @@ class TestSGEStatuses:
         argvs = [c.args[0] for c in seam.call_args_list]
         assert argvs == [["qstat", "-xml", "-u", "*"], ["qacct", "-j", "500", "-t", "1"]]
 
-    def test_base_id_of_array_prefers_running_task(self, scheduler):
+    def test_base_id_of_active_array_is_the_reduction_of_its_tasks(self, scheduler):
+        # 500 has running and queued tasks: the array as a whole is RUNNING.
         with patch_seam(self._respond()):
             assert scheduler.get_status("500") == JobStatus.RUNNING
+
+    def test_base_id_of_finished_array_reduces_over_every_qacct_record(self, scheduler):
+        """``qacct -j <base>`` prints one record per task; one failed task
+        fails the array whatever order the records come in (the old parser
+        folded them into one dict and the last record won)."""
+        ok = "jobnumber 900\ntaskid {t}\nfailed 0\nexit_status 0\n"
+        bad = "jobnumber 900\ntaskid {t}\nfailed 0\nexit_status 1\n"
+        sep = "=" * 20 + "\n"
+        bad_last = sep + ok.format(t=1) + sep + bad.format(t=2)
+        bad_first = sep + bad.format(t=2) + sep + ok.format(t=1)
+        for text in (bad_last, bad_first):
+            with patch_seam(self._respond({"900": text})):
+                assert scheduler.get_status("900") == JobStatus.FAILED
+                assert scheduler.get_exit_code("900") == 1
+        all_ok = sep + ok.format(t=1) + sep + ok.format(t=2)
+        with patch_seam(self._respond({"900": all_ok})):
+            assert scheduler.get_status("900") == JobStatus.COMPLETED
+            assert scheduler.get_exit_code("900") == 0
+
+    def test_requeued_job_reads_its_final_record(self, scheduler):
+        """A migrated task leaves a ``failed 24`` record and then its real one."""
+        sep = "=" * 20 + "\n"
+        text = (
+            sep
+            + "jobnumber 901\nfailed 24  : migrating\nexit_status 0\n"
+            + sep
+            + "jobnumber 901\nfailed 0\nexit_status 2\n"
+        )
+        with patch_seam(self._respond({"901": text})):
+            assert scheduler.get_status("901") == JobStatus.FAILED
+            assert scheduler.get_exit_code("901") == 2
+        with patch_seam(self._respond({"901": sep + "jobnumber 901\nfailed 24\nexit_status 0\n"})):
+            # Only the migration record so far: not finished, nothing else to say.
+            assert scheduler.get_status("901") == JobStatus.UNKNOWN
 
     def test_task_status_from_array_result(self, scheduler):
         from hpc_runner.core.array import ArrayRange

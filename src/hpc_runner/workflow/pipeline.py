@@ -19,7 +19,7 @@ from hpc_runner.core.exceptions import (
 )
 from hpc_runner.core.host import Host
 from hpc_runner.core.resolve import resolve
-from hpc_runner.core.result import ArrayJobResult, JobStatus, wait_for_statuses
+from hpc_runner.core.result import ArrayJobResult, JobStatus, reduce_statuses, wait_for_statuses
 from hpc_runner.core.spec import JobSpec
 
 if TYPE_CHECKING:
@@ -295,7 +295,7 @@ class Pipeline:
             if not ids:  # an interactive run: already finished
                 statuses[name] = result.status
             else:
-                statuses[name] = _step_status([final[job_id] for job_id in ids])
+                statuses[name] = reduce_statuses(final[job_id] for job_id in ids)
         return statuses
 
     def get_job(self, name: str) -> PipelineJob:
@@ -321,14 +321,3 @@ class Pipeline:
 
     def __iter__(self) -> Iterator[PipelineJob]:
         return iter(self.jobs)
-
-
-def _step_status(task_statuses: list[JobStatus]) -> JobStatus:
-    """One status for a step from its tasks' final statuses (one for a plain job)."""
-    # Interim rule until the pipeline lifecycle work (D16): the common
-    # status when every task agrees, else the first task (index order) that
-    # did not complete.
-    first = task_statuses[0]
-    if all(status is first for status in task_statuses):
-        return first
-    return next(status for status in task_statuses if status is not JobStatus.COMPLETED)

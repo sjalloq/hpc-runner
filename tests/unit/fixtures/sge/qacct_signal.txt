@@ -6,26 +6,26 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      signal              
-jobnumber    67                  
+jobnumber    8                   
 taskid       undefined
 account      sge                 
 priority     0                   
-qsub_time    Sat Oct 31 18:10:14 2026
-start_time   Sat Oct 31 18:10:14 2026
-end_time     Sat Oct 31 18:10:14 2026
+qsub_time    Sun Nov  1 15:47:11 2026
+start_time   Sun Nov  1 15:47:11 2026
+end_time     Sun Nov  1 15:47:11 2026
 granted_pe   NONE                
 slots        1                   
 failed       100 : assumedly after job
 exit_status  137                  (Killed)
 ru_wallclock 0s
-ru_utime     0.012s
-ru_stime     0.017s
-ru_maxrss    8.406KB
+ru_utime     0.010s
+ru_stime     0.020s
+ru_maxrss    6.414KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    1118                
+ru_minflt    1111                
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -33,9 +33,9 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     13                  
-ru_nivcsw    3                   
-cpu          0.029s
+ru_nvcsw     14                  
+ru_nivcsw    4                   
+cpu          0.030s
 mem          0.000Bs
 io           0.000B
 iow          0.000s

@@ -126,11 +126,20 @@ class NotSupportedError(SchedulerError):
 class JobFailedError(SchedulerError):
     """Raised by ``JobResult.result()`` when a job ends not COMPLETED; caught by waiters."""
 
-    def __init__(self, status: JobStatus, job_id: str | None, exit_code: int | None):
+    def __init__(
+        self,
+        status: JobStatus,
+        job_id: str | None,
+        exit_code: int | None,
+        failed_tasks: Sequence[int] = (),
+    ):
         self.status = status
         self.job_id = job_id
         self.exit_code = exit_code
+        self.failed_tasks = list(failed_tasks)
         detail = f" (exit code {exit_code})" if exit_code is not None else ""
+        if self.failed_tasks:
+            detail = f" (tasks {', '.join(map(str, self.failed_tasks))})"
         what = f"job {job_id}" if job_id is not None else "interactive job"
         super().__init__(f"{what} finished {status.name}{detail}")
 

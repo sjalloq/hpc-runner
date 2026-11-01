@@ -83,6 +83,7 @@ def kill(
             allowed.add(JobStatus.PENDING)
         if running:
             allowed.add(JobStatus.RUNNING)
+            allowed.add(JobStatus.SUSPENDED)
         matched = [j for j in matched if j.status in allowed]
 
     if not matched:

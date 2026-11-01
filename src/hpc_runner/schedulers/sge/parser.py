@@ -243,7 +243,12 @@ def _parse_sge_timestamp(value: str) -> int | None:
 
 
 def parse_qacct_output(output: str) -> dict[str, Any]:
-    """Parse qacct output for job accounting info.
+    """Parse one qacct record into a dict of its fields.
+
+    One record only: ``qacct -j <base>`` of an array prints a record per
+    task, and a requeued job has more than one; fed several, this folds
+    them into one dict in which the last record wins. Whole qacct stdout
+    goes through :func:`parse_qacct_records`.
 
     Format:
     ==============================================================
@@ -416,37 +421,31 @@ def qstat_unreachable(stderr: str) -> bool:
 
 
 def state_to_status(state: str) -> JobStatus:
-    """Convert SGE state code to JobStatus.
+    """Convert an SGE qstat state code to JobStatus.
 
-    SGE states:
-    - qw: pending (queued, waiting)
-    - hqw: hold (on hold)
-    - r: running
-    - t: transferring
-    - Rr, Rt: restarted
-    - s, ts: suspended
-    - S, tS: queue suspended
-    - T, tT: threshold
-    - Eqw: error (waiting)
-    - dr: deleting (running)
-    - dt: deleting (transferring)
+    The code is a string of flags, read in precedence order:
+
+    * ``d`` (deleting: ``dr``, ``dt``, ``ds``): CANCELLED
+    * ``E`` (``Eqw``, ``Ehqw``: the job failed to start and sits in the
+      queue until ``qmod -cj`` or ``qdel``): FAILED. It will not run
+      again on its own, so for a waiter it is final.
+    * ``s`` (user suspended), ``S`` (queue suspended), ``T`` (threshold
+      suspended), also with ``t``: SUSPENDED. The job has started and
+      holds its slot; ``qmod -us`` resumes it.
+    * ``r`` (running), ``t`` (transferring), ``Rr``/``Rt`` (restarted):
+      RUNNING
+    * ``qw``, ``hqw``, ``Rq`` (queued, held): PENDING
     """
-    state = state.lower()
-
-    # Deleting or error states take precedence over other flags.
     if "d" in state:
         return JobStatus.CANCELLED
-    if "e" in state:
+    if "E" in state:
         return JobStatus.FAILED
-
-    # Running or transferring states.
+    if "s" in state or "S" in state or "T" in state:
+        return JobStatus.SUSPENDED
     if "r" in state or "t" in state:
         return JobStatus.RUNNING
-
-    # Queued, held, or suspended states.
-    if "q" in state or "h" in state or "s" in state:
+    if "q" in state or "h" in state or "w" in state:
         return JobStatus.PENDING
-
     return JobStatus.UNKNOWN
 
 
@@ -571,6 +570,7 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
         runtime=runtime,
         failed_code=failed[0] if failed else None,
         failed_reason=failed[1] if failed and failed[0] else None,
+        array_task_id=_leading_int(record.get("taskid")),
     )
 
     # Timestamps

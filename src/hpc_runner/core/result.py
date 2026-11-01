@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -47,6 +48,7 @@ class JobStatus(Enum):
 
     PENDING = auto()  # Waiting in queue
     RUNNING = auto()  # Currently executing
+    SUSPENDED = auto()  # Started, then suspended; holds its slot until resumed
     COMPLETED = auto()  # Finished successfully
     FAILED = auto()  # Finished with error
     CANCELLED = auto()  # User cancelled
@@ -69,6 +71,81 @@ _TERMINAL = frozenset(
         JobStatus.SKIPPED,
     }
 )
+
+# The order the array/step reduction picks from: the first status in this
+# list that any task has is the status of the whole. Active statuses come
+# first (one task still going means the whole is still going; a running task
+# outranks a suspended or queued one), then UNKNOWN (one task the scheduler
+# cannot report on means the whole cannot be called finished with a result),
+# then the failures, then SKIPPED, and COMPLETED only when every task is.
+_REDUCTION_ORDER = (
+    JobStatus.RUNNING,
+    JobStatus.SUSPENDED,
+    JobStatus.PENDING,
+    JobStatus.UNKNOWN,
+    JobStatus.FAILED,
+    JobStatus.TIMEOUT,
+    JobStatus.CANCELLED,
+    JobStatus.SKIPPED,
+    JobStatus.COMPLETED,
+)
+
+
+def reduce_statuses(statuses: Iterable[JobStatus]) -> JobStatus:
+    """One status for a set of jobs or tasks (an array, a pipeline step).
+
+    The whole is active while any part is (RUNNING over SUSPENDED over
+    PENDING); once every part is terminal it is COMPLETED only if every
+    part is, else the worst: FAILED, then TIMEOUT, CANCELLED, SKIPPED. An
+    UNKNOWN part makes the whole UNKNOWN once nothing is active.
+
+    Raises:
+        ValueError: *statuses* is empty.
+    """
+    present = set(statuses)
+    if not present:
+        raise ValueError("no statuses to reduce")
+    return next(status for status in _REDUCTION_ORDER if status in present)
+
+
+@dataclass(frozen=True)
+class ArrayJobStatus:
+    """The status of every task of an array job, by task index.
+
+    ``overall`` is the one-line answer (see :func:`reduce_statuses`); the
+    rest is the drill-down for when it is not COMPLETED.
+    """
+
+    tasks: Mapping[int, JobStatus] = field(default_factory=dict)
+
+    @property
+    def overall(self) -> JobStatus:
+        """The array's status as a whole."""
+        return reduce_statuses(self.tasks.values())
+
+    @property
+    def is_terminal(self) -> bool:
+        """Whether every task has finished."""
+        return all(status.is_terminal for status in self.tasks.values())
+
+    @property
+    def counts(self) -> dict[JobStatus, int]:
+        """How many tasks are in each status (statuses with none are absent)."""
+        return dict(Counter(self.tasks.values()))
+
+    @property
+    def failed(self) -> list[int]:
+        """The indices of the tasks that finished anything but COMPLETED, in order."""
+        return sorted(
+            index
+            for index, status in self.tasks.items()
+            if status.is_terminal and status is not JobStatus.COMPLETED
+        )
+
+    @property
+    def unfinished(self) -> list[int]:
+        """The indices of the tasks not yet terminal (UNKNOWN counts as unfinished)."""
+        return sorted(index for index, status in self.tasks.items() if not status.is_terminal)
 
 
 def status_from_exit_code(exit_code: int) -> JobStatus:
@@ -305,6 +382,25 @@ class ArrayJobResult(JobResult):
         """The status of task *index* itself (not of the array as a whole)."""
         return self.scheduler.get_status(self.task_id(index))
 
+    def task_statuses(self) -> ArrayJobStatus:
+        """Every task's status by index, from one ``get_statuses`` call."""
+        by_id = dict(zip(self.task_ids(), self.array.indices))
+        statuses = self.scheduler.get_statuses(list(by_id))
+        return ArrayJobStatus({index: statuses[task_id] for task_id, index in by_id.items()})
+
+    @property
+    def status(self) -> JobStatus:
+        """The array's status as a whole (see :func:`reduce_statuses`).
+
+        COMPLETED only when every task is; ``task_statuses()`` says which
+        tasks are not.
+        """
+        return self.task_statuses().overall
+
+    def task_exit_code(self, index: int) -> int | None:
+        """Task *index*'s own exit code (None until it has finished)."""
+        return self.scheduler.get_exit_code(self.task_id(index))
+
     def task_stdout_path(self, index: int) -> Path | None:
         """Task *index*'s stdout file (see :attr:`JobResult.stdout_path`)."""
         return _task_path(self.stdout_path, index)
@@ -347,37 +443,53 @@ class ArrayJobResult(JobResult):
         """The job id of every task, in index order."""
         return [self.task_id(index) for index in self.array.indices]
 
-    # Returns per-task statuses rather than one aggregate, so it is not a
-    # drop-in for JobResult.wait(); the pipeline lifecycle work (D16) may
-    # revisit this.
-    def wait(  # type: ignore[override]
+    def wait(
         self,
         poll_interval: float = 5.0,
         timeout: float | None = None,
         unknown_after: float = 60.0,
-    ) -> dict[int, JobStatus]:
-        """Wait for every task; returns each task's final status by index.
+    ) -> JobStatus:
+        """Block until every task has finished; returns the array's status.
 
         One ``get_statuses`` call per tick covers all outstanding tasks.
         *timeout* and *unknown_after* are as for :meth:`JobResult.wait`.
+        The result is the reduction of the tasks' final statuses
+        (:func:`reduce_statuses`); ``task_statuses()`` afterwards says
+        which tasks did what.
 
         Raises:
             TimeoutError: *timeout* elapsed first.
         """
-        by_id = dict(zip(self.task_ids(), self.array.indices))
         final = wait_for_statuses(
             self.scheduler.get_statuses,
-            list(by_id),
+            self.task_ids(),
             poll_interval=poll_interval,
             timeout=timeout,
             unknown_after=unknown_after,
             label=f"Array job {self.job_id}",
         )
-        return {index: final[task_id] for task_id, index in by_id.items()}
+        return reduce_statuses(final.values())
 
     def result(self, poll_interval: float = 5.0, timeout: float | None = None) -> int | None:
-        """Not defined for array jobs; use :meth:`wait` for per-task statuses."""
-        raise NotSupportedError("result() is not defined for array jobs; use wait()")
+        """Wait for every task, then return the array's exit code (0).
+
+        ``concurrent.futures`` style, as :meth:`JobResult.result`: an array
+        in which any task did not finish COMPLETED raises, and the
+        exception names the failed task indices. ``returncode`` on the
+        handle is the scheduler's answer for the base id: 0 when every
+        task exited 0, else the first non-zero task code.
+
+        Raises:
+            JobFailedError: The array's status is not COMPLETED;
+                ``failed_tasks`` lists the indices.
+            TimeoutError: *timeout* elapsed first.
+        """
+        status = self.wait(poll_interval=poll_interval, timeout=timeout)
+        if status is not JobStatus.COMPLETED:
+            tasks = self.task_statuses()
+            failed = tasks.failed or tasks.unfinished
+            raise JobFailedError(status, self.job_id, None, failed)
+        return self.returncode
 
     def cancel(self) -> bool:
         """Cancel all array tasks."""

@@ -12,7 +12,8 @@ Scenarios (one job each unless noted), all submitted with the raw CLI so the
 texts do not depend on hpc-runner's own rendering:
 
 * ``ok`` / ``exit1``: finished jobs, exit 0 and 1 (``qacct -j``).
-* ``array_done``: a finished three-task array (``qacct -j <id> -t 2``).
+* ``array_done``: a finished three-task array, task 3 exited 1 (``qacct -j <id>``
+  and ``qacct -j <id> -t 2``).
 * ``signal``: a running job deleted with ``qdel`` (``exit_status 137 (Killed)``,
   ``failed 100``; also ``qdel``'s stdout).
 * ``lost_node``: a job whose node is killed (``failed 19``, ``exit_status 0``).
@@ -80,6 +81,17 @@ class Capture:
         self.log(f"{scenario}: job {match.group(1)}")
         return match.group(1)
 
+    def qsub_script(self, scenario: str, body: str, user: str = "tester") -> str:
+        """``qsub`` a script whose text after the output directives is *body*."""
+        path = self.out / f"{scenario}.sh"
+        path.write_text(f"#!/bin/bash\n#$ -o /dev/null\n#$ -j y\n{body}")
+        proc = self.cluster.run(["qsub", "-N", scenario, str(path)], user=user)
+        match = re.search(r"Your job(?:-array)? (\d+)", proc.stdout)
+        assert match, proc.stdout
+        self.jobs[scenario] = match.group(1)
+        self.log(f"{scenario}: job {match.group(1)}")
+        return match.group(1)
+
     def script(self, name: str, directives: str) -> Path:
         """A job script in the output directory that runs ``true``, output discarded."""
         path = self.out / name
@@ -110,12 +122,12 @@ class Capture:
             assert time.monotonic() < deadline, f"job {job_id} still in qstat"
             time.sleep(POLL)
 
-    def qacct(self, job_id: str, *args: str, timeout: float = QACCT_WAIT) -> str:
-        """``qacct -j <id> [args]`` once the record exists."""
+    def qacct(self, job_id: str, *args: str, records: int = 1, timeout: float = QACCT_WAIT) -> str:
+        """``qacct -j <id> [args]`` once *records* records exist (one per array task)."""
         deadline = time.monotonic() + timeout
         while True:
             proc = self.cluster.run(["qacct", "-j", job_id, *args], check=False)
-            if proc.returncode == 0 and "jobnumber" in proc.stdout:
+            if proc.returncode == 0 and proc.stdout.count("jobnumber") >= records:
                 return proc.stdout
             assert time.monotonic() < deadline, f"no qacct record for {job_id}: {proc.stderr}"
             time.sleep(POLL)
@@ -125,7 +137,10 @@ class Capture:
     def finished_jobs(self) -> None:
         ok = self.qsub("ok", "true")
         exit1 = self.qsub("exit1", "false")
-        array = self.qsub("array_done", "-t", "1-3", "true")
+        # Task 3 exits 1, so `qacct -j <base>` has records that disagree: the
+        # base-id readers must reduce over them, not take the last printed.
+        # A script, not `-b y`: the task id is only known inside the job.
+        array = self.qsub_script("array_done", '#$ -t 1-3\ntest "$SGE_TASK_ID" -ne 3\n')
         # Non-zero wallclock, so `qacct -o bob` ends with bob's summary row
         # (BUG-T2); an owner whose jobs all ran in 0s gets the header and rule only.
         bob = self.qsub("bob", "sleep", "2", user="bob")
@@ -147,8 +162,14 @@ class Capture:
         self.save(
             "qacct_array_task.txt",
             self.qacct(array, "-t", "2"),
-            "qacct -j <id> -t 2 of a finished array",
+            "qacct -j <id> -t 2 of a finished array (task 2 exited 0)",
             ["qacct", "-j", array, "-t", "2"],
+        )
+        self.save(
+            "qacct_array_base.txt",
+            self.qacct(array, records=3),
+            "qacct -j <id> of a finished three-task array: one record per task, task 3 exited 1",
+            ["qacct", "-j", array],
         )
         self.qacct(bob)
         # With -b, as `hpc status --history` asks (list_completed_jobs).

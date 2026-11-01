@@ -17,6 +17,7 @@ from hpc_runner.core.exceptions import JobNotFoundError
 from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.sge import SGEScheduler
 from hpc_runner.schedulers.sge.parser import (
+    _leading_int,
     parse_qacct_output,
     parse_qacct_records,
     parse_qstat_j_xml,
@@ -84,6 +85,22 @@ class TestQstatMixed:
         assert state_to_status("hqw") is JobStatus.PENDING
         assert state_to_status("qw") is JobStatus.PENDING
         assert state_to_status("Eqw") is JobStatus.FAILED
+
+    @pytest.mark.parametrize("code", ["s", "ts", "S", "tS", "T", "tT"])
+    def test_suspended_codes_are_suspended_not_running_or_pending(self, code):
+        # ``t`` alone is transferring (RUNNING); with a suspend flag the
+        # suspend flag wins, so a suspended-while-transferring task is not
+        # reported as running.
+        assert state_to_status(code) is JobStatus.SUSPENDED
+        assert not JobStatus.SUSPENDED.is_terminal
+
+    @pytest.mark.parametrize("code", ["dr", "dt", "ds", "dS"])
+    def test_deleting_wins_over_every_other_flag(self, code):
+        assert state_to_status(code) is JobStatus.CANCELLED
+
+    def test_restarted_codes(self):
+        assert state_to_status("Rr") is JobStatus.RUNNING
+        assert state_to_status("Rq") is JobStatus.PENDING
 
     def test_one_entry_per_id_running_array_wins(self):
         jobs = parse_qstat_xml(FX.text("qstat_mixed.xml"))
@@ -173,6 +190,117 @@ class TestQacct:
     def test_array_task_record_names_its_task(self):
         record = parse_qacct_output(FX.text("qacct_array_task.txt"))
         assert record["jobnumber"] == FX.job("array_done") and record["taskid"] == "2"
+
+    def test_array_base_output_is_one_record_per_task(self):
+        """``qacct -j <base>`` of the three-task array: three records, task 3 exited 1."""
+        records = parse_qacct_records(FX.text("qacct_array_base.txt"))
+        by_task = {r["taskid"]: r for r in records}
+        assert set(by_task) == {"1", "2", "3"}
+        assert all(r["jobnumber"] == FX.job("array_done") for r in records)
+        assert [_leading_int(by_task[t]["exit_status"]) for t in ("1", "2", "3")] == [0, 0, 1]
+        # The single-record parser folds them into whichever came last: never
+        # feed it whole stdout (LIFECYCLE_MATRIX row 27).
+        folded = parse_qacct_output(FX.text("qacct_array_base.txt"))
+        assert folded["taskid"] == records[-1]["taskid"]
+
+
+class TestFinishedArrayBaseId:
+    """The base id of a finished array answers for the array as a whole."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        return SGEScheduler(HPCConfig())
+
+    def test_one_failed_task_fails_the_array(self, scheduler):
+        base = FX.job("array_done")
+        with patch_seam(make_sge_responder(FX)):
+            assert scheduler.get_status(base) is JobStatus.FAILED
+            assert scheduler.get_exit_code(base) == 1
+            # Each task on its own.
+            assert scheduler.get_status(f"{base}.2") is JobStatus.COMPLETED
+
+    def test_array_handle_status_and_drill_down(self, scheduler):
+        from hpc_runner.core.array import ArrayRange
+        from hpc_runner.core.result import ArrayJobResult
+
+        base = FX.job("array_done")
+        res = ArrayJobResult(scheduler=scheduler, job_id=base, array=ArrayRange(1, 3))
+        # Per-task qacct (-t n) is only captured for task 2; the others are UNKNOWN
+        # here, which is enough to pin the shape: the whole is not COMPLETED and
+        # task 2 is.
+        with patch_seam(make_sge_responder(FX)):
+            tasks = res.task_statuses()
+        assert tasks.tasks[2] is JobStatus.COMPLETED
+        assert tasks.overall is not JobStatus.COMPLETED
+
+    def test_details_give_the_whole_and_every_task(self, scheduler):
+        base = FX.job("array_done")
+        with patch_seam(make_sge_responder(FX)):
+            info, extra = scheduler.get_job_details(base)
+        assert (info.job_id, info.status, info.exit_code) == (base, JobStatus.FAILED, 1)
+        assert info.name == "array_done" and info.user == "tester"
+        tasks = extra["tasks"]
+        assert [t.array_task_id for t in tasks] == [1, 2, 3]
+        assert [t.status for t in tasks] == [
+            JobStatus.COMPLETED,
+            JobStatus.COMPLETED,
+            JobStatus.FAILED,
+        ]
+        assert [t.exit_code for t in tasks] == [0, 0, 1]
+        assert all(t.node in {"exec1", "exec2"} for t in tasks)
+
+    def test_hpc_status_prints_the_task_table(self, scheduler, monkeypatch):
+        from click.testing import CliRunner
+
+        from hpc_runner.cli.main import cli
+
+        base = FX.job("array_done")
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        with patch_seam(make_sge_responder(FX)):
+            result = CliRunner().invoke(cli, ["status", base])
+        assert result.exit_code == 0, result.output
+        assert f"Array job {base}" in result.output
+        assert "Tasks" in result.output
+        assert result.output.count("COMPLETED") == 2 and result.output.count("FAILED") == 2
+
+    def test_hpc_status_json_lists_the_tasks(self, scheduler, monkeypatch):
+        import json
+
+        from click.testing import CliRunner
+
+        from hpc_runner.cli.main import cli
+
+        base = FX.job("array_done")
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        with patch_seam(make_sge_responder(FX)):
+            result = CliRunner().invoke(cli, ["status", base, "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["status"] == "FAILED" and data["exit_code"] == 1
+        assert [t["array_task_id"] for t in data["tasks"]] == [1, 2, 3]
+        assert [t["exit_code"] for t in data["tasks"]] == [0, 0, 1]
+
+
+class TestFinishedJobDetails:
+    """``get_job_details`` of every captured finished job comes from its qacct record."""
+
+    @pytest.mark.parametrize(
+        ("scenario", "status", "exit_code", "failed"),
+        [
+            ("ok", JobStatus.COMPLETED, 0, 0),
+            ("exit1", JobStatus.FAILED, 1, 0),
+            ("signal", JobStatus.FAILED, 137, 100),
+            ("lost_node", JobStatus.FAILED, 0, 19),
+        ],
+    )
+    def test_details(self, monkeypatch, tmp_path, scenario, status, exit_code, failed):
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        with patch_seam(make_sge_responder(FX)):
+            info, extra = SGEScheduler(HPCConfig()).get_job_details(FX.job(scenario))
+        assert extra == {}
+        assert (info.status, info.exit_code, info.failed_code) == (status, exit_code, failed)
+        assert info.job_id == FX.job(scenario) and info.array_task_id is None
 
     def test_unknown_id(self):
         rc, stdout, stderr = FX.result("qacct_missing.txt")

@@ -12,9 +12,9 @@ from rich.table import Table
 from hpc_runner.cli._context import Context, pass_context
 from hpc_runner.core.exceptions import JobNotFoundError
 from hpc_runner.core.host import current_user
+from hpc_runner.core.job_info import JobInfo
 
 if TYPE_CHECKING:
-    from hpc_runner.core.job_info import JobInfo
     from hpc_runner.schedulers.base import BaseScheduler
 
 console = Console()
@@ -25,6 +25,7 @@ def _status_style(status: str) -> str:
     colors = {
         "PENDING": "[yellow]PENDING[/yellow]",
         "RUNNING": "[blue]RUNNING[/blue]",
+        "SUSPENDED": "[cyan]SUSPENDED[/cyan]",
         "COMPLETED": "[green]COMPLETED[/green]",
         "FAILED": "[red]FAILED[/red]",
         "CANCELLED": "[magenta]CANCELLED[/magenta]",
@@ -272,8 +273,6 @@ def _show_single_job(
 
     # Fall back to get_status() + get_exit_code()
     if job_info is None:
-        from hpc_runner.core.job_info import JobInfo
-
         status_val = scheduler.get_status(job_id)
         exit_code = scheduler.get_exit_code(job_id)
         job_info = JobInfo(
@@ -284,14 +283,20 @@ def _show_single_job(
             exit_code=exit_code,
         )
 
+    # A finished array: the scheduler gives every task's own record.
+    tasks = extra.pop("tasks", None)
+    task_infos = [t for t in tasks if isinstance(t, JobInfo)] if isinstance(tasks, list) else []
+
     if use_json:
         data = _job_info_to_dict(job_info)
+        if task_infos:
+            data["tasks"] = [_job_info_to_dict(t) for t in task_infos]
         if extra:
             data["details"] = {k: _serialize(v) for k, v in extra.items()}
         console.print_json(json.dumps(data))
         return
 
-    table = Table(title=f"Job {job_id}", show_header=False)
+    table = Table(title=f"Array job {job_id}" if task_infos else f"Job {job_id}", show_header=False)
     table.add_column("Property", style="cyan")
     table.add_column("Value")
 
@@ -334,6 +339,34 @@ def _show_single_job(
             table.add_row(key, str(val))
 
     console.print(table)
+    if task_infos:
+        console.print(_task_table(task_infos))
+
+
+def _task_table(tasks: list[JobInfo]) -> Table:
+    """One row per array task: the drill-down under the array's own status."""
+    table = Table(title="Tasks")
+    table.add_column("Task", justify="right", style="cyan")
+    table.add_column("Status")
+    table.add_column("Exit", justify="right")
+    table.add_column("Failed")
+    table.add_column("Node")
+    table.add_column("Runtime")
+    for t in tasks:
+        failed = ""
+        if t.failed_code:
+            failed = str(t.failed_code)
+            if t.failed_reason:
+                failed += f": {t.failed_reason}"
+        table.add_row(
+            str(t.array_task_id) if t.array_task_id is not None else "",
+            _status_style(t.status.name),
+            str(t.exit_code) if t.exit_code is not None else "",
+            failed,
+            t.node or "",
+            t.runtime_display if t.runtime else "",
+        )
+    return table
 
 
 # --------------------------------------------------------------------- #
@@ -368,6 +401,7 @@ def _job_info_to_dict(j: JobInfo) -> dict[str, object]:
         "exit_code": j.exit_code,
         "failed_code": j.failed_code,
         "failed_reason": j.failed_reason,
+        "array_task_id": j.array_task_id,
         "submit_time": _format_datetime(j.submit_time) if j.submit_time else None,
         "start_time": _format_datetime(j.start_time) if j.start_time else None,
         "end_time": _format_datetime(j.end_time) if j.end_time else None,

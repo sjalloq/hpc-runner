@@ -125,6 +125,7 @@ class SGEFixtures:
             self.job("exit1"): "qacct_exit1.txt",
             self.job("signal"): "qacct_signal.txt",
             self.job("lost_node"): "qacct_lost_node.txt",
+            self.job("array_done"): "qacct_array_base.txt",
         }
         if task is not None:
             if job_id == self.job("array_done") and task == "2":

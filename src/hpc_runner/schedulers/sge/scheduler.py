@@ -29,6 +29,7 @@ from hpc_runner.core.result import (
     ArrayJobResult,
     JobResult,
     JobStatus,
+    reduce_statuses,
     status_from_exit_code,
 )
 from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
@@ -54,7 +55,6 @@ from hpc_runner.schedulers.sge.args import (
 )
 from hpc_runner.schedulers.sge.parser import (
     _leading_int,
-    parse_qacct_output,
     parse_qacct_records,
     parse_qstat_j_xml,
     parse_qstat_xml,
@@ -657,14 +657,30 @@ class SGEScheduler(BaseScheduler):
         output = self._qstat_xml()
         return parse_qstat_xml_states(output) if output else {}
 
-    def _qacct(self, job_id: str) -> dict[str, str] | None:
-        """The parsed qacct record for *job_id* (``-t`` for a task), or None."""
+    def _qacct(self, job_id: str) -> dict[str, dict[str, Any]]:
+        """The final qacct record of each task of *job_id*, keyed by task.
+
+        ``qacct -j <base>`` prints one record per array task (``taskid``
+        1, 2, ...) and, for a plain job, one record with ``taskid
+        undefined``; ``-t <n>`` narrows to one task. A job that was
+        requeued has more than one record for the same task, of which only
+        the last that :func:`qacct_status` can decide is its end (a
+        ``failed 24``/``25`` record is a migration, not a result). The
+        keys are the task ids as strings, ``""`` for a plain job; empty
+        when qacct has no record.
+        """
         base, _, task = job_id.partition(".")
         argv = ["qacct", "-j", base] + (["-t", task] if task else [])
         result = self._run(argv, check=False)
         if result.returncode != 0:
-            return None
-        return parse_qacct_output(result.stdout)
+            return {}
+        final: dict[str, dict[str, Any]] = {}
+        for record in parse_qacct_records(result.stdout):
+            key = record.get("taskid", "undefined")
+            key = "" if key == "undefined" else key
+            if qacct_status(record) is not None or key not in final:
+                final[key] = record
+        return final
 
     def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
         """Statuses from one ``qstat -xml``, then qacct and the exit sentinel.
@@ -679,61 +695,86 @@ class SGEScheduler(BaseScheduler):
         Raises:
             SchedulerUnavailableError: qstat cannot reach the qmaster.
 
-        An array task id (``123.4``) reports that task's own state. A base
-        id of an array reports the most advanced state of its active tasks.
+        An array task id (``123.4``) reports that task's own state. The base
+        id of an array reports the array as a whole, the reduction of its
+        tasks (:func:`~hpc_runner.core.result.reduce_statuses`): active
+        while any task is, COMPLETED only when every task is.
         """
         active = self._active_states()
         statuses: dict[str, JobStatus] = {}
         for job_id in job_ids:
-            state = self._active_state(active, job_id)
-            if state is not None:
-                statuses[job_id] = state_to_status(state)
+            states = self._active_task_states(active, job_id)
+            if states:
+                statuses[job_id] = reduce_statuses(state_to_status(s) for s in states)
                 continue
-            record = self._qacct(job_id)
-            status = qacct_status(record) if record is not None else None
-            if status is None:
-                rc = self._read_exit_sentinel(job_id)
-                status = status_from_exit_code(rc) if rc is not None else JobStatus.UNKNOWN
-            statuses[job_id] = status
+            finished = [qacct_status(record) for record in self._qacct(job_id).values()]
+            decided = [status for status in finished if status is not None]
+            if decided:
+                statuses[job_id] = reduce_statuses(decided)
+                continue
+            codes = self._read_exit_sentinels(job_id)
+            statuses[job_id] = (
+                reduce_statuses(status_from_exit_code(rc) for rc in codes)
+                if codes
+                else JobStatus.UNKNOWN
+            )
         return statuses
+
+    def _read_exit_sentinels(self, job_id: str) -> list[int]:
+        """The exit codes *job_id* published: its own sentinel, or for the
+        base id of an array every ``<base>.<task>.rc``."""
+        own = self._read_exit_sentinel(job_id)
+        if own is not None:
+            return [own]
+        if not self.exit_dir or "." in job_id:
+            return []
+        codes: list[int] = []
+        for path in Path(self.exit_dir).glob(f"{job_id}.*.rc"):
+            try:
+                codes.append(int(path.read_text().strip()))
+            except (OSError, ValueError):
+                continue
+        return codes
 
     def task_job_id(self, base: str, index: int) -> str:
         """SGE names an array task ``<base>.<index>``."""
         return f"{base}.{index}"
 
     @staticmethod
-    def _active_state(active: dict[str, str], job_id: str) -> str | None:
-        """*job_id*'s state in *active* (see :meth:`_active_states`), or None.
+    def _active_task_states(active: dict[str, str], job_id: str) -> list[str]:
+        """The qstat state codes behind *job_id* in *active* (see
+        :meth:`_active_states`); empty when nothing of it is active.
 
-        A task id with no task entry falls back to its base id's entry (an
-        entry without a task list); a base id with only task entries takes
-        a running task's state if there is one.
+        A plain id or a task id is its own entry. A task id with no task
+        entry falls back to its base id's entry (an entry without a task
+        list). The base id of an array is every one of its task entries.
         """
         if job_id in active:
-            return active[job_id]
+            return [active[job_id]]
         base, _, task = job_id.partition(".")
         if task:
-            return active.get(base)
-        task_states = [state for key, state in active.items() if key.startswith(f"{job_id}.")]
-        if not task_states:
-            return None
-        running = [s for s in task_states if state_to_status(s) is JobStatus.RUNNING]
-        return (running or task_states)[0]
+            state = active.get(base)
+            return [state] if state is not None else []
+        return [state for key, state in active.items() if key.startswith(f"{job_id}.")]
 
     def get_exit_code(self, job_id: str) -> int | None:
         """Get exit code from qacct, falling back to the exit sentinel.
 
         The sentinel is used when accounting is unavailable, e.g. qacct no
         longer returns finished jobs. A guard-skipped job returns 113
-        (``HPC_EXIT_DEP_FAILED``).
+        (``HPC_EXIT_DEP_FAILED``). The base id of an array returns 0 when
+        every task exited 0, else the first non-zero task code.
         """
-        record = self._qacct(job_id)
-        if record is not None:
-            # qacct writes "137 (Killed)" for a signal death; take the number.
-            exit_status = _leading_int(record.get("exit_status"))
-            if exit_status is not None:
-                return exit_status
-        return self._read_exit_sentinel(job_id)
+        # qacct writes "137 (Killed)" for a signal death; take the number.
+        codes = [_leading_int(r.get("exit_status")) for r in self._qacct(job_id).values()]
+        known = [code for code in codes if code is not None]
+        if not known:
+            known = self._read_exit_sentinels(job_id)
+        if not known:
+            return None
+        # One task's code for a plain job; for an array the first task's
+        # non-zero code, 0 when every task exited 0 (see ArrayJobResult.exit_code).
+        return next((code for code in known if code != 0), 0)
 
     # =========================================================================
     # TUI Monitor API
@@ -884,12 +925,17 @@ class SGEScheduler(BaseScheduler):
 
         Parses the full job details including output paths, resources, etc.
         A job qstat no longer knows is looked up in qacct instead (status,
-        exit code, ``failed`` code and reason; no extra details).
+        exit code, ``failed`` code and reason; no extra details). The base
+        id of a finished array gives the array as a whole (status and exit
+        code reduced over the tasks, see
+        :func:`~hpc_runner.core.result.reduce_statuses`) and every task's
+        own ``JobInfo`` under ``extra["tasks"]``.
 
         Returns:
             Tuple of (JobInfo, extra_details dict).
             The extra_details dict contains resources, pe_name, pe_range,
-            cwd, script_file, dependencies, project, department.
+            cwd, script_file, dependencies, project, department; ``tasks``
+            for a finished array.
         """
         cmd = ["qstat", "-j", job_id, "-xml"]
         result = self._run(cmd, check=False)
@@ -904,10 +950,13 @@ class SGEScheduler(BaseScheduler):
         # record, which carries the exit code and SGE's failed code and reason.
         job_data = parse_qstat_j_xml(output)
         if not job_data and output:
-            record = self._qacct(job_id)
-            if record is None:
+            records = self._qacct(job_id)
+            if not records:
                 raise JobNotFoundError(f"job {job_id} not found")
-            return qacct_to_job_info(record), {}
+            tasks = [qacct_to_job_info(r) for _, r in sorted(records.items(), key=_task_order)]
+            if len(tasks) == 1 and not tasks[0].array_task_id:
+                return tasks[0], {}
+            return _array_job_info(job_id, tasks), {"tasks": tasks}
 
         # Separate extra details from JobInfo fields
         extra_details: dict[str, object] = {}
@@ -974,3 +1023,29 @@ class SGEScheduler(BaseScheduler):
                 if job_info.status == JobStatus.RUNNING:
                     job_info.runtime = datetime.now() - job_info.start_time
             return job_info, extra_details
+
+
+def _task_order(item: tuple[str, dict[str, Any]]) -> int:
+    key, _ = item
+    return int(key) if key.isdigit() else 0
+
+
+def _array_job_info(job_id: str, tasks: list[JobInfo]) -> JobInfo:
+    """One ``JobInfo`` for a finished array from its tasks' records."""
+    first = tasks[0]
+    statuses = [t.status for t in tasks]
+    codes = [t.exit_code for t in tasks if t.exit_code is not None]
+    failed = next((t for t in tasks if t.status is not JobStatus.COMPLETED), None)
+    return JobInfo(
+        job_id=job_id,
+        name=first.name,
+        user=first.user,
+        status=reduce_statuses(statuses),
+        queue=first.queue,
+        exit_code=next((c for c in codes if c != 0), 0) if codes else None,
+        failed_code=failed.failed_code if failed else None,
+        failed_reason=failed.failed_reason if failed else None,
+        submit_time=min((t.submit_time for t in tasks if t.submit_time), default=None),
+        start_time=min((t.start_time for t in tasks if t.start_time), default=None),
+        end_time=max((t.end_time for t in tasks if t.end_time), default=None),
+    )

@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from hpc_runner.cli._context import Context, pass_context
-from hpc_runner.core.result import ArrayJobResult, JobStatus
+from hpc_runner.core.result import ArrayJobResult
 
 if TYPE_CHECKING:
     from hpc_runner.core.dependency import Dependency
@@ -209,9 +209,13 @@ def run(
     if wait:
         console.print("[dim]Waiting for job completion...[/dim]")
         if isinstance(result, ArrayJobResult):
-            task_statuses = result.wait()
-            failed = sum(1 for st in task_statuses.values() if st is not JobStatus.COMPLETED)
-            console.print(f"Array job completed: {len(task_statuses) - failed} ok, {failed} not ok")
+            final_status = result.wait()
+            tasks = result.task_statuses()
+            not_ok = len(tasks.failed) + len(tasks.unfinished)
+            console.print(
+                f"Array job completed with status: [bold]{final_status.name}[/bold] "
+                f"({len(tasks.tasks) - not_ok} ok, {not_ok} not ok)"
+            )
         else:
             final_status = result.wait()
             console.print(f"Job completed with status: [bold]{final_status.name}[/bold]")

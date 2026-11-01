@@ -177,14 +177,24 @@ Monitoring jobs
 
 ``wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` blocks until
 the job reaches a terminal status (``COMPLETED``, ``FAILED``, ``CANCELLED``,
-``TIMEOUT`` or ``SKIPPED``; ``JobStatus.is_terminal``). If the scheduler
+``TIMEOUT`` or ``SKIPPED``; ``JobStatus.is_terminal``). ``PENDING``,
+``RUNNING`` and ``SUSPENDED`` (started, then suspended by the user or the
+queue; it holds its slot until resumed) are the active statuses. If the scheduler
 reports ``UNKNOWN`` continuously for ``unknown_after`` seconds (for example
 the job has aged out of accounting), ``wait()`` returns ``UNKNOWN`` rather
 than polling forever; ``timeout`` raises ``TimeoutError``.
-``ArrayJobResult.wait()`` takes the same arguments, returns each task's
-status by index, and polls all tasks with one ``get_statuses`` call per
-tick; ``task_status(n)`` is that task's own status and ``task_id(n)`` its
-id (from the scheduler's ``task_job_id``).
+``ArrayJobResult.wait()`` takes the same arguments and polls all tasks with
+one ``get_statuses`` call per tick. It returns one status for the array as
+a whole: active while any task is, ``COMPLETED`` only when every task is,
+otherwise the worst task (``FAILED``, then ``TIMEOUT``, ``CANCELLED``,
+``SKIPPED``; an ``UNKNOWN`` task makes the whole ``UNKNOWN``). The same
+rule (``reduce_statuses``) decides ``status`` on the handle, a scheduler's
+answer for an array's base id, and a pipeline step's status.
+``task_statuses()`` is the drill-down: an ``ArrayJobStatus`` with the
+status of every task by index (``tasks``), ``counts``, the ``failed`` and
+``unfinished`` indices and ``is_terminal``. ``task_status(n)`` is one
+task's own status, ``task_exit_code(n)`` its exit code, and ``task_id(n)``
+its id (from the scheduler's ``task_job_id``).
 
 ``SKIPPED`` means the job did not run because a dependency was not
 satisfied (see below).
@@ -481,8 +491,12 @@ renders it in its own grammar (SGE: ``-t START-END[:STEP]`` plus
    spec = JobSpec("python work.py", name="work", cpu=2, time="0:30:00", array="1-100%10")
    array_result = scheduler.submit(resolve(spec, config, host))
 
-   statuses = array_result.wait()          # {task index: JobStatus}
-   print("completed:", sum(1 for s in statuses.values() if s.name == "COMPLETED"))
+   if array_result.wait() is not JobStatus.COMPLETED:
+       tasks = array_result.task_statuses()
+       print("failed tasks:", tasks.failed, tasks.counts)
+
+``result()`` on an array waits and returns 0, or raises ``JobFailedError``
+naming the failed task indices (``failed_tasks``).
 
 The local scheduler supports neither arrays nor dependencies and raises
 ``NotSupportedError`` rather than running something different.

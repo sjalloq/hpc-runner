@@ -611,11 +611,13 @@ class TestPipelineResultsAndStatuses:
         p = self._submitted({"10.1": done, "10.2": done, "10.3": done, "11": JobStatus.FAILED})
         assert p.wait(poll_interval=0) == {"sims": done, "report": JobStatus.FAILED}
 
-    def test_array_step_reports_first_task_not_completed(self):
+    def test_array_step_reports_the_worst_task(self):
+        """The shared reduction (``reduce_statuses``): a FAILED task outranks
+        a SKIPPED one whatever the task order."""
         from hpc_runner.core.result import JobStatus
 
         done = JobStatus.COMPLETED
         p = self._submitted(
             {"10.1": done, "10.2": JobStatus.SKIPPED, "10.3": JobStatus.FAILED, "11": done}
         )
-        assert p.wait(poll_interval=0)["sims"] is JobStatus.SKIPPED
+        assert p.wait(poll_interval=0)["sims"] is JobStatus.FAILED

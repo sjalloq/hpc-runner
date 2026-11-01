@@ -399,6 +399,32 @@ the suite is green now and the fix flips the test to a hard pass.
   `test_hold_flag_forwards` submits `-S '-h'`; the status test's far-future
   start time is `-S '-a 2030...'` since `-a` is now `--array`. Record in
   `docs/dev/cli/RUN_ARG_PARSING.md`.
+- **D-T44 an array has one status, the reduction of its tasks; `SUSPENDED`
+  is a status** (user, 2026-11-01; from `docs/dev/test-review/LIFECYCLE_MATRIX.md`
+  §4). The matrix found that `get_status(<base>)` of a finished array read
+  `qacct -j <base>`, which prints one record per task, through the
+  single-record parser, so the last record printed won; the capture
+  (`qacct_array_base.txt`) shows records come in finish order, so a failed
+  task was masked whenever another finished after it. The user's workflow
+  is submit, poll one status, and only if it is not COMPLETED look at the
+  tasks, so: `reduce_statuses()` in `core/result.py` is the one rule (active
+  while any task is, RUNNING > SUSPENDED > PENDING; then UNKNOWN; then
+  FAILED > TIMEOUT > CANCELLED > SKIPPED; COMPLETED only when all are) and
+  is used by `ArrayJobResult.status`/`wait()` (one `JobStatus` now, no more
+  type-ignored override), the pipeline step status (replacing its
+  first-non-completed rule), and the SGE base-id readers (`get_statuses`,
+  `get_exit_code`, `get_job_details`, the last returning every task's
+  `JobInfo` under `extra["tasks"]`). `ArrayJobResult.task_statuses()` is the
+  drill-down (`ArrayJobStatus`: tasks, counts, failed, unfinished);
+  `result()` on an array raises `JobFailedError` naming the failed tasks.
+  `hpc status <base>` prints the array's row and a per-task table.
+  `_qacct` returns the final record per task, so a requeued job (`failed
+  24` then its real record) reads its real end too. The matrix's other two
+  decisions: `JobStatus.SUSPENDED` added (SGE `s`, `S`, `T` and their `t`
+  forms; the old mapping said PENDING, or RUNNING for `ts`), and "a qdel'd
+  job ends FAILED, a qdel'd pending job UNKNOWN" is accepted as a don't
+  care: nothing branches on CANCELLED, and nobody's job can depend on one
+  you cancelled since you cannot qdel another user's.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does
