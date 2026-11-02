@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     done
 
 COPY testbed/common/ /opt/testbed/common/
-COPY testbed/sge/soge/entrypoint.sh testbed/sge/soge/ready.sh testbed/sge/soge/clean.sh /opt/testbed/
+COPY testbed/sge/soge/entrypoint.sh testbed/sge/common/ready.sh testbed/sge/common/clean.sh /opt/testbed/
 COPY testbed/sge/soge/cell/ /opt/testbed/cell/
 RUN chmod 0755 /opt/testbed/*.sh /opt/testbed/common/*.sh
 

@@ -15,6 +15,8 @@ testbed/
   common/             users.sh (alice 1001, bob 1002, tester 1003), wait-for.sh (poll with timeout)
   sge/README.md       SGE flavours and the per-flavour support matrix
   sge/soge/           Debian trixie gridengine 8.1.9 (Son of Grid Engine lineage)
+  sge/ocs/            Open Cluster Scheduler 9.1.7 (Univa lineage), upstream tarballs
+  sge/common/         ready.sh and clean.sh, shared by the SGE flavours
     Dockerfile        one image for every role; role from SGE_ROLE at run time
     compose.yml       master, exec1, exec2, login on a static-IP network
     entrypoint.sh     master: init_cluster + qconf config; exec: sge_execd; login: venvs + sleep

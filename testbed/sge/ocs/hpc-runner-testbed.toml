@@ -1,0 +1,18 @@
+# hpc-runner configuration used by the integration suite inside the `login`
+# container (HPC_RUNNER_CONFIG points here). The names match cell/*.conf.
+config_version = 1
+scheduler = "sge"
+
+[schedulers.sge]
+parallel_environment = "smp"     # cell/pe-smp.conf
+memory_resource = "mem_free"     # cell/complexes.conf (requestable, not consumable)
+time_resource = "h_rt"
+memory_per = "job"               # SGE does not multiply a requestable by slots
+emulate_afterok = true
+
+# One tool entry matching several executables (configuration.rst "One tool,
+# several commands"); `sort` and `uniq` are coreutils every node has and no
+# other integration test runs them. test_cli.py proves the alias live.
+[tools.sort]
+commands = ["sort", "uniq"]
+queue = "short.q"

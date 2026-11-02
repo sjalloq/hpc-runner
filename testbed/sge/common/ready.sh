@@ -1,6 +1,6 @@
 #!/bin/bash
-# Readiness probe for the `soge` stack; runs on `login` (docs/dev/testbed/TESTBED_PLAN.md
-# section 3). Exits 0 when every check passes; otherwise prints the failing
+# Readiness probe for every SGE flavour's stack; runs on `login`
+# (docs/dev/testbed/TESTBED_PLAN.md section 3). Exits 0 when every check passes; otherwise prints the failing
 # check and the evidence and exits 1. The caller polls it (wait-for.sh / the
 # pytest fixture, 90 s cap).
 set -uo pipefail
@@ -39,16 +39,19 @@ done
 ss=$(qconf -ss 2>&1) || fail "qconf -ss failed" "$ss"
 grep -qx login <<<"$ss" || fail "qconf -ss: login missing" "$ss"
 
-# 4. A job runs end to end as alice and reaches the accounting file.
+# 4. A job runs end to end as alice and reaches the accounting file. Polled
+# rather than `qsub -sync y`: on OCS 9.1 a non-manager's -sync cannot trigger
+# an event flush ("must be manager to initiate TRIGGER operation") and waits
+# up to ~30 s for the next delivery.
 cd /tmp || exit 1
-sub=$(timeout 20 sudo -u alice qsub -sync y -b y -cwd -o /dev/null -j y true 2>&1)
+sub=$(timeout 20 sudo -u alice qsub -terse -b y -cwd -o /dev/null -j y true 2>&1)
 rc=$?
-[ $rc -eq 0 ] || fail "qsub -sync y as alice failed (rc=$rc)" "$sub"
-jid=$(sed -n 's/^Your job \([0-9]*\) .*/\1/p' <<<"$sub" | head -n1)
-[ -n "$jid" ] || fail "could not find the job id in qsub output" "$sub"
-deadline=$((SECONDS + 5))
+[ $rc -eq 0 ] || fail "qsub as alice failed (rc=$rc)" "$sub"
+jid=$(head -n1 <<<"$sub")
+[[ $jid =~ ^[0-9]+$ ]] || fail "could not find the job id in qsub -terse output" "$sub"
+deadline=$((SECONDS + 20))
 until acct=$(qacct -j "$jid" 2>&1); do
-    [ "$SECONDS" -lt "$deadline" ] || fail "qacct -j $jid not available within 5 s" "$acct"
+    [ "$SECONDS" -lt "$deadline" ] || fail "job $jid not in qacct within 20 s" "$acct" "$(qstat -j "$jid" 2>&1)"
     sleep 0.5
 done
 

@@ -9,7 +9,8 @@ Inputs: the original question list (since deleted) (the questions),
 `TESTBED_DESIGN.md` (the answers), `TESTBED_RESEARCH.md` (prior art and fact
 checks, every claim with a URL). This plan supersedes the design's "First
 milestone" section and corrects it where the research contradicted it.
-Phase 5 (further flavours) and phase 6 (Slurm) are not started.
+Phase 5: the `ocs` flavour is done (2026-11-02, TESTBED_REVIEW D-T49);
+`daimh/sge` is not started. Phase 6 (Slurm) is not started.
 
 The plan is written against the refactored code on branch `refactor/decisions`
 (D1–D15): one `run_command` subprocess seam, `SubmissionError` with stderr

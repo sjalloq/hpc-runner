@@ -35,8 +35,12 @@ from hpc_runner.schedulers.base import BaseScheduler
 SRC_ROOT = Path("/src")
 #: Shared scratch volume, mode 1777; the fixture makes one directory per test.
 WORK_ROOT = Path("/work")
-#: The qmaster's accounting file (shared volume; truncating needs root).
-ACCOUNTING_FILE = Path("/var/lib/gridengine/default/common/accounting")
+#: Each SGE flavour's accounting file (shared volume; truncating needs root).
+#: OCS writes JSON lines to ``accounting.jsonl``; ``qacct`` reads either.
+ACCOUNTING_FILES = {
+    "soge": Path("/var/lib/gridengine/default/common/accounting"),
+    "ocs": Path("/opt/ocs/default/common/accounting.jsonl"),
+}
 #: The stack's readiness probe (docs/dev/testbed/TESTBED_PLAN.md section 3); exit 0 when ready.
 READY_SCRIPT = Path("/opt/testbed/ready.sh")
 #: The stack's per-test cleanup: delete every job, wait for an empty queue, remove a workdir.
@@ -301,7 +305,7 @@ class SGECluster(TestbedCluster):
         return [["qstat", "-f"], ["qstat", "-j", job_id]]
 
     def accounting_truncate(self) -> None:
-        self.run(["sudo", "truncate", "-s", "0", str(ACCOUNTING_FILE)])
+        self.run(["sudo", "truncate", "-s", "0", str(ACCOUNTING_FILES[self.flavour])])
 
 
 #: ``{family: cluster class}``; a new family (``testbed/slurm/``) adds its class here.

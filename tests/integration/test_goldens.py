@@ -33,6 +33,15 @@ EXPECTED: dict[str, str | None] = {
     "sge_batch_full_environment.sh": "verification: no suitable queues",
     "sge_batch_passthrough_resources_project.sh": 'unknown resource "scratch"',
 }
+#: Per flavour, the goldens whose outcome differs there. OCS 9.1 replaced
+#: SoGE's ``-binding linear:1`` syntax, so the passthrough line fails to parse.
+FLAVOUR_EXPECTED: dict[str, dict[str, str | None]] = {
+    "ocs": {
+        "sge_batch_passthrough_resources_project.sh": (
+            f'{PARSE_ERROR} because of error: ERROR! invalid option argument "-binding"'
+        ),
+    },
+}
 
 
 def test_every_sge_batch_golden_is_covered() -> None:
@@ -45,8 +54,9 @@ def test_qsub_verifies_the_golden(cluster: Cluster, golden: str) -> None:
     shutil.copy(GOLDEN_DIR / golden, script)
     proc = cluster.run(["qsub", "-w", "v", str(script)], check=False)
     output = proc.stdout + proc.stderr
-    assert PARSE_ERROR not in output, output
-    expected = EXPECTED[golden]
+    expected = FLAVOUR_EXPECTED.get(cluster.flavour, {}).get(golden, EXPECTED[golden])
+    if expected is None or PARSE_ERROR not in expected:
+        assert PARSE_ERROR not in output, output
     if expected is None:
         assert proc.returncode == 0 and VERIFIED in output, output
     else:

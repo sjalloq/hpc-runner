@@ -4,4 +4,5 @@
 !pyproject.toml
 !testbed/common/
 !testbed/sge/soge/
+!testbed/sge/common/
 testbed/sge/soge/junit-*.xml

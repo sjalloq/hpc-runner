@@ -19,6 +19,8 @@ from tests.integration.cluster import SRC_ROOT, Cluster
 pytestmark = pytest.mark.family("sge")
 
 FIXTURES = SRC_ROOT / "tests" / "unit" / "fixtures" / "sge"
+#: How each flavour's ``qstat -help`` starts (the bundle's ``scheduler`` field).
+VERSION_PREFIX = {"soge": "SGE", "ocs": "OCS"}
 QACCT_TIMEOUT = 30.0
 
 
@@ -105,6 +107,7 @@ def test_bundle_is_scrubbed_and_replays(cluster: Cluster, workdir: Path) -> None
         for word in ("tester", "exec1", "exec2", "login", "/home/"):
             assert word not in text, (word, text[:300])
     meta = json.loads((top / "meta.json").read_text())
-    assert meta["scrubbed"] is True and meta["scheduler"].startswith("SGE")
+    assert meta["scrubbed"] is True
+    assert meta["scheduler"].startswith(VERSION_PREFIX[cluster.flavour]), meta["scheduler"]
     proc = cluster.run([str(cluster.hpc_cli), "trace", "compare", str(top / "trace")], check=False)
     assert proc.returncode == 0, proc.stdout

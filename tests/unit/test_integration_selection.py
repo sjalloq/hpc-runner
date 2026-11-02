@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.integration.cluster import CLUSTERS, SGECluster
+from tests.integration.cluster import ACCOUNTING_FILES, CLUSTERS, SGECluster
 from tests.integration.conftest import deselect_reason, family_of, known_flavours
 
 FLAVOURS = {"soge": "sge", "ocs": "sge", "debian": "slurm"}
@@ -88,3 +88,8 @@ def test_sge_cluster_dumps_qstat_for_a_failed_wait() -> None:
     cluster = SGECluster(flavour="soge", workdir=Path("/work"))
     assert cluster.name == "sge" and cluster.probe_command == "qstat"
     assert cluster.dump_commands("42") == [["qstat", "-f"], ["qstat", "-j", "42"]]
+
+
+def test_every_sge_flavour_names_its_accounting_file() -> None:
+    sge = {flavour for flavour, family in known_flavours().items() if family == "sge"}
+    assert sge == set(ACCOUNTING_FILES)

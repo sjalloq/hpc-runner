@@ -1,0 +1,67 @@
+# Global cluster configuration, applied with `qconf -Mconf` (the object name
+# is this file's basename, hence no .conf suffix). OCS 9.1.7's defaults
+# (`qconf -sconf` after inst_sge) with the soge flavour's deviations:
+# shell_start_mode, login_shells, a 30 s max_unheard (a killed node is
+# noticed quickly), ENABLE_ADDGRP_KILL, execd spool on each
+# node's own disk, /bin/true as the mailer (it must be a path). The load
+# report is every 10 s, not soge's 40 s: an OCS execd is heard only through
+# its load reports, so a report interval above max_unheard marks every host
+# unknown between reports. The entrypoint substitutes flush_time from
+# ACCOUNTING_FLUSH (default 00:00:01; slow-accounting 00:00:15).
+#global:
+execd_spool_dir              /var/spool/ocs/execd
+mailer                       /bin/true
+xterm                        /usr/bin/X11/xterm
+load_sensor                  NONE
+prolog                       NONE
+epilog                       NONE
+shell_start_mode             posix_compliant
+login_shells                 bash,sh,ksh,csh,tcsh
+min_uid                      0
+min_gid                      0
+user_lists                   NONE
+xuser_lists                  NONE
+projects                     NONE
+xprojects                    NONE
+enforce_project              false
+enforce_user                 auto
+load_report_time             00:00:10
+max_unheard                  00:00:30
+reschedule_unknown           00:00:00
+loglevel                     log_warning
+administrator_mail           none
+mail_tag                     NONE
+set_token_cmd                NONE
+pag_cmd                      NONE
+token_extend_time            NONE
+shepherd_cmd                 NONE
+qmaster_params               NONE
+execd_params                 ENABLE_ADDGRP_KILL=true
+reporting_params             accounting=true reporting=false \
+                             flush_time=00:00:01 joblog=false sharelog=00:00:00
+binding_params               enabled=true,implicit=false,mode=default, \
+                             default_unit=C,on_any_host=false,filter=NONE
+gdi_request_limits           NONE
+jsv_url                      NONE
+jsv_allowed_mod              ac,h,i,e,o,j,M,N,p,w
+jsv_params                   NONE
+gid_range                    20000-20200
+finished_jobs                100
+qlogin_daemon                builtin
+qlogin_command               builtin
+rlogin_daemon                builtin
+rlogin_command               builtin
+rsh_daemon                   builtin
+rsh_command                  builtin
+port_range                   NONE
+max_aj_instances             2000
+max_aj_tasks                 75000
+max_u_jobs                   0
+max_jobs                     0
+max_advance_reservations     0
+auto_user_oticket            0
+auto_user_fshare             0
+auto_user_default_project    NONE
+auto_user_delete_time        86400
+delegated_file_staging       false
+topology_file                NONE

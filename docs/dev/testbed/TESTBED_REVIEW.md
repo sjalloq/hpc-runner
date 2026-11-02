@@ -495,6 +495,37 @@ the suite is green now and the fix flips the test to a hard pass.
   (`SLOW_ACCOUNTING_FAMILIES`) and `capture` (`CAPTURE_MODULES`) are SGE
   only, and the driver and the conftest refuse them for another family
   rather than running an empty set.
+- **D-T49 the `ocs` flavour** (2026-11-02, phase 5). Open Cluster
+  Scheduler 9.1.7 from hpc-gridware's binary tarballs on Debian trixie, so
+  users, modules and venvs match `soge`; upstream publishes no checksums,
+  so the Dockerfile pins the sha256 of the 2026-11-02 download. Departures
+  from the plan's phase 5 text:
+  - No `privileged: true` and no kernel 7.x `util/arch` patch: 9.1.7's
+    `util/arch` already accepts 7.x and unprivileged containers work.
+  - `inst_sge -m -auto` refuses any existing cell directory (it tests
+    `-d $SGE_ROOT/$SGE_CELL`, `inst_common.sh`), and a volume's mount point
+    always exists. The shared cell volume is mounted at `/opt/ocs-cell`;
+    the master installs into a fresh `/opt/ocs/default`, copies it to the
+    volume and replaces it with a symlink, which every node makes.
+  - `load_report_time` 10 s: soge's 40 s with `max_unheard` 30 s left
+    every exec host unknown between reports.
+  - `ready.sh` and `clean.sh` moved to `testbed/sge/common/` for both
+    flavours; the readiness probe submits with `-terse` and polls `qacct`,
+    since `qsub -sync y` takes about 30 s on OCS for a non-manager.
+  - Both stacks use the same container names, so one runs at a time.
+
+  What OCS writes differently and how hpc-runner reads it (all by the
+  output's shape, never by asking which flavour; the list is in
+  `testbed/sge/README.md`): `<>` empty tags for an unknown job
+  (`docs/dev/sge-xml-defects.md` 1a; repaired), resource requests in
+  `JB_request_set_list` (only the global set is read: hpc-runner does not
+  support `-scope`, so `hpc status` does not show scoped requests), ISO 8601 times with
+  microseconds and `JAT_submission_time` (one parser for every form),
+  execd limit kills as `failed 100` + `deleted_by execd@` (KILLED, D18),
+  `accounting.jsonl` (the fixture's per-flavour accounting path), and the
+  9.1 `-binding` syntax (a per-flavour expected golden result). Scheduler
+  detection could not recognise OCS; detection is gone (D17). Unit-test
+  fixtures are still captured from `soge` only.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does
