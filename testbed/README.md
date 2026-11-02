@@ -94,10 +94,13 @@ Shared volumes: `/work` (mode 1777: job scripts, output, sentinels),
 
 ## CI
 
-The `integration` job in `.github/workflows/ci.yml` runs this stack on
+The `integration` job in `.github/workflows/ci.yml` runs these stacks on
 `ubuntu-latest` after `lint` and `test`, with `timeout-minutes: 20` and no
-registry (the image is built in the job). Pull requests run Python 3.12 only;
-pushes to `main` run 3.10, 3.11 and 3.12, one matrix cell each. A cell is:
+registry (the image is built in the job). One matrix cell per flavour and
+Python: `soge` at 3.12 on pull requests and at 3.10, 3.11 and 3.12 on pushes
+to `main`; `ocs` at 3.12 always (its differences are in what the scheduler
+writes, not in the Python reading it). A cell is, with `--flavour <name>` on
+every command:
 
 1. `pip install -e .` for the driver, `hpc-testbed up`, then `hpc-testbed
    pytest --py <ver> --junit testbed/junit-<ver>-default.xml` (a missing
@@ -107,8 +110,8 @@ pushes to `main` run 3.10, 3.11 and 3.12, one matrix cell each. A cell is:
    15 s flush (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its report is
    `testbed/junit-<ver>.xml`.
 
-Artefacts: `junit-<ver>` (both XML reports, always uploaded) and, on failure,
-`testbed-logs-<ver>` with `compose.log` (`hpc-testbed logs`) and each
+Artefacts: `junit-<flavour>-<ver>` (both XML reports, always uploaded) and,
+on failure, `testbed-logs-<flavour>-<ver>` with `compose.log` (`hpc-testbed logs`) and each
 container's `/var/log/testbed.log` as `<name>-testbed.log`. `hpc-testbed down`
 runs last whatever happened.
 

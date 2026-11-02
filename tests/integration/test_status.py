@@ -23,6 +23,8 @@ pytestmark = pytest.mark.family("sge")
 SLOW_FLUSH = "flush_time=00:00:15"
 #: D-T6: on the slow stack qacct lags the job end by a variable 10-13 s.
 QACCT_WINDOW = 30.0
+#: How long after start a slow-accounting stack may still write records at once.
+SLOW_START = 90.0
 
 
 def _submit(cluster: Cluster, spec: JobSpec) -> JobResult:
@@ -76,14 +78,25 @@ def test_slow_accounting_window(cluster: Cluster) -> None:
     )
 
     scheduler = cluster.scheduler()
-    job_id = _job_id(_submit(cluster, JobSpec("echo done", name="slowacct")))
-    deadline = time.monotonic() + 60
-    while cluster.run(["qstat", "-j", job_id], check=False).returncode == 0:
-        assert time.monotonic() < deadline, f"job {job_id} still in qstat after 60s"
-        time.sleep(0.2)
-    left_qstat = time.monotonic()
+    # OCS 9.1.7 writes each record at once for the first half minute or so
+    # after the qmaster starts, then keeps to flush_time; soge buffers from
+    # the start. So run jobs until one leaves qstat before its record is
+    # written (the first, on soge).
+    window_deadline = time.monotonic() + SLOW_START
+    while True:
+        job_id = _job_id(_submit(cluster, JobSpec("echo done", name="slowacct")))
+        deadline = time.monotonic() + 60
+        while cluster.run(["qstat", "-j", job_id], check=False).returncode == 0:
+            assert time.monotonic() < deadline, f"job {job_id} still in qstat after 60s"
+            time.sleep(0.2)
+        left_qstat = time.monotonic()
+        if not _qacct_has(cluster, job_id):
+            break
+        assert left_qstat < window_deadline, (
+            f"qacct had every record as soon as the job left qstat for {SLOW_START}s; "
+            "the stack is not slow"
+        )
 
-    assert not _qacct_has(cluster, job_id), "qacct already had the record; stack is not slow"
     assert scheduler.get_status(job_id) is JobStatus.COMPLETED
     assert scheduler.get_exit_code(job_id) == 0
 

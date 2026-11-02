@@ -59,14 +59,17 @@ jobs:
       - name: Run tests
         run: pytest -v
 
-  # End-to-end tests against a real SGE cluster: the Docker Compose stack in
-  # testbed/sge/soge (docs/dev/testbed/TESTBED_PLAN.md section 7, testbed/README.md "CI").
+  # End-to-end tests against a real SGE cluster: the Docker Compose stacks in
+  # testbed/sge/<flavour> (docs/dev/testbed/TESTBED_PLAN.md section 7, testbed/README.md "CI").
+  # soge (gridengine 8.1.9) runs at every Python; ocs (Open Cluster
+  # Scheduler 9.1.7) at 3.12 only, since its differences are in what the
+  # scheduler writes, not in the Python that reads it.
   # The image is built in the job; there is no registry. If the build ever
   # hurts, the first step up is docker/build-push-action with
   # cache-from/to: type=gha, still with no registry.
   #
-  # Pull requests run Python 3.12 only; pushes to main run the full
-  # 3.10-3.12 matrix. Each cell runs the suite twice: once on the default
+  # Pull requests run soge at Python 3.12 only; pushes to main run soge at
+  # 3.10-3.12. Each cell runs the suite twice: once on the default
   # stack and once with --slow-accounting for the one test that needs it
   # (docs/dev/testbed/TESTBED_REVIEW.md D-T22). The tests run inside the login
   # container; the runner only needs Python for the hpc-testbed driver
@@ -79,6 +82,10 @@ jobs:
       fail-fast: false
       matrix:
         python: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && '["3.10", "3.11", "3.12"]' || '["3.12"]') }}
+        flavour: [soge]
+        include:
+          - python: "3.12"
+            flavour: ocs
 
     steps:
       - uses: actions/checkout@v4
@@ -92,27 +99,27 @@ jobs:
       - name: Install the testbed driver
         run: pip install -e .
 
-      - name: Start the SGE stack
-        run: hpc-testbed up
+      - name: Start the ${{ matrix.flavour }} stack
+        run: hpc-testbed --flavour ${{ matrix.flavour }} up
 
-      - name: Integration tests (Python ${{ matrix.python }})
+      - name: Integration tests (${{ matrix.flavour }}, Python ${{ matrix.python }})
         run: >
-          hpc-testbed pytest --py ${{ matrix.python }}
+          hpc-testbed --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }}
           --junit testbed/junit-${{ matrix.python }}-default.xml
 
       - name: Restart the stack with slow accounting
         run: |
-          hpc-testbed down
-          hpc-testbed up --slow-accounting
+          hpc-testbed --flavour ${{ matrix.flavour }} down
+          hpc-testbed --flavour ${{ matrix.flavour }} up --slow-accounting
 
-      - name: Slow-accounting tests (Python ${{ matrix.python }})
-        run: hpc-testbed pytest --py ${{ matrix.python }} --slow-accounting
+      - name: Slow-accounting tests (${{ matrix.flavour }}, Python ${{ matrix.python }})
+        run: hpc-testbed --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }} --slow-accounting
 
       - name: Upload JUnit reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: junit-${{ matrix.python }}
+          name: junit-${{ matrix.flavour }}-${{ matrix.python }}
           path: testbed/junit-*.xml
           if-no-files-found: ignore
 
@@ -120,7 +127,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p testbed-logs
-          hpc-testbed logs > testbed-logs/compose.log 2>&1 || true
+          hpc-testbed --flavour ${{ matrix.flavour }} logs > testbed-logs/compose.log 2>&1 || true
           for c in master exec1 exec2 login; do
             docker cp "$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
           done
@@ -129,7 +136,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: testbed-logs-${{ matrix.python }}
+          name: testbed-logs-${{ matrix.flavour }}-${{ matrix.python }}
           path: testbed-logs/
           if-no-files-found: ignore
 

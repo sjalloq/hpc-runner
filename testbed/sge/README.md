@@ -34,7 +34,7 @@ would show as such (none so far); nothing skips at run time.
 | | test_interactive | pass | pass |
 | | test_interactive_no_slot (all eight slots filled, D-T28) | pass | pass |
 | test_status.py | test_queued_running_done | pass | pass |
-| | test_slow_accounting_window | pass on `hpc-testbed pytest --slow-accounting` (D-T22); deselected otherwise | not run |
+| | test_slow_accounting_window | pass on `hpc-testbed pytest --slow-accounting` (D-T22); deselected otherwise | pass, likewise (waits out OCS's start-up period, below) |
 | | test_aged_out | pass | pass |
 | | test_suspended_job_is_waited_through | pass | pass |
 | | test_requeued_job_ends_with_its_final_record | pass | pass |
@@ -91,6 +91,9 @@ difference is handled by the shape of the output (TESTBED_REVIEW D-T49).
   `failed 100` with `deleted_by execd@<host>` (KILLED).
 - Accounting is `$SGE_ROOT/default/common/accounting.jsonl`.
 - `qsub -binding linear:1` is rejected (9.1 binding syntax).
+- For roughly the first half minute after the qmaster starts, each
+  accounting record is written at once whatever `flush_time` says; after
+  that it is buffered as configured.
 - After `qmod -sq` then `qmod -usq`, a job that was in the queue instance
   stays `S` in qstat although it runs again (TESTBED_REVIEW D-T50).
 

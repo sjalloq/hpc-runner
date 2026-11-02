@@ -549,6 +549,15 @@ the suite is green now and the fix flips the test to a hard pass.
   - Capture deletes everything in its output directory it did not record
     (array task output files had been copied in with the captures; they
     were git-ignored).
+  - CI runs `ocs` at Python 3.12 next to the `soge` cells, including the
+    slow-accounting run. That failed on every fresh OCS stack: for
+    roughly the first half minute after the qmaster starts it writes each
+    accounting record at once although `qconf -sconf` shows
+    `flush_time=00:00:15`, and only then buffers. Measured: every job's
+    record in `qacct` as it left qstat for at least 10 s after `up`, then
+    a steady 9-11 s lag. `test_slow_accounting_window` now submits until
+    a job leaves qstat before its record is written (`SLOW_START`, 90 s);
+    on soge that is the first job.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does
