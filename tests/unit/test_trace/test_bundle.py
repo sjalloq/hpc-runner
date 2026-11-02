@@ -80,7 +80,7 @@ class TestReplace:
         out = scrubber.text(xml)
         assert "<VA_value>[scrubbed]</VA_value>" in out
         assert "/usr/local/sbin" not in out
-        assert "<VA_variable>TERM</VA_variable>" in out  # variable names stay
+        assert "<VA_variable>__SGE_PREFIX__O_PATH</VA_variable>" in out  # names stay
 
     def test_longest_first(self, scrubber):
         scrubber.add("host", "node")

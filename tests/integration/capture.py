@@ -1,8 +1,8 @@
 """Capture real scheduler output from the testbed as unit-test fixtures.
 
 Run inside ``login`` by ``hpc-testbed capture`` (``python -m
-tests.integration.capture OUTDIR``); the driver copies OUTDIR to
-``tests/unit/fixtures/sge/``. The unit suite's ``mock_sge_commands`` and the
+tests.integration.capture OUTDIR FLAVOUR``); the driver copies OUTDIR to
+``tests/unit/fixtures/sge/<flavour>/``. The unit suite's ``mock_sge_commands`` and the
 parser tests read those files, so the canned text the unit tests see is what
 gridengine actually emits (test QA review, decision 5b). Regenerate on demand,
 like the goldens; job ids and timestamps change every capture, structure does
@@ -20,8 +20,9 @@ texts do not depend on hpc-runner's own rendering:
 * ``skipped``: a job that exits 113, the dependency guard's skip code.
 * ``bob``: a job of another user (``qacct -j -o bob -b <since>``, with the
   trailing owner summary header, rule and row, BUG-T2).
-* ``timeout``: a ``short.q`` job (``h_rt`` one minute) killed by qmaster
-  (``failed 37``, ``exit_status 137``). Submitted first, collected last.
+* ``timeout``: a ``short.q`` job (``h_rt`` one minute) killed at the limit
+  (``exit_status 137``; ``failed 37`` from qmaster, or on OCS ``failed 100``
+  with ``deleted_by execd@<host>``). Submitted first, collected last.
 * ``vmem``: a 200 MB allocation under ``-l h_vmem=50M``; the limit is a
   setrlimit, so the process fails by itself (``failed 0``, non-zero exit).
 * ``deleted_pending``: a held job deleted with ``qdel`` before it ran: no
@@ -31,9 +32,10 @@ texts do not depend on hpc-runner's own rendering:
   queue instance suspended with ``qmod -sq`` (``S``), and a ``-r y`` job
   rescheduled with ``qmod -rj`` running again (``Rr``). The requeued job's
   ``qacct -j`` after ``qdel`` has two records, ``failed 25`` then its end.
-* ``deleting``: the ``queue_suspended`` job deleted while its node is
-  paused, so qstat holds it in ``dr`` (``qstat_deleting.xml``, and
-  ``qdel``'s "registered for deletion" stdout).
+* ``deleting``: a job deleted while its node is paused, so qstat holds it
+  in ``dr`` (``qstat_deleting.xml``, and ``qdel``'s "registered for
+  deletion" stdout). Submitted once ``queue_suspended`` is gone, not that
+  job resumed: OCS 9.1.7 still reports it ``S`` after ``qmod -usq``.
 * ``threshold``, ``requeue_pending``, ``deleting_transfer``: alive together
   for one snapshot (``qstat_transient.xml``/``.txt``): a queue suspend
   threshold (``T``), a rescheduled job hard-pinned to its host (``Rq``) and
@@ -276,7 +278,8 @@ class Capture:
         self.save(
             "qacct_timeout.txt",
             self.qacct(job_id, timeout=180),
-            "qacct -j of a short.q job killed at h_rt (failed 37, exit_status 137)",
+            "qacct -j of a short.q job killed at h_rt (exit_status 137; failed 37, or on OCS "
+            "failed 100 and deleted_by execd@)",
             ["qacct", "-j", job_id],
         )
 
@@ -339,14 +342,16 @@ class Capture:
             self.qstat_j("suspended", "queue_suspended", "requeued")
         finally:
             self.cluster.run(["qmod", "-usq", "all.q@exec2"], user="root")
-        self.wait_state(qsusp, {"r"})
+        self.cluster.run(["qdel", qsusp])
+        self.wait_gone(qsusp)
 
+        deleting = self.qsub("deleting", "-l", "hostname=exec2", "-q", "all.q", "sleep", "600")
+        self.wait_state(deleting, {"r"})
         # A paused execd cannot confirm the kill, so qstat holds the job in dr.
         self.cluster.run(["sudo", "docker", "pause", "exec2"])
         try:
-            self.capture("qdel_deleting.txt", ["qdel", qsusp], "qdel stdout when execd is away")
-            self.jobs["deleting"] = qsusp
-            self.wait_state(qsusp, {"dr"})
+            self.capture("qdel_deleting.txt", ["qdel", deleting], "qdel stdout when execd is away")
+            self.wait_state(deleting, {"dr"})
             self.capture(
                 "qstat_deleting.xml",
                 ["qstat", "-xml", "-u", "*"],
@@ -355,7 +360,7 @@ class Capture:
             self.qstat_j("deleting")
         finally:
             self.cluster.run(["sudo", "docker", "unpause", "exec2"])
-        self.wait_gone(qsusp)
+        self.wait_gone(deleting)
 
         self.cluster.run(["qdel", requeued, susp])
         self.wait_gone(requeued)
@@ -553,8 +558,10 @@ class Capture:
         self.snapshot()
         self.master_down()
         self.cluster.run([str(Path("/opt/testbed/clean.sh"))])
-        for script in self.out.glob("*.sh"):
-            script.unlink()
+        # The job scripts, and anything a job wrote here: only captures are kept.
+        for path in self.out.iterdir():
+            if path.is_file() and path.name not in self.files:
+                path.unlink()
         version = self.cluster.run(["qstat", "-help"], check=False)
         manifest = {
             "captured": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

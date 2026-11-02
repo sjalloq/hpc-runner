@@ -82,10 +82,14 @@ def make_job(
 # =============================================================================
 
 FIXTURES_ROOT = Path(__file__).resolve().parent / "unit" / "fixtures"
+#: Every SGE flavour with captures (``tests/unit/fixtures/sge/<flavour>/``).
+SGE_FLAVOURS = tuple(
+    sorted(d.name for d in (FIXTURES_ROOT / "sge").iterdir() if (d / "manifest.json").is_file())
+)
 
 
 class SGEFixtures:
-    """The SGE texts captured from the testbed by ``hpc-testbed capture``.
+    """The SGE texts one flavour's testbed wrote, captured by ``hpc-testbed capture``.
 
     ``manifest.json`` maps each scenario (``running``, ``held``, ``eqw``,
     ``array``, ``ok``, ``exit1``, ``signal``, ``lost_node``, ``array_done``,
@@ -93,9 +97,10 @@ class SGEFixtures:
     id; see ``tests/integration/capture.py`` for what each file is.
     """
 
-    def __init__(self, root: Path = FIXTURES_ROOT / "sge") -> None:
-        self.root = root
-        self.manifest: dict[str, Any] = json.loads((root / "manifest.json").read_text())
+    def __init__(self, flavour: str = "soge") -> None:
+        self.flavour = flavour
+        self.root = FIXTURES_ROOT / "sge" / flavour
+        self.manifest: dict[str, Any] = json.loads((self.root / "manifest.json").read_text())
         self.jobs: dict[str, str] = self.manifest["jobs"]
 
     def text(self, name: str) -> str:

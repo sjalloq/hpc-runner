@@ -206,9 +206,9 @@ class TestCommands:
             "soge",
         ]
         assert copy_argv == _compose(
-            repo, "cp", "login:/work/capture/.", str(repo / "tests/unit/fixtures/sge")
+            repo, "cp", "login:/work/capture/.", str(repo / "tests/unit/fixtures/sge/soge")
         )
-        assert (repo / "tests/unit/fixtures/sge").is_dir()
+        assert (repo / "tests/unit/fixtures/sge/soge").is_dir()
 
     @pytest.mark.parametrize("argv", [["up", "--slow-accounting"], ["pytest", "--slow-accounting"]])
     def test_slow_accounting_is_refused_outside_its_family(self, repo, calls, capsys, argv):

@@ -1,10 +1,10 @@
 """SGE accounting ``failed`` codes, signal exit codes and an unreachable qmaster.
 
-The texts are what gridengine 8.1.9 in the testbed wrote, captured by
-``hpc-testbed capture`` into tests/unit/fixtures/sge/ (BUG-T3, T5, T6 in
-docs/dev/testbed/TESTBED_REVIEW.md); the code table was produced by that
-image's own qacct. The one retyped text is the ``h_rt`` kill (not captured:
-it takes a minute of wall clock).
+The texts are what each SGE flavour in the testbed wrote, captured by
+``hpc-testbed capture`` into tests/unit/fixtures/sge/<flavour>/ (BUG-T3, T5,
+T6 in docs/dev/testbed/TESTBED_REVIEW.md); the code table was produced by
+gridengine 8.1.9's own qacct. The one retyped text is a ``failed 37`` record
+(test_sge_fixtures.py reads each flavour's captured ``h_rt`` kill).
 """
 
 from __future__ import annotations
@@ -26,15 +26,13 @@ from hpc_runner.schedulers.sge.parser import (
 )
 from tests.fakes import SGEFixtures, patch_seam
 
-FIXTURES = SGEFixtures()
 
-#: qacct -j of a job whose node was killed mid-run (BUG-T3): exit_status is 0.
-QACCT_LOST_NODE = FIXTURES.text("qacct_lost_node.txt")
-LOST_NODE_ID = FIXTURES.job("lost_node")
+@pytest.fixture
+def fx(sge_fixtures: SGEFixtures) -> SGEFixtures:
+    """One flavour's captures: ``qacct_lost_node.txt`` (BUG-T3, exit_status 0),
+    ``qacct_signal.txt`` (BUG-T5, a qdel) and ``qstat_master_down.json`` (BUG-T6)."""
+    return sge_fixtures
 
-#: qacct -j of a running job deleted with qdel (BUG-T5).
-QACCT_SIGNAL = FIXTURES.text("qacct_signal.txt")
-SIGNAL_ID = FIXTURES.job("signal")
 
 #: qacct -j of an h_rt kill enforced by the qmaster (D-T30).
 QACCT_H_RT = """\
@@ -45,9 +43,6 @@ jobnumber    33
 failed       37  : qmaster enforced h_rt, h_cpu, or h_vmem limit
 exit_status  137 (Killed)
 """
-
-#: qstat -xml -u '*' with the master stopped (BUG-T6): (returncode, stdout, stderr).
-QSTAT_MASTER_DOWN = FIXTURES.result("qstat_master_down.json")
 
 
 class TestFailedTable:
@@ -138,49 +133,51 @@ class TestFailedTable:
 class TestLostNode:
     """BUG-T3: failed 19 with exit_status 0 is not a success."""
 
-    def test_record_is_failed_with_the_reason_kept(self):
-        record = parse_qacct_output(QACCT_LOST_NODE)
+    def test_record_is_failed_with_the_reason_kept(self, fx):
+        record = parse_qacct_output(fx.text("qacct_lost_node.txt"))
         assert qacct_status(record) is JobStatus.FAILED
         info = qacct_to_job_info(record)
         assert info.status is JobStatus.FAILED
         assert info.exit_code == 0
         assert (info.failed_code, info.failed_reason) == (19, "before writing exit_status")
 
-    def test_clean_record_has_no_failure(self):
-        info = qacct_to_job_info(parse_qacct_output(FIXTURES.text("qacct_ok.txt")))
+    def test_clean_record_has_no_failure(self, fx):
+        info = qacct_to_job_info(parse_qacct_output(fx.text("qacct_ok.txt")))
         assert (info.status, info.exit_code) == (JobStatus.COMPLETED, 0)
         assert info.failed_code == 0 and info.failed_reason is None
         info = qacct_to_job_info({"jobnumber": "1", "exit_status": "0"})
         assert info.failed_code is None and info.failed_reason is None
 
-    def test_get_status_reports_failed(self, monkeypatch, tmp_path):
+    def test_get_status_reports_failed(self, fx, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        job_id = fx.job("lost_node")
 
         def respond(argv):
             if argv[:2] == ["qstat", "-xml"]:
-                return 0, FIXTURES.text("qstat_empty.xml"), ""
-            assert argv == ["qacct", "-j", LOST_NODE_ID]
-            return 0, QACCT_LOST_NODE, ""
+                return 0, fx.text("qstat_empty.xml"), ""
+            assert argv == ["qacct", "-j", job_id]
+            return 0, fx.text("qacct_lost_node.txt"), ""
 
         with patch_seam(respond):
-            assert SGEScheduler(HPCConfig()).get_status(LOST_NODE_ID) is JobStatus.FAILED
+            assert SGEScheduler(HPCConfig()).get_status(job_id) is JobStatus.FAILED
 
 
 class TestSignalExitCode:
     """BUG-T5: ``exit_status 137 (Killed)`` is exit code 137."""
 
-    def test_get_exit_code(self, monkeypatch, tmp_path):
+    def test_get_exit_code(self, fx, monkeypatch, tmp_path):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        job_id = fx.job("signal")
 
         def respond(argv):
-            assert argv == ["qacct", "-j", SIGNAL_ID]
-            return 0, QACCT_SIGNAL, ""
+            assert argv == ["qacct", "-j", job_id]
+            return 0, fx.text("qacct_signal.txt"), ""
 
         with patch_seam(respond):
-            assert SGEScheduler(HPCConfig()).get_exit_code(SIGNAL_ID) == 137
+            assert SGEScheduler(HPCConfig()).get_exit_code(job_id) == 137
 
-    def test_job_info(self):
-        info = qacct_to_job_info(parse_qacct_output(QACCT_SIGNAL))
+    def test_job_info(self, fx):
+        info = qacct_to_job_info(parse_qacct_output(fx.text("qacct_signal.txt")))
         assert info.exit_code == 137
         assert info.status is JobStatus.FAILED
         assert info.failed_code == 100
@@ -193,8 +190,8 @@ class TestSignalExitCode:
 class TestMasterDown:
     """BUG-T6: a qstat that cannot reach the qmaster is an error, not an empty queue."""
 
-    def test_captured_text_is_unreachable(self):
-        rc, stdout, stderr = QSTAT_MASTER_DOWN
+    def test_captured_text_is_unreachable(self, fx):
+        rc, stdout, stderr = fx.result("qstat_master_down.json")
         assert rc != 0 and stdout == ""
         assert "unable to contact qmaster" in stderr
         assert qstat_unreachable(stderr)
@@ -219,20 +216,20 @@ class TestMasterDown:
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
         return SGEScheduler(HPCConfig())
 
-    def test_get_status_raises(self, scheduler):
+    def test_get_status_raises(self, fx, scheduler):
         calls = []
 
         def respond(argv):
             calls.append(argv)
-            return QSTAT_MASTER_DOWN
+            return fx.result("qstat_master_down.json")
 
         with patch_seam(respond), pytest.raises(SchedulerUnavailableError, match="qmaster"):
             scheduler.get_status("5")
         # Nothing fell through to qacct or the sentinel.
         assert calls == [["qstat", "-xml", "-u", "*"]]
 
-    def test_list_active_jobs_raises(self, scheduler):
-        with patch_seam(lambda argv: QSTAT_MASTER_DOWN):
+    def test_list_active_jobs_raises(self, fx, scheduler):
+        with patch_seam(lambda argv: fx.result("qstat_master_down.json")):
             with pytest.raises(SchedulerUnavailableError):
                 scheduler.list_active_jobs(user="alice")
 

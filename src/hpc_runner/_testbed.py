@@ -215,7 +215,7 @@ def cmd_capture(stack: Stack, *, py: str) -> None:
 
     Runs the family's capture module (``tests/integration/capture.py`` for
     SGE) inside ``login`` (it submits the scenario jobs, kills a node and
-    stops the master) and copies its output to ``tests/unit/fixtures/<family>/``.
+    stops the master) and copies its output to ``tests/unit/fixtures/<family>/<flavour>/``.
     """
     module = CAPTURE_MODULES.get(stack.family)
     if module is None:
@@ -236,7 +236,7 @@ def cmd_capture(stack: Stack, *, py: str) -> None:
             stack.flavour,
         )
     )
-    dest = stack.root / FIXTURES_DIR / stack.family
+    dest = stack.root / FIXTURES_DIR / stack.family / stack.flavour
     dest.mkdir(parents=True, exist_ok=True)
     run(stack.compose("cp", f"login:{CAPTURE_DIR}/.", str(dest)))
 

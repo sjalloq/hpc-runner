@@ -1,0 +1,98 @@
+==============================================================
+qname                              all.q               
+hostname                           exec2               
+group                              tester              
+owner                              tester              
+project                            NONE                
+department                         defaultdepartment   
+jobname                            requeued            
+jobnumber                          134                 
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-02 21:02:04.731957
+submit_cmd_line                    qsub -b y -N requeued -o /dev/null -j y -soft -l hostname=exec2 -hard -r y sleep 600
+start_time                         -/-
+end_time                           -/-
+granted_pe                         NONE                
+slots                              1                   
+failed                             25  : rescheduling
+exit_status                        0                   
+deleted_by                         root@login          
+ru_wallclock                       0            
+ru_utime                           0.000        
+ru_stime                           0.000        
+ru_maxrss                          0                   
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          0                   
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         0                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           0                   
+ru_nivcsw                          0                   
+wallclock                          1.972        
+cpu                                0.000        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            0                 
+maxrss                             0                 
+==============================================================
+qname                              all.q               
+hostname                           exec1               
+group                              tester              
+owner                              tester              
+project                            NONE                
+department                         defaultdepartment   
+jobname                            requeued            
+jobnumber                          134                 
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-02 21:01:59.012736
+submit_cmd_line                    qsub -b y -N requeued -o /dev/null -j y -soft -l hostname=exec2 -hard -r y sleep 600
+start_time                         2026-11-02 21:01:59.016912
+end_time                           2026-11-02 21:02:03.218741
+granted_pe                         NONE                
+slots                              1                   
+failed                             100 : assumedly after job
+exit_status                        137                 
+deleted_by                         tester@login        
+ru_wallclock                       4            
+ru_utime                           0.076        
+ru_stime                           0.031        
+ru_maxrss                          8124                
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          10526               
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         8                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           353                 
+ru_nivcsw                          19                  
+wallclock                          4.666        
+cpu                                0.107        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            2650112           
+maxrss                             1433600           

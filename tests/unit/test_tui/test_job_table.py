@@ -304,14 +304,14 @@ class TestJobTableFromCapturedSnapshots:
             ),
         ],
     )
-    async def test_status_column(self, monkeypatch, tmp_path, snapshot, expected):
+    async def test_status_column(self, sge_fixtures, monkeypatch, tmp_path, snapshot, expected):
         from textual.app import App, ComposeResult
 
         from hpc_runner.core.config import HPCConfig
         from hpc_runner.schedulers.sge import SGEScheduler
-        from tests.fakes import SGEFixtures, patch_seam
+        from tests.fakes import patch_seam
 
-        fx = SGEFixtures()
+        fx = sge_fixtures
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
 
         def respond(argv):

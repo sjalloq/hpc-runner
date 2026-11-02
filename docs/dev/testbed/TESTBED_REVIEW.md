@@ -525,7 +525,30 @@ the suite is green now and the fix flips the test to a hard pass.
   `accounting.jsonl` (the fixture's per-flavour accounting path), and the
   9.1 `-binding` syntax (a per-flavour expected golden result). Scheduler
   detection could not recognise OCS; detection is gone (D17). Unit-test
-  fixtures are still captured from `soge` only.
+  fixtures were captured from `soge` only at first; see D-T50.
+- **D-T50 unit fixtures per flavour** (2026-11-02). Captures live in
+  `tests/unit/fixtures/sge/<flavour>/` and `hpc-testbed capture` writes
+  to the flavour's directory. The session fixture `sge_fixtures` is
+  parametrised over every flavour with a `manifest.json`, so each test
+  that reads captures (the parser and reader matrix, the responder behind
+  `mock_sge_commands`, the trace and TUI tests) runs once per flavour.
+  Where the scheduler's words differ the expectation is per flavour: the
+  `h_rt` kill's `failed` code and reason (37, or 100 with `deleted_by
+  execd@`), the `qstat -help` banner, and `qstat -j` with the qmaster
+  down (soge exits 0 with a `comunication_error` document, OCS exits 1
+  with the reason on stderr; both read as unreachable). Three tests had
+  soge's column spacing or `TERM` in the job environment written in; they
+  no longer do. Nothing in the parser had to change.
+  - The `deleting` (`dr`) scenario now has its own job, submitted once
+    `queue_suspended` is gone. It used to be that job resumed, and OCS
+    9.1.7 never resumes it in qstat: after `qmod -sq` then `qmod -usq` the
+    job stays `S` although its process runs, because the qmaster keeps
+    `JSUSPENDED_ON_SUBORDINATE` (0x2000) in `JAT_state`. Reproduced with
+    one job; not seen on soge. An upstream report candidate; hpc-runner
+    shows what qstat says (SUSPENDED).
+  - Capture deletes everything in its output directory it did not record
+    (array task output files had been copied in with the captures; they
+    were git-ignored).
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does

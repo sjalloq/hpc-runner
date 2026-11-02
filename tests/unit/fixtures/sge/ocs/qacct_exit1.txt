@@ -1,0 +1,48 @@
+==============================================================
+qname                              all.q               
+hostname                           exec1               
+group                              tester              
+owner                              tester              
+project                            NONE                
+department                         defaultdepartment   
+jobname                            exit1               
+jobnumber                          121                 
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-02 21:00:47.978969
+submit_cmd_line                    qsub -b y -N exit1 -o /dev/null -j y false
+start_time                         2026-11-02 21:00:47.982157
+end_time                           2026-11-02 21:00:48.079866
+granted_pe                         NONE                
+slots                              1                   
+failed                             0    
+exit_status                        1                   
+ru_wallclock                       0            
+ru_utime                           0.084        
+ru_stime                           0.025        
+ru_maxrss                          8320                
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          10480               
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         8                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           339                 
+ru_nivcsw                          29                  
+wallclock                          0.816        
+cpu                                0.109        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            0                 
+maxrss                             0                 

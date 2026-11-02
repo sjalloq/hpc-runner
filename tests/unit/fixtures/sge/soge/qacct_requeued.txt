@@ -1,0 +1,90 @@
+==============================================================
+qname        all.q               
+hostname     exec2               
+group        tester              
+owner        tester              
+project      NONE                
+department   defaultdepartment   
+jobname      requeued            
+jobnumber    18                  
+taskid       undefined
+account      sge                 
+priority     0                   
+qsub_time    Thu Jan  1 00:00:00 1970
+start_time   -/-
+end_time     -/-
+granted_pe   NONE                
+slots        1                   
+failed       25  : rescheduling
+exit_status  0                   
+ru_wallclock 0s
+ru_utime     0.000s
+ru_stime     0.000s
+ru_maxrss    0.000B
+ru_ixrss     0.000B
+ru_ismrss    0.000B
+ru_idrss     0.000B
+ru_isrss     0.000B
+ru_minflt    0                   
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   0                   
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     0                   
+ru_nivcsw    0                   
+cpu          0.000s
+mem          0.000Bs
+io           0.000B
+iow          0.000s
+maxvmem      0.000B
+arid         undefined
+ar_sub_time  undefined
+category     -soft -l hostname=exec2
+==============================================================
+qname        all.q               
+hostname     exec1               
+group        tester              
+owner        tester              
+project      NONE                
+department   defaultdepartment   
+jobname      requeued            
+jobnumber    18                  
+taskid       undefined
+account      sge                 
+priority     0                   
+qsub_time    Mon Nov  2 21:17:42 2026
+start_time   Mon Nov  2 21:17:43 2026
+end_time     Mon Nov  2 21:17:46 2026
+granted_pe   NONE                
+slots        1                   
+failed       100 : assumedly after job
+exit_status  137                  (Killed)
+ru_wallclock 3s
+ru_utime     0.019s
+ru_stime     0.012s
+ru_maxrss    8.215KB
+ru_ixrss     0.000B
+ru_ismrss    0.000B
+ru_idrss     0.000B
+ru_isrss     0.000B
+ru_minflt    2528                
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   8                   
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     19                  
+ru_nivcsw    4                   
+cpu          0.032s
+mem          0.000Bs
+io           0.000B
+iow          0.000s
+maxvmem      1.531MB
+arid         undefined
+ar_sub_time  undefined
+category     -soft -l hostname=exec2

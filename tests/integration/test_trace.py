@@ -18,6 +18,7 @@ from tests.integration.cluster import SRC_ROOT, Cluster
 
 pytestmark = pytest.mark.family("sge")
 
+#: Each flavour's captures are in a subdirectory (``hpc-testbed --flavour <name> capture``).
 FIXTURES = SRC_ROOT / "tests" / "unit" / "fixtures" / "sge"
 #: How each flavour's ``qstat -help`` starts (the bundle's ``scheduler`` field).
 VERSION_PREFIX = {"soge": "SGE", "ocs": "OCS"}
@@ -60,7 +61,14 @@ def test_flag_records_and_compares_clean(cluster: Cluster, workdir: Path) -> Non
     assert all(r["error"] is None for r in records), records
 
     proc = cluster.run(
-        [str(cluster.hpc_cli), "trace", "compare", str(trace), "--fixtures", str(FIXTURES)],
+        [
+            str(cluster.hpc_cli),
+            "trace",
+            "compare",
+            str(trace),
+            "--fixtures",
+            str(FIXTURES / cluster.flavour),
+        ],
         check=False,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr

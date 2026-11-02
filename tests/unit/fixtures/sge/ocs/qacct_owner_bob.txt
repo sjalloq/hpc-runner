@@ -1,0 +1,51 @@
+==============================================================
+qname                              short.q             
+hostname                           exec1               
+group                              bob                 
+owner                              bob                 
+project                            NONE                
+department                         defaultdepartment   
+jobname                            bob                 
+jobnumber                          123                 
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-02 21:00:47.991455
+submit_cmd_line                    qsub -b y -N bob -o /dev/null -j y sleep 2
+start_time                         2026-11-02 21:00:47.995766
+end_time                           2026-11-02 21:00:50.084863
+granted_pe                         NONE                
+slots                              1                   
+failed                             0    
+exit_status                        0                   
+ru_wallclock                       2            
+ru_utime                           0.077        
+ru_stime                           0.024        
+ru_maxrss                          8540                
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          10580               
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         8                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           351                 
+ru_nivcsw                          30                  
+wallclock                          2.831        
+cpu                                0.101        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            2650112           
+maxrss                             1437696           
+OWNER     WALLCLOCK         UTIME         STIME           CPU             MEMORY                 IO                IOW
+======================================================================================================================
+bob               2         0.077         0.024         0.101              0.000              0.000              0.000

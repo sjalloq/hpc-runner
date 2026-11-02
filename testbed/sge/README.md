@@ -91,6 +91,8 @@ difference is handled by the shape of the output (TESTBED_REVIEW D-T49).
   `failed 100` with `deleted_by execd@<host>` (KILLED).
 - Accounting is `$SGE_ROOT/default/common/accounting.jsonl`.
 - `qsub -binding linear:1` is rejected (9.1 binding syntax).
+- After `qmod -sq` then `qmod -usq`, a job that was in the queue instance
+  stays `S` in qstat although it runs again (TESTBED_REVIEW D-T50).
 
 ### Manual checks
 

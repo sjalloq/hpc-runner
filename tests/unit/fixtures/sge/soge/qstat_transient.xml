@@ -1,0 +1,37 @@
+<?xml version='1.0'?>
+<job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/qstat.xsd">
+  <queue_info>
+    <job_list state="running">
+      <JB_job_number>20</JB_job_number>
+      <JAT_prio>0.75000</JAT_prio>
+      <JB_name>threshold</JB_name>
+      <JB_owner>tester</JB_owner>
+      <state>T</state>
+      <JAT_start_time>2026-11-02T21:17:48</JAT_start_time>
+      <queue_name>short.q@exec1</queue_name>
+      <slots>1</slots>
+    </job_list>
+    <job_list state="running">
+      <JB_job_number>22</JB_job_number>
+      <JAT_prio>0.75000</JAT_prio>
+      <JB_name>deleting_transfer</JB_name>
+      <JB_owner>tester</JB_owner>
+      <state>dt</state>
+      <JAT_start_time>2026-11-02T21:17:51</JAT_start_time>
+      <queue_name>all.q@exec2</queue_name>
+      <slots>1</slots>
+    </job_list>
+  </queue_info>
+  <job_info>
+    <job_list state="pending">
+      <JB_job_number>21</JB_job_number>
+      <JAT_prio>0.25000</JAT_prio>
+      <JB_name>requeue_pending</JB_name>
+      <JB_owner>tester</JB_owner>
+      <state>Rq</state>
+      <JB_submission_time>2026-11-02T21:17:49</JB_submission_time>
+      <queue_name></queue_name>
+      <slots>1</slots>
+    </job_list>
+  </job_info>
+</job_info>

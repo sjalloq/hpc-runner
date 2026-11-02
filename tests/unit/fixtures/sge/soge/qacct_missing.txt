@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "qacct",
+    "-j",
+    "999999"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "error: job id 999999 not found\n"
+}

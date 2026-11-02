@@ -10,7 +10,7 @@ from pathlib import Path
 import jinja2
 import pytest
 
-from tests.fakes import SGEFixtures, make_host, make_sge_responder, patch_seam
+from tests.fakes import SGE_FLAVOURS, SGEFixtures, make_host, make_sge_responder, patch_seam
 
 
 def pytest_addoption(parser):
@@ -105,10 +105,12 @@ def mock_sge_commands(sge_fixtures):
         yield mock_run
 
 
-@pytest.fixture(scope="session")
-def sge_fixtures() -> SGEFixtures:
-    """The SGE texts captured from the testbed (tests/unit/fixtures/sge/)."""
-    return SGEFixtures()
+@pytest.fixture(scope="session", params=SGE_FLAVOURS)
+def sge_fixtures(request) -> SGEFixtures:
+    """One flavour's SGE texts captured from the testbed
+    (tests/unit/fixtures/sge/<flavour>/); a test that uses them runs once
+    per flavour."""
+    return SGEFixtures(request.param)
 
 
 @pytest.fixture

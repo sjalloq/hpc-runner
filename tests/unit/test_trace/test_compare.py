@@ -169,7 +169,7 @@ class TestFindings:
         rec = self._rec(["qacct", "-j", sge_fixtures.job("ok")])
         rec.stdout = text
         assert check(rec) == []
-        rec.stdout = text.replace("exit_status  0", "exit_status  n/a")
+        rec.stdout = re.sub(r"exit_status +0", "exit_status  n/a", text)
         assert any("exit_status 'n/a' not parsed" in m for m in check(rec))
         rec.stdout = re.sub(r"ru_wallclock +\S+", "ru_wallclock 7 seconds", text)
         assert any("ru_wallclock '7 seconds' not parsed" in m for m in check(rec)), check(rec)

@@ -1,0 +1,48 @@
+==============================================================
+qname                              short.q             
+hostname                           exec2               
+group                              tester              
+owner                              tester              
+project                            NONE                
+department                         defaultdepartment   
+jobname                            skipped             
+jobnumber                          124                 
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-02 21:00:47.995690
+submit_cmd_line                    qsub -N skipped /work/capture/skipped.sh
+start_time                         2026-11-02 21:00:47.999842
+end_time                           2026-11-02 21:00:48.001440
+granted_pe                         NONE                
+slots                              1                   
+failed                             0    
+exit_status                        113                 
+ru_wallclock                       0            
+ru_utime                           0.000        
+ru_stime                           0.002        
+ru_maxrss                          4636                
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          260                 
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         8                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           0                   
+ru_nivcsw                          1                   
+wallclock                          0.798        
+cpu                                0.002        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            0                 
+maxrss                             0                 

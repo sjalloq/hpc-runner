@@ -1,0 +1,49 @@
+==============================================================
+qname                              short.q             
+hostname                           exec2               
+group                              tester              
+owner                              tester              
+project                            NONE                
+department                         defaultdepartment   
+jobname                            timeout             
+jobnumber                          119                 
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-02 21:00:47.974387
+submit_cmd_line                    qsub -b y -N timeout -o /dev/null -j y -q short.q -l hostname=exec2 sleep 120
+start_time                         2026-11-02 21:00:47.977963
+end_time                           2026-11-02 21:01:49.653002
+granted_pe                         NONE                
+slots                              1                   
+failed                             100 : assumedly after job
+exit_status                        137                 
+deleted_by                         execd@exec2         
+ru_wallclock                       61           
+ru_utime                           0.077        
+ru_stime                           0.024        
+ru_maxrss                          8560                
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          10465               
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         8                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           349                 
+ru_nivcsw                          33                  
+wallclock                          61.704       
+cpu                                0.101        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            2650112           
+maxrss                             1421312           

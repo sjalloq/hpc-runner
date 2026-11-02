@@ -10,7 +10,8 @@ readers disagree are decisions (§4).
 Marks:
 
 - **F** unit test on a fixture captured from the testbed
-  (`tests/unit/fixtures/sge/`, `hpc-testbed capture`).
+  (`tests/unit/fixtures/sge/<flavour>/`, `hpc-testbed capture`; each
+  such test runs on every flavour's captures).
 - **u** unit test on hand-typed or synthetic data (a record dict, an XML
   string in the test file). Pins the mapping, not the scheduler's words.
 - **I** integration test in the testbed (`tests/integration/`).
@@ -42,7 +43,7 @@ test drives them against a real state.
 
 ## 2. The matrix
 
-Capture scenario names are from `tests/unit/fixtures/sge/manifest.json`.
+Capture scenario names are from `tests/unit/fixtures/sge/<flavour>/manifest.json`.
 
 | # | State (SGE) | → JobStatus | Capture | A | B | C | D | E | F | G | H | J |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

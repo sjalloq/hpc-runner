@@ -1,0 +1,417 @@
+{
+  "captured": "2026-11-02T21:04:13Z",
+  "flavour": "ocs",
+  "scheduler": "OCS 9.1.7 (191026-0541)",
+  "jobs": {
+    "xml_defects": "118",
+    "timeout": "119",
+    "ok": "120",
+    "exit1": "121",
+    "array_done": "122",
+    "bob": "123",
+    "skipped": "124",
+    "vmem": "127",
+    "deleted_pending": "128",
+    "signal": "129",
+    "lost_node": "130",
+    "suspended": "132",
+    "queue_suspended": "133",
+    "requeued": "134",
+    "deleting": "135",
+    "threshold": "136",
+    "requeue_pending": "137",
+    "deleting_transfer": "138",
+    "running": "139",
+    "held": "140",
+    "dependent": "141",
+    "eqw": "142",
+    "array": "143"
+  },
+  "files": {
+    "qstat_empty.xml": {
+      "what": "qstat -xml -u '*' with nothing queued",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qacct_missing.txt": {
+      "what": "qacct -j of an unknown id (JSON)",
+      "argv": [
+        "qacct",
+        "-j",
+        "999999"
+      ]
+    },
+    "qstat_xml_defects.xml": {
+      "what": "qstat -xml -u '*' with a job named a<b (written a%lt;b)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_xml_defects.xml": {
+      "what": "qstat -j <id> -xml of the xml_defects job (state hqw)",
+      "argv": [
+        "qstat",
+        "-j",
+        "118",
+        "-xml"
+      ]
+    },
+    "qsub.txt": {
+      "what": "qsub stdout for a plain job",
+      "argv": [
+        "qsub",
+        "/work/capture/qsubtxt.sh"
+      ]
+    },
+    "qsub_array.txt": {
+      "what": "qsub stdout for an array job",
+      "argv": [
+        "qsub",
+        "/work/capture/qsubarr.sh"
+      ]
+    },
+    "qacct_ok.txt": {
+      "what": "qacct -j of a job that exited 0",
+      "argv": [
+        "qacct",
+        "-j",
+        "120"
+      ]
+    },
+    "qacct_exit1.txt": {
+      "what": "qacct -j of a job that exited 1",
+      "argv": [
+        "qacct",
+        "-j",
+        "121"
+      ]
+    },
+    "qacct_array_task.txt": {
+      "what": "qacct -j <id> -t 2 of a finished array (task 2 exited 0)",
+      "argv": [
+        "qacct",
+        "-j",
+        "122",
+        "-t",
+        "2"
+      ]
+    },
+    "qacct_array_base.txt": {
+      "what": "qacct -j <id> of a finished three-task array: one record per task, task 3 exited 1",
+      "argv": [
+        "qacct",
+        "-j",
+        "122"
+      ]
+    },
+    "qacct_skipped.txt": {
+      "what": "qacct -j of a job that exited 113 (the dependency guard's skip code)",
+      "argv": [
+        "qacct",
+        "-j",
+        "124"
+      ]
+    },
+    "qacct_owner_bob.txt": {
+      "what": "qacct -j -o bob -b <since>: bob's records then the owner summary block (BUG-T2)",
+      "argv": [
+        "qacct",
+        "-j",
+        "-o",
+        "bob",
+        "-b",
+        "200001010000"
+      ]
+    },
+    "qacct_vmem.txt": {
+      "what": "qacct -j of a 200 MB allocation under h_vmem=50M (failed 0, non-zero exit)",
+      "argv": [
+        "qacct",
+        "-j",
+        "127"
+      ]
+    },
+    "qdel_pending.txt": {
+      "what": "qdel stdout for a job that never ran",
+      "argv": [
+        "qdel",
+        "128"
+      ]
+    },
+    "qacct_deleted_pending.txt": {
+      "what": "qacct -j of a job deleted while pending: no record is ever written (JSON)",
+      "argv": [
+        "qacct",
+        "-j",
+        "128"
+      ]
+    },
+    "qdel.txt": {
+      "what": "qdel stdout",
+      "argv": [
+        "qdel",
+        "129"
+      ]
+    },
+    "qacct_signal.txt": {
+      "what": "qacct -j of a running job deleted with qdel (exit_status 137 (Killed), BUG-T5)",
+      "argv": [
+        "qacct",
+        "-j",
+        "129"
+      ]
+    },
+    "qacct_timeout.txt": {
+      "what": "qacct -j of a short.q job killed at h_rt (exit_status 137; failed 37, or on OCS failed 100 and deleted_by execd@)",
+      "argv": [
+        "qacct",
+        "-j",
+        "119"
+      ]
+    },
+    "qacct_lost_node.txt": {
+      "what": "qacct -j of a job whose node was killed (failed 19, BUG-T3)",
+      "argv": [
+        "qacct",
+        "-j",
+        "130"
+      ]
+    },
+    "qstat_lifecycle.xml": {
+      "what": "qstat -xml -u '*': user-suspended (s), queue-suspended (S), requeued (Rr)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_lifecycle.txt": {
+      "what": "plain qstat -u '*' of the same moment",
+      "argv": [
+        "qstat",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_suspended.xml": {
+      "what": "qstat -j <id> -xml of the suspended job (state s)",
+      "argv": [
+        "qstat",
+        "-j",
+        "132",
+        "-xml"
+      ]
+    },
+    "qstat_j_queue_suspended.xml": {
+      "what": "qstat -j <id> -xml of the queue_suspended job (state S)",
+      "argv": [
+        "qstat",
+        "-j",
+        "133",
+        "-xml"
+      ]
+    },
+    "qstat_j_requeued.xml": {
+      "what": "qstat -j <id> -xml of the requeued job (state Rr)",
+      "argv": [
+        "qstat",
+        "-j",
+        "134",
+        "-xml"
+      ]
+    },
+    "qdel_deleting.txt": {
+      "what": "qdel stdout when execd is away",
+      "argv": [
+        "qdel",
+        "135"
+      ]
+    },
+    "qstat_deleting.xml": {
+      "what": "qstat -xml -u '*' with a deleted job still in dr (its node paused)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_deleting.xml": {
+      "what": "qstat -j <id> -xml of the deleting job (state dr)",
+      "argv": [
+        "qstat",
+        "-j",
+        "135",
+        "-xml"
+      ]
+    },
+    "qacct_requeued.txt": {
+      "what": "qacct -j of a rescheduled job: failed 25 (rescheduling), then its end (qdel)",
+      "argv": [
+        "qacct",
+        "-j",
+        "134"
+      ]
+    },
+    "qstat_transient.xml": {
+      "what": "qstat -xml -u '*': threshold-suspended (T), requeued waiting (Rq), deleted while transferring (dt)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_transient.txt": {
+      "what": "plain qstat -u '*' of the same moment",
+      "argv": [
+        "qstat",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_threshold.xml": {
+      "what": "qstat -j <id> -xml of the threshold job (state T)",
+      "argv": [
+        "qstat",
+        "-j",
+        "136",
+        "-xml"
+      ]
+    },
+    "qstat_j_requeue_pending.xml": {
+      "what": "qstat -j <id> -xml of the requeue_pending job (state Rq)",
+      "argv": [
+        "qstat",
+        "-j",
+        "137",
+        "-xml"
+      ]
+    },
+    "qstat_j_deleting_transfer.xml": {
+      "what": "qstat -j <id> -xml of the deleting_transfer job (state dt)",
+      "argv": [
+        "qstat",
+        "-j",
+        "138",
+        "-xml"
+      ]
+    },
+    "qstat_mixed.xml": {
+      "what": "qstat -xml -u '*': running, hqw (user hold, -hold_jid), Eqw, array with r and qw",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_mixed.txt": {
+      "what": "plain qstat -u '*' of the same moment",
+      "argv": [
+        "qstat",
+        "-u",
+        "*"
+      ]
+    },
+    "qstat_j_running.xml": {
+      "what": "qstat -j <id> -xml of the running job (state r)",
+      "argv": [
+        "qstat",
+        "-j",
+        "139",
+        "-xml"
+      ]
+    },
+    "qstat_j_held.xml": {
+      "what": "qstat -j <id> -xml of the held job (state hqw)",
+      "argv": [
+        "qstat",
+        "-j",
+        "140",
+        "-xml"
+      ]
+    },
+    "qstat_j_dependent.xml": {
+      "what": "qstat -j <id> -xml of the dependent job (state hqw)",
+      "argv": [
+        "qstat",
+        "-j",
+        "141",
+        "-xml"
+      ]
+    },
+    "qstat_j_eqw.xml": {
+      "what": "qstat -j <id> -xml of the eqw job (state Eqw)",
+      "argv": [
+        "qstat",
+        "-j",
+        "142",
+        "-xml"
+      ]
+    },
+    "qstat_j_array.xml": {
+      "what": "qstat -j <id> -xml of the array job (state t)",
+      "argv": [
+        "qstat",
+        "-j",
+        "143",
+        "-xml"
+      ]
+    },
+    "qstat_j_missing.txt": {
+      "what": "qstat -j of an unknown id (JSON: returncode, stdout, stderr)",
+      "argv": [
+        "qstat",
+        "-j",
+        "999999",
+        "-xml"
+      ]
+    },
+    "qstat_master_down.json": {
+      "what": "qstat -xml -u '*' with the qmaster stopped (JSON, BUG-T6)",
+      "argv": [
+        "qstat",
+        "-xml",
+        "-u",
+        "*"
+      ]
+    },
+    "qacct_master_down.json": {
+      "what": "qacct -j <ok> with the qmaster stopped (JSON)",
+      "argv": [
+        "qacct",
+        "-j",
+        "120"
+      ]
+    },
+    "qacct_history_master_down.json": {
+      "what": "qacct -j -o bob -b <since> with the qmaster stopped (JSON)",
+      "argv": [
+        "qacct",
+        "-j",
+        "-o",
+        "bob",
+        "-b",
+        "200001010000"
+      ]
+    },
+    "qstat_j_master_down.json": {
+      "what": "qstat -j <ok> -xml with the qmaster stopped (JSON)",
+      "argv": [
+        "qstat",
+        "-j",
+        "120",
+        "-xml"
+      ]
+    }
+  }
+}

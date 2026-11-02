@@ -168,7 +168,8 @@ Other commands
   whose state maps to ``UNKNOWN``, a qacct field (exit status, runtime,
   timestamps, failed reason) the record has but the result lacks. Each argv
   *shape* (``qacct -j <arg>``, ``qstat -xml -u <arg>``, ...) is listed with
-  its call count. With ``--fixtures tests/unit/fixtures/sge`` the shapes
+  its call count. With ``--fixtures tests/unit/fixtures/sge/soge`` (a
+  flavour's captures) the shapes
   no captured fixture covers are listed too. Exits 1 on any finding or
   uncovered shape, so it can run unattended over a trace directory. A
   finding is a parser bug: open an issue with the record attached.

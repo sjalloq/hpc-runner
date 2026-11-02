@@ -25,7 +25,10 @@ def trace_cmd() -> None:
 @click.option(
     "--fixtures",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="A captured fixture root (tests/unit/fixtures/sge); list trace shapes it does not cover",
+    help=(
+        "A captured fixture directory (tests/unit/fixtures/sge/<flavour>); "
+        "list trace shapes it does not cover"
+    ),
 )
 @click.option("--json", "use_json", is_flag=True, help="Output as JSON")
 def compare(directory: Path, fixtures: Path | None, use_json: bool) -> None:

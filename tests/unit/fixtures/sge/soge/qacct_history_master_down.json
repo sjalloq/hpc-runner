@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "qacct",
+    "-j",
+    "-o",
+    "bob",
+    "-b",
+    "200001010000"
+  ],
+  "returncode": 0,
+  "stdout": "==============================================================\nqname        short.q             \nhostname     exec2               \ngroup        bob                 \nowner        bob                 \nproject      NONE                \ndepartment   defaultdepartment   \njobname      bob                 \njobnumber    7                   \ntaskid       undefined\naccount      sge                 \npriority     0                   \nqsub_time    Mon Nov  2 21:16:26 2026\nstart_time   Mon Nov  2 21:16:26 2026\nend_time     Mon Nov  2 21:16:28 2026\ngranted_pe   NONE                \nslots        1                   \nfailed       0    \nexit_status  0                   \nru_wallclock 2s\nru_utime     0.020s\nru_stime     0.013s\nru_maxrss    8.223KB\nru_ixrss     0.000B\nru_ismrss    0.000B\nru_idrss     0.000B\nru_isrss     0.000B\nru_minflt    2549                \nru_majflt    0                   \nru_nswap     0                   \nru_inblock   0                   \nru_oublock   8                   \nru_msgsnd    0                   \nru_msgrcv    0                   \nru_nsignals  0                   \nru_nvcsw     19                  \nru_nivcsw    8                   \ncpu          0.034s\nmem          0.000Bs\nio           0.000B\niow          0.000s\nmaxvmem      1.535MB\narid         undefined\nar_sub_time  undefined\ncategory     NONE\nOWNER     WALLCLOCK         UTIME         STIME           CPU             MEMORY                 IO                IOW\n======================================================================================================================\nbob               2         0.020         0.013         0.034              0.000              0.000              0.000\n",
+  "stderr": ""
+}

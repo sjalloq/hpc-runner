@@ -23,7 +23,7 @@ text attached.
 - **`hpc trace compare DIR`.** Runs every recorded output back through the
   parsers and lists what did not parse: an exception, an empty result, a
   `JobInfo` with `UNKNOWN` status, a missing runtime or exit code when the
-  record had the field. With `--fixtures tests/unit/fixtures/sge` it also
+  record had the field. With `--fixtures tests/unit/fixtures/sge/<flavour>` it also
   lists argv shapes the trace contains that no captured fixture covers.
 - **`hpc trace bundle DIR`.** Packs a trace for an issue report:
   usernames, hostnames, job names, projects and home paths replaced by

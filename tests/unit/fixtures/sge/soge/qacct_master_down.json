@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "qacct",
+    "-j",
+    "4"
+  ],
+  "returncode": 0,
+  "stdout": "==============================================================\nqname        all.q               \nhostname     exec1               \ngroup        tester              \nowner        tester              \nproject      NONE                \ndepartment   defaultdepartment   \njobname      ok                  \njobnumber    4                   \ntaskid       undefined\naccount      sge                 \npriority     0                   \nqsub_time    Mon Nov  2 21:16:26 2026\nstart_time   Mon Nov  2 21:16:26 2026\nend_time     Mon Nov  2 21:16:26 2026\ngranted_pe   NONE                \nslots        1                   \nfailed       0    \nexit_status  0                   \nru_wallclock 0s\nru_utime     0.021s\nru_stime     0.009s\nru_maxrss    8.305KB\nru_ixrss     0.000B\nru_ismrss    0.000B\nru_idrss     0.000B\nru_isrss     0.000B\nru_minflt    2492                \nru_majflt    0                   \nru_nswap     0                   \nru_inblock   0                   \nru_oublock   8                   \nru_msgsnd    0                   \nru_msgrcv    0                   \nru_nsignals  0                   \nru_nvcsw     18                  \nru_nivcsw    5                   \ncpu          0.030s\nmem          0.000Bs\nio           0.000B\niow          0.000s\nmaxvmem      0.000B\narid         undefined\nar_sub_time  undefined\ncategory     NONE\n",
+  "stderr": ""
+}
