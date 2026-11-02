@@ -700,11 +700,9 @@ class TestSentinelSweep:
         assert old.exists()
 
 
-class TestSGEExitSentinelFallback:
-    """Status/exit-code fallback to the exit sentinel when qacct is unavailable.
-
-    Precedence is qstat > qacct > sentinel.
-    """
+class TestStatusIgnoresSentinels:
+    """D19: status and exit code come from qstat and qacct only; the exit
+    sentinels are the dependency guard's, never a status."""
 
     QACCT_NOT_FOUND = "error: job id {job_id} not found\n"
 
@@ -734,60 +732,28 @@ class TestSGEExitSentinelFallback:
         assert sched.exit_dir == str(tmp_path)
         return sched
 
-    def test_sentinel_zero_completed(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("0\n")
+    @pytest.mark.parametrize("name", ["123.rc", "123.4.rc"])
+    @pytest.mark.parametrize("rc", ["0", "3", "113"])
+    def test_a_sentinel_without_a_record_is_unknown(self, scheduler, tmp_path, name, rc):
+        (tmp_path / name).write_text(f"{rc}\n")
+        job_id = name.removesuffix(".rc")
         with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123") == JobStatus.COMPLETED
-            assert scheduler.get_exit_code("123") == 0
+            assert scheduler.get_status(job_id) == JobStatus.UNKNOWN
+            assert scheduler.get_exit_code(job_id) is None
 
-    def test_sentinel_nonzero_failed(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("3\n")
-        with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123") == JobStatus.FAILED
-            assert scheduler.get_exit_code("123") == 3
-
-    def test_array_task_reads_only_its_own_sentinel(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("0\n")
-        with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123.4") == JobStatus.UNKNOWN
-        (tmp_path / "123.4.rc").write_text("5\n")
-        with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123.4") == JobStatus.FAILED
-            assert scheduler.get_exit_code("123.4") == 5
-
-    def test_sentinel_113_is_skipped(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("113\n")
-        with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123") == JobStatus.SKIPPED
-            assert scheduler.get_exit_code("123") == 113
-
-    def test_no_sentinel_unknown(self, scheduler):
+    def test_no_record_unknown(self, scheduler):
         with patch_seam(self._fake_run()):
             assert scheduler.get_status("123") == JobStatus.UNKNOWN
             assert scheduler.get_exit_code("123") is None
 
-    def test_unparsable_sentinel_ignored(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("garbage\n")
-        with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123") == JobStatus.UNKNOWN
-            assert scheduler.get_exit_code("123") is None
-
-    def test_emulate_afterok_off_ignores_sentinel(self, scheduler, tmp_path):
-        (tmp_path / "123.rc").write_text("0\n")
-        scheduler.emulate_afterok = False
-        scheduler.exit_dir = ""
-        with patch_seam(self._fake_run()):
-            assert scheduler.get_status("123") == JobStatus.UNKNOWN
-            assert scheduler.get_exit_code("123") is None
-
-    def test_qacct_without_exit_status_uses_sentinel(self, scheduler, tmp_path):
+    def test_qacct_without_exit_status_is_unknown(self, scheduler, tmp_path):
         (tmp_path / "123.rc").write_text("0\n")
         run = self._fake_run(qacct_stdout="qname  all.q\njobnumber 123\n", qacct_rc=0)
         with patch_seam(run):
-            assert scheduler.get_status("123") == JobStatus.COMPLETED
-            assert scheduler.get_exit_code("123") == 0
+            assert scheduler.get_status("123") == JobStatus.UNKNOWN
+            assert scheduler.get_exit_code("123") is None
 
-    def test_qacct_wins_over_sentinel(self, scheduler, tmp_path):
+    def test_qacct_decides(self, scheduler, tmp_path):
         (tmp_path / "123.rc").write_text("0\n")
         qacct = "==============\nqname        all.q\njobnumber    123\nexit_status  2\n"
         with patch_seam(self._fake_run(qacct, 0)):
@@ -824,7 +790,7 @@ ARRAY_QSTAT_XML = """<?xml version='1.0'?>
 
 
 class TestSGEStatuses:
-    """Batched get_statuses: one qstat per call; qacct/sentinel per finished id."""
+    """Batched get_statuses: one qstat per call; qacct per finished id."""
 
     @pytest.fixture
     def scheduler(self, monkeypatch, tmp_path):

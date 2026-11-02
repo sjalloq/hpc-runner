@@ -187,7 +187,8 @@ that names the time limit. ``PENDING``,
 queue; it holds its slot until resumed) are the active statuses. If the scheduler
 reports ``UNKNOWN`` continuously for ``unknown_after`` seconds (for example
 the job has aged out of accounting), ``wait()`` returns ``UNKNOWN`` rather
-than polling forever; ``timeout`` raises ``TimeoutError``.
+than polling forever. A shorter ``UNKNOWN`` is normal on SGE: between a job
+leaving ``qstat`` and its accounting record being written; ``timeout`` raises ``TimeoutError``.
 ``ArrayJobResult.wait()`` takes the same arguments and polls all tasks with
 one ``get_statuses`` call per tick. It returns one status for the array as
 a whole: active while any task is, ``COMPLETED`` only when every task is,

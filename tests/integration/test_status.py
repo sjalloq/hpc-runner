@@ -1,4 +1,4 @@
-"""Status reporting: qstat, qacct and the exit sentinel.
+"""Status reporting: qstat and qacct (the exit sentinels are never a status, D19).
 
 See docs/dev/testbed/TESTBED_PLAN.md section 5.
 """
@@ -66,7 +66,8 @@ def test_queued_running_done(cluster: Cluster) -> None:
 
 @pytest.mark.slow_accounting
 def test_slow_accounting_window(cluster: Cluster) -> None:
-    """D-T6/D-T22: the exit sentinel resolves a finished job before qacct has its record.
+    """D-T6/D-T22/D19: a finished job is UNKNOWN between leaving qstat and
+    qacct having its record, then COMPLETED; ``wait()`` rides the gap out.
 
     Selected by ``--slow-accounting`` only; the stack must have been started
     with ``hpc-testbed up --slow-accounting`` or the test fails.
@@ -97,30 +98,27 @@ def test_slow_accounting_window(cluster: Cluster) -> None:
             "the stack is not slow"
         )
 
-    assert scheduler.get_status(job_id) is JobStatus.COMPLETED
+    # Its sentinel is written by now; it is not a status.
+    assert (cluster.exit_dir / f"{job_id}.rc").exists()
+    # (unless a flush landed in the last few milliseconds)
+    early = (scheduler.get_status(job_id), scheduler.get_exit_code(job_id))
+    assert early == (JobStatus.UNKNOWN, None) or _qacct_has(cluster, job_id), early
+    status = scheduler.result(job_id).wait(poll_interval=0.5, unknown_after=QACCT_WINDOW)
+    assert status is JobStatus.COMPLETED
+    assert time.monotonic() - left_qstat < QACCT_WINDOW
     assert scheduler.get_exit_code(job_id) == 0
-
-    while not _qacct_has(cluster, job_id):
-        assert time.monotonic() - left_qstat < QACCT_WINDOW, f"qacct silent for {QACCT_WINDOW}s"
-        time.sleep(0.5)
-    assert scheduler.get_status(job_id) is JobStatus.COMPLETED
 
 
 def test_aged_out(cluster: Cluster) -> None:
-    """A job gone from qstat, qacct and the sentinel is UNKNOWN after unknown_after, not forever."""
+    """A job gone from qstat and qacct is UNKNOWN after unknown_after, not forever."""
     scheduler = cluster.scheduler()
     job_id = _job_id(_submit(cluster, JobSpec("true", name="aged")))
     assert cluster.wait_for(job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
 
-    # wait_for may return via the sentinel before qmaster flushes the record;
-    # "aged out" means the record existed and was rotated, so wait for it.
-    deadline = time.monotonic() + 30
-    while not _qacct_has(cluster, job_id):
-        assert time.monotonic() < deadline, f"qacct never saw job {job_id}"
-        time.sleep(0.2)
-    sentinel = cluster.exit_dir / f"{job_id}.rc"
-    assert sentinel.exists()
-    sentinel.unlink()
+    # COMPLETED came from qacct, so the record exists; "aged out" means it
+    # was rotated away. The job's sentinel stays: it is not a status (D19).
+    assert _qacct_has(cluster, job_id)
+    assert (cluster.exit_dir / f"{job_id}.rc").exists()
     cluster.accounting_truncate()
     assert not _qacct_has(cluster, job_id)
 

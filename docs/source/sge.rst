@@ -244,11 +244,17 @@ Exit sentinels and job status
 With ``emulate_afterok`` enabled (the default), every batch job writes its
 exit code to ``<exit_dir>/<JOB_ID>.rc`` (``<JOB_ID>.<TASK>.rc`` for each
 task of an array job), where ``exit_dir`` is ``$HPC_EXIT_DIR`` or
-``~/.cache/hpc-runner/exit`` on the shared home. These files implement the
-dependency guard and also serve as the status fallback: if ``qstat`` no
-longer knows a job and ``qacct`` cannot report it (accounting disabled or
-delayed), hpc-runner reads the sentinel to report COMPLETED, FAILED or
-SKIPPED and the exit code instead of UNKNOWN. Sentinels older than
+``~/.cache/hpc-runner/exit`` on the shared home. These files exist for the
+dependency guard only; status and exit codes come from the scheduler's own
+records, ``qstat`` and ``qacct``. hpc-runner therefore needs SGE accounting
+enabled (the default) and ``qacct`` usable on the submit host. A job that
+has left ``qstat`` before qmaster has written its accounting record (up to
+``flush_time`` in ``reporting_params``) is ``UNKNOWN`` until the record
+appears; ``wait()`` rides that out (see ``unknown_after`` in
+:doc:`programmatic_api`). The base id of a finished array is the reduction
+of the task records ``qacct`` has, which cannot say how many tasks there
+were, so in that interval it can be premature; the ``ArrayJobResult``
+returned at submit knows its range and asks task by task. Sentinels older than
 ``[schedulers.sge] sentinel_ttl_days`` (default 30) are removed each time a
 scheduler object is created; the sweep reads file ages only and never asks
 the scheduler, so a dependent submitted after its parent's sentinel was
@@ -256,8 +262,8 @@ swept is skipped as "not satisfied".
 
 Status queries are batched: ``get_statuses(ids)`` runs one
 ``qstat -xml -u '*'`` for all ids (each array task reports its own state),
-then ``qacct`` (``qacct -j <id> -t <task>`` for a task) and the sentinel
-only for ids no longer active. A ``qacct`` record is read ``failed`` code
+then ``qacct`` (``qacct -j <id> -t <task>`` for a task) only for ids no
+longer active. A ``qacct`` record is read ``failed`` code
 first: 37 (qmaster enforced ``h_rt``, ``h_cpu`` or ``h_vmem``) is
 ``KILLED``, since the record does not say which limit; so is 100 ("assumedly
 after job") when Open Cluster Scheduler records ``deleted_by execd@<host>``,

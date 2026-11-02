@@ -40,18 +40,18 @@ def test_array_1_to_5(cluster: Cluster) -> None:
         5: JobStatus.COMPLETED,
     }
     assert tasks.overall is JobStatus.FAILED and tasks.failed == [3] and tasks.is_terminal
-    # The base id, as `hpc status <id>` or scheduler.result(id) asks: the whole
-    # array, whatever order qacct prints the task records in.
-    assert cluster.scheduler().get_status(job_id) is JobStatus.FAILED
-    assert cluster.scheduler().get_exit_code(job_id) == 1
     assert result.returncode == 1
-    # Status and exit code above may come from the exit sentinels before
-    # qmaster flushes accounting; details are read from accounting only, so
-    # wait for all five task records (CI 41356547233 lost this race).
+    # The base id, as `hpc status <id>` or scheduler.result(id) asks: the whole
+    # array, whatever order qacct prints the task records in. With no range it
+    # reduces the records qacct has (D19), all five of them since the handle
+    # above saw every task's; poll in case qacct lists them a moment later
+    # (CI 41356547233 and 41530594728 lost this race).
     deadline = time.monotonic() + 30
     while cluster.run(["qacct", "-j", job_id], check=False).stdout.count("jobnumber") < 5:
         assert time.monotonic() < deadline, f"qacct has not got the five records of {job_id}"
         time.sleep(0.5)
+    assert cluster.scheduler().get_status(job_id) is JobStatus.FAILED
+    assert cluster.scheduler().get_exit_code(job_id) == 1
     info, extra = cluster.scheduler().get_job_details(job_id)
     assert (info.status, info.exit_code) == (JobStatus.FAILED, 1)
     per_task = extra["tasks"]

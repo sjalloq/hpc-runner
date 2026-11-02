@@ -141,8 +141,8 @@ def test_signal_exit_code(cluster: Cluster) -> None:
     assert result.cancel()
     status = cluster.wait_for(job_id, {JobStatus.CANCELLED, JobStatus.FAILED}, timeout=30)
     assert status in {JobStatus.CANCELLED, JobStatus.FAILED}
-    # CANCELLED comes from qstat's `dr` state, before qacct has the record (and a
-    # SIGKILLed job writes no sentinel), so the exit code is None until then.
+    # CANCELLED comes from qstat's `dr` state, before qacct has the record, so
+    # the exit code is None until then.
     deadline = time.monotonic() + QACCT_TIMEOUT
     while (exit_code := cluster.scheduler().get_exit_code(job_id)) is None:
         assert time.monotonic() < deadline, f"no qacct record for {job_id} after {QACCT_TIMEOUT}s"

@@ -587,3 +587,16 @@ the suite is green now and the fix flips the test to a hard pass.
   fails at once (UNKNOWN, the bug) and sometimes hangs into the 60 s
   command timeout (`SchedulerTimeoutError`, which passes); seen both ways
   on this laptop. Make the marker strict, or remove it, when BUG-T6 is fixed.
+- **BUG-T7 a finished array reads COMPLETED while its failed task's
+  accounting is unwritten.** *Found 2026-11-02 (CI run 41530594728, the
+  first `ocs` cell: `test_array_1_to_5` got COMPLETED for the base id);
+  resolved by D19 (`docs/dev/restructure/DECISIONS.md`).* With tasks 1, 2, 4
+  and 5's records flushed and task 3's (exit 1) not yet, the base id reduced
+  the four records to COMPLETED. A per-task sentinel fallback would have
+  fixed it, but D19 takes the sentinels out of status altogether: qacct
+  cannot say how many tasks an array has, so a base id without its range
+  answers from the records present (documented as possibly premature for
+  up to `flush_time`), while `ArrayJobResult` knows its range and waits for
+  every task's record (`test_handle_waits_for_every_tasks_record`). The
+  test asks the base id once all five records are in. First seen on OCS;
+  any SGE can show it.

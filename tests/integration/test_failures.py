@@ -67,7 +67,8 @@ def test_node_killed(cluster: Cluster) -> None:
         cluster.start_node("exec1")
         cluster.wait_ready(RECOVER_TIMEOUT)
 
-    status = scheduler.get_status(job_id)
+    # UNKNOWN until qmaster writes the record (D19), then one of the failures.
+    status = cluster.wait_for(job_id, FAILED_FAMILY, timeout=30)
     assert status.is_terminal, status
     assert status in FAILED_FAMILY, status
     record = cluster.run(["qacct", "-j", job_id]).stdout

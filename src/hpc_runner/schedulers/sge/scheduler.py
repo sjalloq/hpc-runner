@@ -30,7 +30,6 @@ from hpc_runner.core.result import (
     JobResult,
     JobStatus,
     reduce_statuses,
-    status_from_exit_code,
 )
 from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
 from hpc_runner.schedulers.sge.args import (
@@ -119,10 +118,8 @@ def get_exit_dir(sweep_ttl_days: float = DEFAULT_SENTINEL_TTL_DAYS) -> Path:
     (sibling of the script dir, on the shared/NFS home as required so the
     dependent can read what the parent wrote).
 
-    The same sentinel is also the status fallback: when ``qacct`` cannot
-    report a finished job (accounting unavailable or already rotated),
-    ``SGEScheduler.get_status`` / ``get_exit_code`` read the exit code from
-    here instead of returning UNKNOWN.
+    Sentinels are for the dependency guard only. Status and exit codes come
+    from the scheduler's own records, qstat and qacct (D19).
 
     Sentinels whose mtime is older than *sweep_ttl_days* are removed, so the
     directory does not grow without bound. The sweep looks only at mtimes,
@@ -628,28 +625,6 @@ class SGEScheduler(BaseScheduler):
         except SchedulerCommandError:
             return False
 
-    def _read_exit_sentinel(self, job_id: str) -> int | None:
-        """Read the exit code a job published to its exit sentinel.
-
-        The sentinel is ``<exit_dir>/<job_id>.rc``; an array task id
-        (``123.4``) reads its own ``123.4.rc``.
-
-        Returns:
-            The exit code, or None if sentinels are disabled
-            (``emulate_afterok`` off), the file is missing or unreadable,
-            or its content is not an integer.
-        """
-        if not self.exit_dir:
-            return None
-        try:
-            text = (Path(self.exit_dir) / f"{job_id}.rc").read_text()
-        except OSError:
-            return None
-        try:
-            return int(text.strip())
-        except ValueError:
-            return None
-
     def _qstat_xml(self, user: str = "*") -> str:
         """The output of ``qstat -xml -u <user>``, ``""`` when qstat says there is nothing.
 
@@ -698,12 +673,13 @@ class SGEScheduler(BaseScheduler):
         }
 
     def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
-        """Statuses from one ``qstat -xml``, then qacct and the exit sentinel.
+        """Statuses from one ``qstat -xml``, then qacct.
 
-        Precedence is qstat (active jobs and tasks) > qacct (accounting) >
-        exit sentinel. An id not active is looked up one by one (qacct has
-        no bulk-by-id form); the sentinel is the fallback when accounting
-        has no record. An exit code of ``HPC_EXIT_DEP_FAILED`` (113) is
+        Only the scheduler's own records count (D19): qstat for active jobs
+        and tasks, then qacct, looked up one id at a time (it has no
+        bulk-by-id form). A job gone from qstat whose record qmaster has not
+        written yet is UNKNOWN until it is (``wait()`` rides that out with
+        ``unknown_after``). An exit code of ``HPC_EXIT_DEP_FAILED`` (113) is
         SKIPPED; the qacct ``failed`` code is read first (see
         :func:`~hpc_runner.schedulers.sge.parser.qacct_status`).
 
@@ -713,7 +689,11 @@ class SGEScheduler(BaseScheduler):
         An array task id (``123.4``) reports that task's own state. The base
         id of an array reports the array as a whole, the reduction of its
         tasks (:func:`~hpc_runner.core.result.reduce_statuses`): active
-        while any task is, COMPLETED only when every task is.
+        while any task is, COMPLETED only when every task is. Once no task
+        is active it reduces the task records qacct has, which cannot say
+        how many tasks there were: until qmaster has written every task's
+        record the answer can be premature. A caller that knows the range
+        (``ArrayJobResult``) asks per task instead.
         """
         active = self._active_states()
         statuses: dict[str, JobStatus] = {}
@@ -724,32 +704,8 @@ class SGEScheduler(BaseScheduler):
                 continue
             finished = [qacct_status(record) for record in self._qacct(job_id).values()]
             decided = [status for status in finished if status is not None]
-            if decided:
-                statuses[job_id] = reduce_statuses(decided)
-                continue
-            codes = self._read_exit_sentinels(job_id)
-            statuses[job_id] = (
-                reduce_statuses(status_from_exit_code(rc) for rc in codes)
-                if codes
-                else JobStatus.UNKNOWN
-            )
+            statuses[job_id] = reduce_statuses(decided) if decided else JobStatus.UNKNOWN
         return statuses
-
-    def _read_exit_sentinels(self, job_id: str) -> list[int]:
-        """The exit codes *job_id* published: its own sentinel, or for the
-        base id of an array every ``<base>.<task>.rc``."""
-        own = self._read_exit_sentinel(job_id)
-        if own is not None:
-            return [own]
-        if not self.exit_dir or "." in job_id:
-            return []
-        codes: list[int] = []
-        for path in Path(self.exit_dir).glob(f"{job_id}.*.rc"):
-            try:
-                codes.append(int(path.read_text().strip()))
-            except (OSError, ValueError):
-                continue
-        return codes
 
     def task_job_id(self, base: str, index: int) -> str:
         """SGE names an array task ``<base>.<index>``."""
@@ -773,18 +729,15 @@ class SGEScheduler(BaseScheduler):
         return [state for key, state in active.items() if key.startswith(f"{job_id}.")]
 
     def get_exit_code(self, job_id: str) -> int | None:
-        """Get exit code from qacct, falling back to the exit sentinel.
+        """The exit code qacct recorded; None until it has a record (D19).
 
-        The sentinel is used when accounting is unavailable, e.g. qacct no
-        longer returns finished jobs. A guard-skipped job returns 113
-        (``HPC_EXIT_DEP_FAILED``). The base id of an array returns 0 when
-        every task exited 0, else the first non-zero task code.
+        A guard-skipped job returns 113 (``HPC_EXIT_DEP_FAILED``). The base
+        id of an array returns 0 when every task recorded exited 0, else the
+        first non-zero task code.
         """
         # qacct writes "137 (Killed)" for a signal death; take the number.
         codes = [_leading_int(r.get("exit_status")) for r in self._qacct(job_id).values()]
         known = [code for code in codes if code is not None]
-        if not known:
-            known = self._read_exit_sentinels(job_id)
         if not known:
             return None
         # One task's code for a plain job; for an array the first task's

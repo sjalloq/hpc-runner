@@ -23,8 +23,8 @@ Marks:
 | Col | Reader | What it reads |
 |---|---|---|
 | A | `state_to_status` / `qacct_status` (`sge/parser.py`) | one qstat state code / one qacct record |
-| B | `get_statuses` / `get_status` / `result()` (`sge/scheduler.py`) | qstat -xml, then qacct -j, then the exit sentinel |
-| C | `get_exit_code` | qacct `exit_status`, then the sentinel |
+| B | `get_statuses` / `get_status` / `result()` (`sge/scheduler.py`) | qstat -xml, then qacct -j (no sentinel, D19) |
+| C | `get_exit_code` | qacct `exit_status` (no sentinel, D19) |
 | D | `list_active_jobs` | qstat -xml -u * |
 | E | `list_completed_jobs` / `qacct_to_job_info` | qacct -j [-o user] [-b/-e] |
 | F | `get_job_details` | qstat -j -xml, else qacct |
@@ -66,8 +66,8 @@ Capture scenario names are from `tests/unit/fixtures/sge/<flavour>/manifest.json
 | 17 | node lost: `failed 19`, `exit 0` | FAILED | `lost_node` | F | F, I (`test_node_killed`) | F | n/a | F, I | F (`TestFinishedJobDetails`) | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I |
 | 18 | deleted while pending (`qdel` of `hqw`) | UNKNOWN (no record ever; accepted, §4.2) | `deleted_pending` | n/a | F (`test_deleted_while_pending..`) | F | n/a | n/a | F (`JobNotFoundError`) | F (`test_status_of_a_job_deleted_while_pending`) | n/a (no Completed tab, D-T45) | I (`test_deleted_while_pending_waits_out_to_unknown`) |
 | 19 | rescheduled / requeued: `failed 25` record, `Rq` → `Rr`, then its end | RUNNING while active, then the final record | `requeued` (`qacct_requeued`: 25 then 100) | F | F, u | F | F (`Rr`) | F (`test_history_lists_a_requeued_job_once`), I | F | F (`test_status_of_a_finished_job`, `test_history_..`) | n/a (no Completed tab, D-T45) | I (`test_requeued_job_ends_with_its_final_record`) |
-| 20 | aged out of qacct, sentinel gone | UNKNOWN | · | n/a | I (`test_aged_out`) | I (`test_aged_out`) | n/a | n/a | F (same inputs as 22) | F (`test_status_of_an_unknown_id`) | n/a (no Completed tab, D-T45) | u (`test_unknown_after..`) |
-| 21 | sentinel only (qacct not yet flushed) | from sentinel | · | n/a | u (`test_qacct_without_exit_status_uses_sentinel`, `..wins_over_sentinel`), I (`test_slow_accounting_window`, slow stack) | u, I | n/a | n/a | F (`test_status_of_a_sentinel_only_job`) | F (`test_status_of_a_sentinel_only_job`) | n/a (no Completed tab, D-T45) | F (`test_wait_on_a_sentinel_only_job`) |
+| 20 | aged out of qacct | UNKNOWN | · | n/a | I (`test_aged_out`) | I (`test_aged_out`) | n/a | n/a | F (same inputs as 22) | F (`test_status_of_an_unknown_id`) | n/a (no Completed tab, D-T45) | u (`test_unknown_after..`) |
+| 21 | gone from qstat, qacct not yet flushed | UNKNOWN until the record (D19) | · | n/a | u (`test_a_sentinel_without_a_record_is_unknown`, `test_qacct_decides`), I (`test_slow_accounting_window`, slow stack) | u, I | n/a | n/a | F (`test_status_of_a_job_not_yet_in_accounting`) | F (`test_status_of_a_job_not_yet_in_accounting`) | n/a (no Completed tab, D-T45) | F (`test_wait_on_a_job_not_yet_in_accounting`), u (`test_handle_waits_for_every_tasks_record`) |
 | 22 | unknown id | UNKNOWN / `JobNotFoundError` | `qacct_missing`, `qstat_j_missing` | F | F (`test_get_status_unknown_id`) | F (`test_unknown_id_has_no_exit_code`) | n/a | n/a | F (`test_unknown_id_is_not_found`) | F (`test_status_of_an_unknown_id`) | n/a (no Completed tab, D-T45) | F (`test_wait_on_an_unknown_id`) |
 | 23 | qmaster unreachable | `SchedulerUnavailableError` | `master_down` | F | F (`test_get_status_raises`) | F (`test_finished_job_is_still_readable_with_the_master_down`: qacct needs no qmaster) | F (`test_list_active_jobs_raises`) | F (`test_history_with_the_master_down`) | F (`test_finished_job_is_still_readable..`) | n/a (D-T45: master down is a don't care) | n/a (no Completed tab, D-T45) | n/a (D-T45) |
 | 24 | array, tasks running + queued, task id | per task | `array` | F | F (`array`,1 / `array`,9) | n/a | F | n/a | F (`test_details_of_every_active_state`) | F (`test_hpc_status_table`, array in the mixed snapshot) | n/a (no Completed tab, D-T45) | I (`test_array_1_to_5`) |

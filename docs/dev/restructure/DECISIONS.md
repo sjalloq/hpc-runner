@@ -831,6 +831,39 @@ array/pipeline reduction KILLED ranks after FAILED and before TIMEOUT.
 
 ---
 
+## D19. Are hpc-runner's exit sentinels a source of job status?
+
+Raised by CI run 41530594728 (the first `ocs` cell): `get_status(<base id>)`
+of a finished array read COMPLETED while qmaster had written tasks 1, 2, 4
+and 5's accounting records but not yet the failed task 3's.
+
+**Today:** every SGE batch job writes `<exit_dir>/<JOB_ID>[.<TASK>].rc` from
+its EXIT trap, for the afterok/afternotok guard (D8). `get_statuses` and
+`get_exit_code` also read them when a job has left qstat and qacct has no
+record (D8 noted "the sentinel doubles as the accounting fallback"). It
+covers the accounting flush delay and sites without accounting. It is the
+script's view, not the scheduler's (a SIGKILLed job writes none, and it
+cannot say KILLED); it lives in the submitter's home, so another user asking
+gets a different answer; and a job id reused within the sweep TTL (wrap, a
+reinstalled qmaster) reads an older job's code.
+
+`qacct` reports every task, but not how many tasks an array has (no field
+holds the `-t` range), so from a base id alone a missing record cannot be
+told from no such task until qmaster has flushed them all.
+
+**Decision (2026-11-02):** status and exit codes come from the scheduler's
+own records only: qstat, then qacct. The sentinels are the dependency
+guard's and nothing else's. hpc-runner needs SGE accounting enabled (the
+default) and qacct usable on the submit host; a site without it is not
+supported, and if one appears an opt-in fallback is added then. A job
+between leaving qstat and its record being written is UNKNOWN, which
+`wait()` rides out (`unknown_after`). An `ArrayJobResult` knows its range
+and asks per task, so it is not finished until every task has a record. A
+base id without a range reduces the records qacct has, documented as
+possibly premature for up to `flush_time` after the last task leaves qstat.
+
+---
+
 ## Suggested order
 
 D12 first (everything else is implemented on top of it). Then D1, D2, D14

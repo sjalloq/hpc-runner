@@ -331,6 +331,41 @@ class TestFinishedArrayBaseId:
             # Each task on its own.
             assert scheduler.get_status(f"{base}.2") is JobStatus.COMPLETED
 
+    def test_handle_waits_for_every_tasks_record(self, fx, scheduler, tmp_path):
+        """qmaster has written tasks 1 and 2's records, not yet task 3's. The
+        base id alone reads COMPLETED (qacct cannot say there is a task 3),
+        but the handle knows its range: task 3 is UNKNOWN, so the array is
+        not finished yet. Every task's sentinel is there and changes nothing
+        (D19; CI 41530594728 met this on OCS)."""
+        from hpc_runner.core.array import ArrayRange
+        from hpc_runner.core.result import ArrayJobResult
+
+        base = fx.job("array_done")
+        records = re.split(r"(?m)^(?==+$)", fx.text("qacct_array_base.txt"))
+        by_task = {m.group(1): r for r in records if (m := re.search(r"(?m)^taskid +(\d+)\s*$", r))}
+        flushed = {"1", "2"}
+        for task, rc in (("1", 0), ("2", 0), ("3", 1)):
+            (tmp_path / f"{base}.{task}.rc").write_text(f"{rc}\n")
+
+        def respond(argv):
+            if argv[:2] == ["qstat", "-xml"]:
+                return 0, fx.text("qstat_empty.xml"), ""
+            if argv == ["qacct", "-j", base]:
+                return 0, "".join(by_task[t] for t in sorted(flushed)), ""
+            assert argv[:3] == ["qacct", "-j", base] and argv[3] == "-t", argv
+            if argv[4] in flushed:
+                return 0, by_task[argv[4]], ""
+            return 1, "", f"error: job id {base} not found\n"
+
+        res = ArrayJobResult(scheduler=scheduler, job_id=base, array=ArrayRange(1, 3))
+        with patch_seam(respond):
+            assert scheduler.get_status(base) is JobStatus.COMPLETED  # premature
+            tasks = res.task_statuses()
+            assert tasks.tasks[3] is JobStatus.UNKNOWN
+            assert res.status is JobStatus.UNKNOWN and not res.status.is_terminal
+            flushed.add("3")
+            assert res.status is JobStatus.FAILED and res.returncode == 1
+
     def test_array_handle_status_and_drill_down(self, fx, scheduler):
         from hpc_runner.core.array import ArrayRange
         from hpc_runner.core.result import ArrayJobResult
@@ -749,13 +784,16 @@ class TestMatrixGaps:
 
     # -- W7: wait() where the matrix had none (column J) --------------------
 
-    def test_wait_on_a_sentinel_only_job(self, fx, scheduler, tmp_path):
-        """Row 21: gone from qstat, qacct not flushed yet; the sentinel ends the wait."""
+    def test_wait_on_a_job_not_yet_in_accounting(self, fx, scheduler, tmp_path):
+        """Row 21: gone from qstat, qacct not flushed yet. The job's sentinel
+        is there but is not a status (D19): UNKNOWN until accounting has it."""
         job_id = "424242"
         (tmp_path / f"{job_id}.rc").write_text("0\n")
         with patch_seam(_with_snapshot(fx, "qstat_empty.xml")):
-            status = scheduler.result(job_id).wait(poll_interval=0.01, timeout=1)
-        assert status is JobStatus.COMPLETED
+            status = scheduler.result(job_id).wait(
+                poll_interval=0.01, unknown_after=0.05, timeout=1
+            )
+        assert status is JobStatus.UNKNOWN
 
     def test_wait_on_an_unknown_id(self, fx, scheduler):
         """Row 22: UNKNOWN once unknown_after has passed, not a hang."""
@@ -848,13 +886,13 @@ class TestMatrixGaps:
         assert "<job ids>" in text
         assert parse_qstat_j_xml(text)["name"] == "requeue_pending"
 
-    def test_status_of_a_sentinel_only_job(self, fx, monkeypatch, tmp_path):
-        """Row 21, F and G: no qstat, no qacct yet; the sentinel gives the status."""
+    def test_status_of_a_job_not_yet_in_accounting(self, fx, monkeypatch, tmp_path):
+        """Row 21, F and G: no qstat, no qacct yet; the sentinel is not read (D19)."""
         (tmp_path / "424242.rc").write_text("3\n")
         out = _cli(
             ["status", "424242"], _with_snapshot(fx, "qstat_empty.xml"), monkeypatch, tmp_path
         )
-        assert "FAILED" in out and "Exit Code" in out and " 3 " in out
+        assert "UNKNOWN" in out and "FAILED" not in out
 
     def test_status_of_an_unknown_id(self, fx, monkeypatch, tmp_path):
         """Rows 20 and 22, G: nothing anywhere (aged out looks the same); UNKNOWN."""

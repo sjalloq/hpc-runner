@@ -114,5 +114,9 @@ def test_interactive_no_slot(cluster: Cluster, capfd: pytest.CaptureFixture[str]
     assert "late" in capfd.readouterr().out
     # qrsh needs one slot: it ran only after a filler finished, not at once.
     assert waited > MIN_QUEUED_SECONDS, waited
+    # A filler has left qstat; it is UNKNOWN until its accounting record is
+    # written (D19), then COMPLETED.
     statuses = cluster.scheduler().get_statuses(fillers)
-    assert JobStatus.COMPLETED in statuses.values(), statuses
+    done = [job_id for job_id, status in statuses.items() if status is not JobStatus.RUNNING]
+    assert done, statuses
+    assert cluster.wait_for(done[0], JobStatus.COMPLETED) is JobStatus.COMPLETED
