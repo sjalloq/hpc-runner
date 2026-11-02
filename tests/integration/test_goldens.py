@@ -18,6 +18,8 @@ import pytest
 
 from tests.integration.cluster import SRC_ROOT, Cluster
 
+pytestmark = pytest.mark.family("sge")
+
 GOLDEN_DIR = SRC_ROOT / "tests" / "unit" / "golden"
 VERIFIED = "verification: found suitable queue(s)"
 #: What qsub says when it cannot parse a directive; a failure whatever the golden.

@@ -11,8 +11,12 @@ import re
 import time
 from typing import Any
 
+import pytest
+
 from hpc_runner.core.result import JobStatus
 from tests.integration.cluster import Cluster
+
+pytestmark = pytest.mark.family("sge")
 
 QACCT_TIMEOUT = 30.0
 

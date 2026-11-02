@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from click.testing import CliRunner
 
 from hpc_runner.cli.main import cli
@@ -12,6 +13,8 @@ from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import HPC_EXIT_DEP_FAILED, ArrayJobResult, JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
+
+pytestmark = pytest.mark.family("sge")
 
 #: A three-task array whose task 2 fails.
 ARRAY_TASK2_FAILS = '[ "$SGE_TASK_ID" != 2 ]'

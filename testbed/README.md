@@ -48,8 +48,11 @@ The same rule holds inside the tests: nothing skips on a missing
 precondition (no Docker socket, wrong accounting flush); it fails and says
 which `hpc-testbed` command fixes it. Variants are selected, not detected:
 `--slow-accounting` selects exactly the tests marked `slow_accounting`, which
-are deselected otherwise. `--flavour` and `@pytest.mark.flavour(...)` must
-name a directory under `testbed/<family>/`; anything else fails collection.
+are deselected otherwise, and exist only for the families that have them
+(SGE). `--flavour` and `@pytest.mark.flavour(...)` must name a directory
+under `testbed/<family>/`, and `@pytest.mark.family(...)` a family
+directory; anything else fails collection. There is no family option: the
+flavour's directory is the family, and it picks the fixture class.
 
 Inside `login` the suite's environment is already set: `HPC_SCHEDULER=sge`,
 `HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml`,
@@ -116,10 +119,23 @@ configuration and `hpc-runner-testbed.toml`. The fixture classes
 (`tests/integration/cluster.py`) and the tests are shared across flavours of
 one family; `--flavour <name>` selects the stack that is up and
 `@pytest.mark.flavour(...)` deselects what a flavour cannot do, which is what
-fills `testbed/sge/README.md`. A new family (Slurm) is `testbed/slurm/<flavour>/`
-plus a `SlurmCluster` with the same interface. The driver needs nothing new:
+fills `testbed/sge/README.md`.
+
+A new family (Slurm) is `testbed/slurm/<flavour>/` plus:
+
+- a `TestbedCluster` subclass in `tests/integration/cluster.py` (`name`,
+  `probe_command`, `dump_commands`, `accounting_truncate`) registered in
+  `CLUSTERS`; the fixture picks it from the flavour's directory;
+- `pytestmark = pytest.mark.family("slurm")` on tests that drive its own
+  CLI. Every module that calls `qstat`/`qacct`/`qmod` or relies on SGE
+  syntax is marked `family("sge")`; unmarked tests (`test_smoke.py`) run
+  on every family;
+- optionally a capture module in `CAPTURE_MODULES` and the family in
+  `SLOW_ACCOUNTING_FAMILIES` (`src/hpc_runner/_testbed.py`); without them
+  `hpc-testbed capture` and `--slow-accounting` refuse that family.
+
 `hpc-testbed --flavour <name>` finds the compose file under any family and
-passes the family as `--cluster`.
+passes only the flavour.
 
 ## Phase 0 spike results (2026-10-29, gridengine 8.1.9+dfsg-13.1 on trixie)
 

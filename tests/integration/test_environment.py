@@ -12,6 +12,8 @@ from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
+pytestmark = pytest.mark.family("sge")
+
 MODULES_PATH = "/opt/modulefiles"
 #: ``tests/modulefiles/dummy_tool/1.0`` sets these; ``dummy_lib/2.5`` sets DUMMY_LIB_*.
 SHOW_MODULES = (

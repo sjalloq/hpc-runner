@@ -18,6 +18,8 @@ from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
+pytestmark = pytest.mark.family("sge")
+
 RECOVER_TIMEOUT = 90.0
 #: Statuses that say "did not finish normally" (docs/dev/testbed/TESTBED_REVIEW.md D-T24).
 FAILED_FAMILY = {JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT}

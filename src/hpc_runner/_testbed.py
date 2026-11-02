@@ -29,6 +29,11 @@ DEFAULT_PY = "3.12"
 #: every second; ``--slow-accounting`` uses SGE's stock 15 s.
 ACCOUNTING_FLUSH_FAST = "00:00:01"
 ACCOUNTING_FLUSH_SLOW = "00:00:15"
+#: Families whose stack has the slow-accounting variant (the integration
+#: conftest reads this too); ``--slow-accounting`` elsewhere is a usage error.
+SLOW_ACCOUNTING_FAMILIES = frozenset({"sge"})
+#: ``{family: module}`` run by ``capture``; a family without one cannot capture yet.
+CAPTURE_MODULES = {"sge": "tests.integration.capture"}
 #: In-container paths fixed by the image (testbed/sge/soge/Dockerfile).
 VENV_ROOT = "/opt/venv"
 SRC_DIR = "/src"
@@ -164,7 +169,8 @@ def pytest_argv(
     and ``--require-cluster`` makes an unreachable scheduler a failure: inside
     the testbed a missing precondition is a broken testbed, never a skip.
     ``--slow-accounting`` selects the tests marked ``slow_accounting`` instead
-    of the default set.
+    of the default set. The family is not passed: the suite derives it from
+    the flavour's directory, as :func:`find_stack` does.
     """
     return stack.compose(
         "exec",
@@ -179,8 +185,6 @@ def pytest_argv(
         "-m",
         "integration",
         "--require-cluster",
-        "--cluster",
-        stack.family,
         "--flavour",
         flavour,
         f"--junitxml={WORK_DIR}/junit-{py}.xml",
@@ -209,10 +213,13 @@ CAPTURE_DIR = f"{WORK_DIR}/capture"
 def cmd_capture(stack: Stack, *, py: str) -> None:
     """Regenerate the unit-test fixtures from the live stack.
 
-    Runs ``tests/integration/capture.py`` inside ``login`` (it submits the
-    scenario jobs, kills a node and stops the master) and copies its output
-    to ``tests/unit/fixtures/<family>/``.
+    Runs the family's capture module (``tests/integration/capture.py`` for
+    SGE) inside ``login`` (it submits the scenario jobs, kills a node and
+    stops the master) and copies its output to ``tests/unit/fixtures/<family>/``.
     """
+    module = CAPTURE_MODULES.get(stack.family)
+    if module is None:
+        raise TestbedError(f"no capture scenarios for the {stack.family} family yet")
     run(
         stack.compose(
             "exec",
@@ -224,7 +231,7 @@ def cmd_capture(stack: Stack, *, py: str) -> None:
             "login",
             f"{venv_bin(py)}/python",
             "-m",
-            "tests.integration.capture",
+            module,
             CAPTURE_DIR,
             stack.flavour,
         )
@@ -327,6 +334,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def dispatch(stack: Stack, args: argparse.Namespace) -> int:
+    if getattr(args, "slow_accounting", False) and stack.family not in SLOW_ACCOUNTING_FAMILIES:
+        raise TestbedError(
+            f"--slow-accounting is a variant of the {', '.join(sorted(SLOW_ACCOUNTING_FAMILIES))} "
+            f"stack; flavour {stack.flavour!r} is {stack.family}"
+        )
     if args.command == "up":
         cmd_up(
             stack,

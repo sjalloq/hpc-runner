@@ -12,7 +12,11 @@ import re
 import time
 from pathlib import Path
 
+import pytest
+
 from tests.integration.cluster import SRC_ROOT, Cluster
+
+pytestmark = pytest.mark.family("sge")
 
 FIXTURES = SRC_ROOT / "tests" / "unit" / "fixtures" / "sge"
 QACCT_TIMEOUT = 30.0

@@ -474,6 +474,23 @@ the suite is green now and the fix flips the test to a hard pass.
   every running job vanish) and `qstat -j -xml` as "not found". Text with
   no `<` at all (stderr) is still "nothing". Capture `xml_defects` pins
   defects 2 and 3 against real output.
+- **D-T48 the flavour's directory picks the family and the fixture class**
+  (2026-11-01; asked for by the user before the Slurm stack, decided while
+  implementing). `--cluster` is gone from the suite and the driver: it
+  could only repeat what `testbed/<family>/<flavour>/` already says, and two
+  sources could disagree. `cluster.py` splits into `TestbedCluster` (users,
+  `run`, `wait_for`, node control, `poll_ready`/`clean` over the
+  `ready.sh`/`clean.sh` contract, hpc-runner objects) and `SGECluster`
+  (`probe_command = "qstat"`, the `qstat -f`/`-j` dump in a failed wait,
+  `accounting_truncate`), registered in `CLUSTERS`; a family with no class
+  fails collection. A `family(...)` marker deselects tests on other
+  families. It is applied per module, not per test: every module but
+  `test_smoke.py` calls an SGE CLI or relies on SGE syntax (`$SGE_TASK_ID`,
+  `short.q`, `-S '-h'`), and sorting individual tests is the Slurm work's
+  job, when it knows what the Slurm stack can do. `--slow-accounting`
+  (`SLOW_ACCOUNTING_FAMILIES`) and `capture` (`CAPTURE_MODULES`) are SGE
+  only, and the driver and the conftest refuse them for another family
+  rather than running an empty set.
 - **BUG-T5 signal deaths report `exit_code None`.** *Fixed 2026-10-31:
   `get_exit_code` uses `_leading_int`.* qacct writes
   `exit_status 137 (Killed)`; `SGEScheduler.get_exit_code` does

@@ -19,9 +19,9 @@ TestbedError.__test__ = False  # type: ignore[attr-defined]  # not a test class,
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A fake checkout with one family and two flavours."""
+    """A fake checkout: two SGE flavours and one flavour of a second family."""
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-    for family, flavour in (("sge", "soge"), ("sge", "ocs")):
+    for family, flavour in (("sge", "soge"), ("sge", "ocs"), ("slurm", "debian")):
         d = tmp_path / "testbed" / family / flavour
         d.mkdir(parents=True)
         (d / "compose.yml").write_text("services: {}\n")
@@ -69,7 +69,7 @@ class TestDiscovery:
         assert stack.project == "hpc-testbed-soge"
 
     def test_unknown_flavour_lists_the_known_ones(self, repo):
-        with pytest.raises(TestbedError, match="known flavours: ocs, soge"):
+        with pytest.raises(TestbedError, match="known flavours: debian, ocs, soge"):
             find_stack(repo, "nope")
 
     def test_main_reports_usage_errors_on_stderr(self, repo, monkeypatch, capsys):
@@ -141,7 +141,7 @@ class TestCommands:
         assert pytest_part[0] == "/opt/venv/3.10/bin/pytest"
         assert pytest_part[1:4] == ["tests/integration", "-m", "integration"]
         assert "--require-cluster" in pytest_part
-        assert pytest_part[pytest_part.index("--cluster") + 1] == "sge"
+        assert "--cluster" not in pytest_part  # the suite derives the family from the flavour
         assert pytest_part[pytest_part.index("--flavour") + 1] == "soge"
         assert "--junitxml=/work/junit-3.10.xml" in pytest_part
         assert pytest_part[-3:] == ["-k", "submit", "-x"]
@@ -209,6 +209,23 @@ class TestCommands:
             repo, "cp", "login:/work/capture/.", str(repo / "tests/unit/fixtures/sge")
         )
         assert (repo / "tests/unit/fixtures/sge").is_dir()
+
+    @pytest.mark.parametrize("argv", [["up", "--slow-accounting"], ["pytest", "--slow-accounting"]])
+    def test_slow_accounting_is_refused_outside_its_family(self, repo, calls, capsys, argv):
+        assert main(["--flavour", "debian", *argv]) == 2
+        assert "--slow-accounting is a variant of the sge stack" in capsys.readouterr().err
+        assert calls == []
+
+    def test_capture_is_refused_for_a_family_without_scenarios(self, repo, calls, capsys):
+        assert main(["--flavour", "debian", "capture"]) == 2
+        assert "no capture scenarios for the slurm family" in capsys.readouterr().err
+        assert calls == []
+
+    def test_other_family_runs_its_own_stack(self, repo, calls):
+        main(["--flavour", "debian", "pytest"])
+        argv = calls[0][0]
+        assert argv[3] == str(repo / "testbed/slurm/debian/compose.yml")
+        assert argv[argv.index("--flavour") + 1] == "debian"
 
     def test_other_flavour_changes_file_and_project(self, repo, calls):
         main(["--flavour", "ocs", "down"])

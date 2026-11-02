@@ -16,6 +16,8 @@ from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
+pytestmark = pytest.mark.family("sge")
+
 #: Every queue instance and its slots. ``all.q`` is the only INTERACTIVE
 #: queue, but SGE schedules ``qrsh -now no <command>`` like a batch job, so
 #: it also runs in ``short.q`` (BATCH only); "no slot" means all eight busy.

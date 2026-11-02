@@ -3,6 +3,13 @@
 Runs inside the testbed's ``login`` container as user ``tester``: scheduler
 CLIs are on PATH, ``sudo -u alice`` works passwordless, and node control goes
 through ``sudo docker stop|start|kill <container>`` (docs/dev/testbed/TESTBED_REVIEW.md D-T9).
+
+One class per scheduler family (``testbed/<family>/``), registered in
+:data:`CLUSTERS`; the family is the directory the flavour lives in, so the
+fixture picks the class from ``--flavour`` alone (D-T48). What every family
+shares (users, ``run``, ``wait_for``, node control, the ``ready.sh``/
+``clean.sh`` contract, hpc-runner objects) is :class:`TestbedCluster`; a
+family class names its probe command and says how to dump a job's state.
 """
 
 from __future__ import annotations
@@ -16,7 +23,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from hpc_runner.core.config import HPCConfig, load_config
 from hpc_runner.core.host import Host
@@ -32,6 +39,8 @@ WORK_ROOT = Path("/work")
 ACCOUNTING_FILE = Path("/var/lib/gridengine/default/common/accounting")
 #: The stack's readiness probe (docs/dev/testbed/TESTBED_PLAN.md section 3); exit 0 when ready.
 READY_SCRIPT = Path("/opt/testbed/ready.sh")
+#: The stack's per-test cleanup: delete every job, wait for an empty queue, remove a workdir.
+CLEAN_SCRIPT = Path("/opt/testbed/clean.sh")
 READY_TIMEOUT = 90.0
 READY_POLL = 2.0
 
@@ -42,27 +51,6 @@ USERS: tuple[str, ...] = ("alice", "bob", "tester")
 
 class ClusterError(AssertionError):
     """A cluster command failed or a wait timed out; the message has the evidence."""
-
-
-def poll_ready(timeout: float = READY_TIMEOUT, poll: float = READY_POLL) -> tuple[bool, str]:
-    """Run ``ready.sh`` until it passes or *timeout* elapses; return (ready, last output).
-
-    A missing ``qstat`` or probe script means "no cluster" at once; only a
-    present-but-failing probe is polled.
-    """
-    if shutil.which("qstat") is None:
-        return False, "qstat not on PATH"
-    if not READY_SCRIPT.exists():
-        return False, f"{READY_SCRIPT} not found"
-    deadline = time.monotonic() + timeout
-    while True:
-        proc = subprocess.run([str(READY_SCRIPT)], capture_output=True, text=True, timeout=60)
-        output = proc.stdout + proc.stderr
-        if proc.returncode == 0:
-            return True, output
-        if time.monotonic() >= deadline:
-            return False, output
-        time.sleep(poll)
 
 
 class Cluster(Protocol):
@@ -112,6 +100,8 @@ class Cluster(Protocol):
 
     def wait_ready(self, timeout: float = READY_TIMEOUT) -> None: ...
 
+    def clean(self, workdir: Path | None = None) -> None: ...
+
     def config(self) -> HPCConfig: ...
 
     def scheduler(self) -> BaseScheduler: ...
@@ -123,13 +113,16 @@ class Cluster(Protocol):
 
 
 @dataclass
-class SGECluster:
-    """An SGE testbed of one *flavour* (``soge``, ...), driven from ``login``."""
+class TestbedCluster:
+    """What every family's testbed shares; subclasses set :attr:`name` and the hooks."""
 
     flavour: str
     workdir: Path
-    name: str = "sge"
+    #: The family: the ``testbed/<name>/`` directory and ``get_scheduler`` name.
+    name: str = ""
     users: tuple[str, ...] = USERS
+    #: A CLI that is on PATH in ``login`` exactly when this family's stack is.
+    probe_command: ClassVar[str] = ""
     _config: HPCConfig | None = field(default=None, init=False, repr=False)
     _scheduler: BaseScheduler | None = field(default=None, init=False, repr=False)
 
@@ -181,20 +174,24 @@ class SGECluster:
             if status.is_terminal:
                 raise ClusterError(
                     f"job {job_id} ended {status.name}, wanted {_names(wanted)}\n"
-                    f"{self._qstat_dump(job_id)}"
+                    f"{self._dump(job_id)}"
                 )
             if time.monotonic() >= deadline:
                 raise ClusterError(
                     f"job {job_id} is {status.name}, not {_names(wanted)}, after {timeout}s\n"
-                    f"{self._qstat_dump(job_id)}"
+                    f"{self._dump(job_id)}"
                 )
             time.sleep(poll)
             status = scheduler.get_status(job_id)
         return status
 
-    def _qstat_dump(self, job_id: str) -> str:
+    def dump_commands(self, job_id: str) -> list[list[str]]:
+        """The commands whose output explains *job_id*'s state in a failure message."""
+        raise NotImplementedError
+
+    def _dump(self, job_id: str) -> str:
         out = []
-        for argv in (["qstat", "-f"], ["qstat", "-j", job_id]):
+        for argv in self.dump_commands(job_id):
             proc = self.run(argv, check=False)
             header = f"--- {' '.join(argv)} (exit {proc.returncode}) ---"
             out.append(f"{header}\n{proc.stdout}{proc.stderr}")
@@ -221,7 +218,31 @@ class SGECluster:
         self.run(["sudo", "docker", "start", "master"])
 
     def accounting_truncate(self) -> None:
-        self.run(["sudo", "truncate", "-s", "0", str(ACCOUNTING_FILE)])
+        raise NotImplementedError
+
+    # -- the ready.sh / clean.sh contract (testbed/README.md) ---------------------
+
+    def poll_ready(
+        self, timeout: float = READY_TIMEOUT, poll: float = READY_POLL
+    ) -> tuple[bool, str]:
+        """Run ``ready.sh`` until it passes or *timeout* elapses; return (ready, last output).
+
+        A missing probe command or probe script means "no cluster" at once;
+        only a present-but-failing probe is polled.
+        """
+        if shutil.which(self.probe_command) is None:
+            return False, f"{self.probe_command} not on PATH"
+        if not READY_SCRIPT.exists():
+            return False, f"{READY_SCRIPT} not found"
+        deadline = time.monotonic() + timeout
+        while True:
+            proc = subprocess.run([str(READY_SCRIPT)], capture_output=True, text=True, timeout=60)
+            output = proc.stdout + proc.stderr
+            if proc.returncode == 0:
+                return True, output
+            if time.monotonic() >= deadline:
+                return False, output
+            time.sleep(poll)
 
     def wait_ready(self, timeout: float = READY_TIMEOUT) -> None:
         """Poll ``ready.sh`` until the stack is back (after a master or node restart).
@@ -229,9 +250,14 @@ class SGECluster:
         Raises:
             ClusterError: Not ready within *timeout*; the message is the probe's output.
         """
-        ready, output = poll_ready(timeout)
+        ready, output = self.poll_ready(timeout)
         if not ready:
             raise ClusterError(f"cluster not ready after {timeout}s:\n{output}")
+
+    def clean(self, workdir: Path | None = None) -> None:
+        """Delete every job, wait for an empty queue, and remove *workdir* (``clean.sh``)."""
+        argv = [str(CLEAN_SCRIPT)] + ([str(workdir)] if workdir else [])
+        self.run(argv, timeout=120)
 
     @property
     def hpc_cli(self) -> Path:
@@ -263,6 +289,24 @@ class SGECluster:
         env.setdefault("HPC_SCRIPT_DIR", str(WORK_ROOT / "cache" / "scripts"))
         env.setdefault("HPC_EXIT_DIR", str(WORK_ROOT / "cache" / "exit"))
         return Host(env=env, cwd=self.workdir, user=TEST_USER)
+
+
+@dataclass
+class SGECluster(TestbedCluster):
+    """An SGE testbed of one *flavour* (``soge``, ...), driven from ``login``."""
+
+    name: str = "sge"
+    probe_command: ClassVar[str] = "qstat"
+
+    def dump_commands(self, job_id: str) -> list[list[str]]:
+        return [["qstat", "-f"], ["qstat", "-j", job_id]]
+
+    def accounting_truncate(self) -> None:
+        self.run(["sudo", "truncate", "-s", "0", str(ACCOUNTING_FILE)])
+
+
+#: ``{family: cluster class}``; a new family (``testbed/slurm/``) adds its class here.
+CLUSTERS: dict[str, type[TestbedCluster]] = {"sge": SGECluster}
 
 
 def _names(states: set[JobStatus]) -> str:
