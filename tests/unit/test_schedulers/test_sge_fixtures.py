@@ -38,7 +38,7 @@ FINISHED = [
     ("exit1", JobStatus.FAILED, 1, 0),
     ("signal", JobStatus.FAILED, 137, 100),
     ("lost_node", JobStatus.FAILED, 0, 19),
-    ("timeout", JobStatus.TIMEOUT, 137, 37),
+    ("timeout", JobStatus.KILLED, 137, 37),
     ("vmem", JobStatus.FAILED, 2, 0),
     ("requeued", JobStatus.FAILED, 137, 100),
     ("skipped", JobStatus.SKIPPED, 113, 0),
@@ -213,7 +213,7 @@ class TestQacct:
             ("qacct_signal.txt", JobStatus.FAILED, 137, 100),
             ("qacct_lost_node.txt", JobStatus.FAILED, 0, 19),
             ("qacct_array_task.txt", JobStatus.COMPLETED, 0, 0),
-            ("qacct_timeout.txt", JobStatus.TIMEOUT, 137, 37),
+            ("qacct_timeout.txt", JobStatus.KILLED, 137, 37),
             # h_vmem is a setrlimit here: the allocation fails inside the
             # process, which exits by itself; no execd kill, failed 0.
             ("qacct_vmem.txt", JobStatus.FAILED, 2, 0),

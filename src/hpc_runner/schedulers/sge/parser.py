@@ -341,8 +341,19 @@ QACCT_FAILED_INVALID = "invalid execution state"
 QACCT_FAILED_LIMIT = 37
 #: ``failed`` 100: the job ran; ``exit_status`` is its real exit code.
 QACCT_FAILED_AFTER_JOB = 100
+#: OCS ``deleted_by`` prefix of a job execd killed for exceeding ``h_rt``,
+#: ``h_cpu``, ``h_rss`` or ``h_vmem`` (``failed`` 100); a qdel records
+#: ``user@host`` instead. gridengine 8.1.9 has no ``deleted_by``.
+QACCT_DELETED_BY_EXECD = "execd@"
 #: ``failed`` codes after which the job runs again, so the record is not final.
 QACCT_FAILED_NOT_FINAL = frozenset({24, 25})
+
+
+def _killed_by_execd(record: dict[str, Any]) -> bool:
+    """Whether OCS records that execd killed the job for a hard limit."""
+    failed = _leading_int(record.get("failed"))
+    deleted_by = record.get("deleted_by") or ""
+    return failed == QACCT_FAILED_AFTER_JOB and deleted_by.startswith(QACCT_DELETED_BY_EXECD)
 
 
 def failed_reason(code: int) -> str:
@@ -374,10 +385,13 @@ def qacct_status(record: dict[str, Any]) -> JobStatus | None:
 
     * 0 or absent: the job ran to completion; ``exit_status`` decides via
       :func:`~hpc_runner.core.result.status_from_exit_code` (113 is SKIPPED).
-    * 37 (qmaster enforced ``h_rt``/``h_cpu``/``h_vmem``): TIMEOUT.
-    * 100 ("assumedly after job"): the job ran but ended abnormally, as on a
-      ``qdel`` or an execd limit kill; ``exit_status`` (137 for SIGKILL) is
-      real and decides, as for 0.
+    * 37 (qmaster enforced ``h_rt``/``h_cpu``/``h_vmem``): KILLED. The
+      record does not say which limit, so not TIMEOUT.
+    * 100 ("assumedly after job"): the job ran but ended abnormally. With
+      OCS's ``deleted_by execd@<host>`` execd killed it for a hard limit
+      (again unnamed): KILLED. Otherwise (a ``qdel``, or 8.1.9, which has
+      no ``deleted_by``) ``exit_status`` (137 for SIGKILL) is real and
+      decides, as for 0.
     * 24 and 25 (migrating, rescheduling): the job runs again, this record
       is not its end: None.
     * Anything else (1-38 bar 37): the job did not run to completion and
@@ -388,8 +402,8 @@ def qacct_status(record: dict[str, Any]) -> JobStatus | None:
         The status, or None if the record cannot decide it.
     """
     failed = _leading_int(record.get("failed")) or 0
-    if failed == QACCT_FAILED_LIMIT:
-        return JobStatus.TIMEOUT
+    if failed == QACCT_FAILED_LIMIT or _killed_by_execd(record):
+        return JobStatus.KILLED
     if failed in QACCT_FAILED_NOT_FINAL:
         return None
     if failed not in (0, QACCT_FAILED_AFTER_JOB):
@@ -529,7 +543,8 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     * ``owner`` -> ``user``
     * ``exit_status`` -> ``exit_code``; with ``failed``, ``status`` (see
       :func:`qacct_status`); ``failed`` -> ``failed_code`` and, when non-zero,
-      ``failed_reason`` (the scheduler's own words, for ``hpc status``)
+      ``failed_reason`` (the scheduler's own words, for ``hpc status``;
+      for an OCS execd limit kill, which limits ``deleted_by`` stands for)
     * ``qname`` -> ``queue``
     * ``hostname`` -> ``node``
     * ``slots`` -> ``cpu``
@@ -541,6 +556,12 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     exit_code = _leading_int(record.get("exit_status"))
     status = qacct_status(record) or JobStatus.UNKNOWN
     failed = parse_failed(record.get("failed"))
+    if failed and _killed_by_execd(record):
+        failed = (
+            failed[0],
+            f"killed by {record['deleted_by']} for exceeding a hard limit "
+            "(h_rt, h_cpu, h_rss or h_vmem)",
+        )
 
     # CPU slots
     cpu: int | None = None

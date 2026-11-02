@@ -53,6 +53,7 @@ class JobStatus(Enum):
     FAILED = auto()  # Finished with error
     CANCELLED = auto()  # User cancelled
     TIMEOUT = auto()  # Hit time limit
+    KILLED = auto()  # Killed by the scheduler for a resource limit it does not name
     SKIPPED = auto()  # Did not run because a dependency was not satisfied
     UNKNOWN = auto()  # Cannot determine
 
@@ -68,6 +69,7 @@ _TERMINAL = frozenset(
         JobStatus.FAILED,
         JobStatus.CANCELLED,
         JobStatus.TIMEOUT,
+        JobStatus.KILLED,
         JobStatus.SKIPPED,
     }
 )
@@ -84,6 +86,7 @@ _REDUCTION_ORDER = (
     JobStatus.PENDING,
     JobStatus.UNKNOWN,
     JobStatus.FAILED,
+    JobStatus.KILLED,
     JobStatus.TIMEOUT,
     JobStatus.CANCELLED,
     JobStatus.SKIPPED,
@@ -96,7 +99,7 @@ def reduce_statuses(statuses: Iterable[JobStatus]) -> JobStatus:
 
     The whole is active while any part is (RUNNING over SUSPENDED over
     PENDING); once every part is terminal it is COMPLETED only if every
-    part is, else the worst: FAILED, then TIMEOUT, CANCELLED, SKIPPED. An
+    part is, else the worst: FAILED, then KILLED, TIMEOUT, CANCELLED, SKIPPED. An
     UNKNOWN part makes the whole UNKNOWN once nothing is active.
 
     Raises:
@@ -302,7 +305,7 @@ class JobResult:
         """Wait for the job, then return its exit code.
 
         ``concurrent.futures`` style: a job that did not finish COMPLETED
-        (FAILED, SKIPPED, CANCELLED, TIMEOUT, or UNKNOWN) raises rather than
+        (FAILED, SKIPPED, CANCELLED, TIMEOUT, KILLED, or UNKNOWN) raises rather than
         returning a code the caller must check.
 
         Raises:

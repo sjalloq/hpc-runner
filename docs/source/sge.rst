@@ -259,9 +259,12 @@ Status queries are batched: ``get_statuses(ids)`` runs one
 then ``qacct`` (``qacct -j <id> -t <task>`` for a task) and the sentinel
 only for ids no longer active. A ``qacct`` record is read ``failed`` code
 first: 37 (qmaster enforced ``h_rt``, ``h_cpu`` or ``h_vmem``) is
-``TIMEOUT``; 0 and 100 ("assumedly after job": the job ran and was killed,
-by ``qdel`` or an execution-daemon limit) let ``exit_status`` decide, with
-a signal death's ``137 (Killed)`` read as exit code 137 and ``FAILED``; 24
+``KILLED``, since the record does not say which limit; so is 100 ("assumedly
+after job") when Open Cluster Scheduler records ``deleted_by execd@<host>``,
+its mark of an execution-daemon kill for ``h_rt``, ``h_cpu``, ``h_rss`` or
+``h_vmem``. Otherwise 0 and 100 (the job ran and was killed, by ``qdel``,
+say) let ``exit_status`` decide, with a signal death's ``137 (Killed)``
+read as exit code 137 and ``FAILED``; 24
 and 25 (migrating, rescheduling) are not final; any other code means the
 job never ran to completion and is ``FAILED`` whatever ``exit_status``
 says (a node that dies mid-job records ``failed 19`` with

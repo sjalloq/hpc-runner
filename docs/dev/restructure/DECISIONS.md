@@ -785,6 +785,25 @@ and can proceed: `wait()` spinning on `UNKNOWN`, and batched
 
 ---
 
+## D18. What status is a job the scheduler killed for a resource limit?
+
+**Today:** D-T30 (testbed review) maps SGE `failed 37` ("qmaster enforced
+h_rt, h_cpu or h_vmem limit") to TIMEOUT. OCS's execd enforces the limits
+itself and writes `failed 100` with `deleted_by execd@<host>` for `h_rt`,
+`h_cpu`, `h_rss` or `h_vmem` (`execd_ck_to_do.cc`); a `qdel` writes
+`failed 100` with `deleted_by <user>@<host>`. Neither record says which
+limit.
+
+**Decision (2026-11-02):** a new terminal status, `KILLED`: the scheduler
+killed the job for exceeding a resource limit it does not name. FAILED
+reads as the job's own failure, and TIMEOUT claims a limit the record does
+not identify. SGE `failed 37` and OCS `failed 100` + `deleted_by execd@`
+are KILLED; `hpc status` shows the limits the record could mean. TIMEOUT
+stays for a scheduler that reports the time limit itself (Slurm). In the
+array/pipeline reduction KILLED ranks after FAILED and before TIMEOUT.
+
+---
+
 ## Suggested order
 
 D12 first (everything else is implemented on top of it). Then D1, D2, D14

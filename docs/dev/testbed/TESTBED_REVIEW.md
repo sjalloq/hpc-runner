@@ -271,6 +271,10 @@ the suite is green now and the fix flips the test to a hard pass.
   decision maps to TIMEOUT, so hpc-runner is doing what was decided. The
   parser docstring's "execd kill is failed 100" sentence is a research
   claim this stack does not reproduce; left for you to keep or cut.
+  *Superseded 2026-11-02:* `failed 37` is now KILLED, not TIMEOUT, since
+  it also covers `h_cpu` and `h_vmem` (`docs/dev/restructure/DECISIONS.md`
+  D18). The OCS flavour's execd kill (`failed 100`, `deleted_by execd@`)
+  is KILLED too.
 - **D-T31 other users submit through the CLI.** "alice and bob submit"
   runs `sudo -u <user> env HPC_*=... <venv>/bin/hpc run --batch ...` from
   the test (the venv of the running interpreter, so each Python cell tests

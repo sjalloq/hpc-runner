@@ -58,15 +58,25 @@ def test_pe_mem_time(cluster: Cluster) -> None:
     assert "mem_free=2G" in raw and "h_rt=600" in raw and "smp" in raw
 
 
+#: How each flavour records an ``h_rt`` kill: soge's qmaster writes
+#: ``failed 37``; OCS's execd writes ``failed 100`` and ``deleted_by execd@``.
+H_RT_KILL_RECORD = {
+    "soge": {"failed": "37"},
+    "ocs": {"failed": "100", "deleted_by": "execd@"},
+}
+
+
 def test_h_rt_kill(cluster: Cluster) -> None:
-    """D-T30: past short.q's h_rt qmaster kills the job: TIMEOUT, exit 137, qacct ``failed 37``."""
+    """Past short.q's h_rt the scheduler kills the job: KILLED (the record
+    does not name the limit), exit 137."""
     job_id = _job_id(_submit(cluster, JobSpec("sleep 120", name="hrt", queue="short.q")))
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
-    status = cluster.wait_for(job_id, {JobStatus.TIMEOUT}, timeout=H_RT_KILL_TIMEOUT)
-    assert status is JobStatus.TIMEOUT
+    status = cluster.wait_for(job_id, {JobStatus.KILLED}, timeout=H_RT_KILL_TIMEOUT)
+    assert status is JobStatus.KILLED
     record = cluster.run(["qacct", "-j", job_id]).stdout
-    failed = [line.split() for line in record.splitlines() if line.startswith("failed")]
-    assert failed and failed[0][1] == "37", record
+    fields = dict(line.split(None, 1) for line in record.splitlines() if " " in line.strip())
+    for name, prefix in H_RT_KILL_RECORD[cluster.flavour].items():
+        assert fields.get(name, "").startswith(prefix), record
     assert cluster.scheduler().get_exit_code(job_id) == 137
 
 

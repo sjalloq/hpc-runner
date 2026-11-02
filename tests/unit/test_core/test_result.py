@@ -55,6 +55,7 @@ class TestStatus:
             (JobStatus.FAILED, True),
             (JobStatus.CANCELLED, True),
             (JobStatus.TIMEOUT, True),
+            (JobStatus.KILLED, True),
             (JobStatus.SKIPPED, True),
         ],
     )
@@ -345,6 +346,9 @@ class TestReduceStatuses:
             ([JobStatus.SKIPPED, JobStatus.TIMEOUT], JobStatus.TIMEOUT),
             ([JobStatus.CANCELLED, JobStatus.FAILED], JobStatus.FAILED),
             ([JobStatus.TIMEOUT, JobStatus.FAILED], JobStatus.FAILED),
+            ([JobStatus.KILLED, JobStatus.FAILED], JobStatus.FAILED),
+            ([JobStatus.KILLED, JobStatus.TIMEOUT], JobStatus.KILLED),
+            ([JobStatus.CANCELLED, JobStatus.KILLED], JobStatus.KILLED),
             # One task the scheduler cannot report on: not a result.
             ([JobStatus.COMPLETED, JobStatus.UNKNOWN], JobStatus.UNKNOWN),
             ([JobStatus.FAILED, JobStatus.UNKNOWN], JobStatus.UNKNOWN),

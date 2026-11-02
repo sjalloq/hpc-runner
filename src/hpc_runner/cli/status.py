@@ -30,6 +30,7 @@ def _status_style(status: str) -> str:
         "FAILED": "[red]FAILED[/red]",
         "CANCELLED": "[magenta]CANCELLED[/magenta]",
         "TIMEOUT": "[red]TIMEOUT[/red]",
+        "KILLED": "[red]KILLED[/red]",
         "SKIPPED": "[magenta]SKIPPED[/magenta]",
         "UNKNOWN": "[dim]UNKNOWN[/dim]",
     }

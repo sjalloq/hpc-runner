@@ -77,8 +77,8 @@ class TestFailedTable:
             (0, "0", JobStatus.COMPLETED),
             (0, "1", JobStatus.FAILED),
             (0, "113", JobStatus.SKIPPED),
-            (37, "137 (Killed)", JobStatus.TIMEOUT),
-            (37, "0", JobStatus.TIMEOUT),
+            (37, "137 (Killed)", JobStatus.KILLED),
+            (37, "0", JobStatus.KILLED),
             (100, "137 (Killed)", JobStatus.FAILED),
             (100, "0", JobStatus.COMPLETED),
             (100, "113", JobStatus.SKIPPED),
@@ -96,6 +96,38 @@ class TestFailedTable:
         text = f"{code}  : {failed_reason(code)}" if code else "0"
         record = {"failed": text, "exit_status": exit_status}
         assert qacct_status(record) is expected
+
+    @pytest.mark.parametrize(
+        ("deleted_by", "expected"),
+        [
+            # OCS: execd killed it for h_rt, h_cpu, h_rss or h_vmem
+            ("execd@exec1", JobStatus.KILLED),
+            # OCS: a qdel, or a qmaster reschedule; exit_status decides
+            ("alice@login", JobStatus.FAILED),
+            ("qmaster@master", JobStatus.FAILED),
+        ],
+    )
+    def test_ocs_deleted_by(self, deleted_by, expected):
+        record = {
+            "failed": "100 : assumedly after job",
+            "exit_status": "137",
+            "deleted_by": deleted_by,
+        }
+        assert qacct_status(record) is expected
+
+    def test_ocs_execd_kill_names_the_limits(self):
+        info = qacct_to_job_info(
+            {
+                "jobnumber": "123",
+                "failed": "100 : assumedly after job",
+                "exit_status": "137",
+                "deleted_by": "execd@exec1",
+            }
+        )
+        assert (info.status, info.exit_code, info.failed_code) == (JobStatus.KILLED, 137, 100)
+        assert info.failed_reason == (
+            "killed by execd@exec1 for exceeding a hard limit (h_rt, h_cpu, h_rss or h_vmem)"
+        )
 
     def test_no_exit_status_is_undecided(self):
         assert qacct_status({}) is None
@@ -153,9 +185,9 @@ class TestSignalExitCode:
         assert info.status is JobStatus.FAILED
         assert info.failed_code == 100
 
-    def test_h_rt_kill_is_timeout_with_exit_137(self):
+    def test_h_rt_kill_is_killed_with_exit_137(self):
         info = qacct_to_job_info(parse_qacct_output(QACCT_H_RT))
-        assert (info.status, info.exit_code, info.failed_code) == (JobStatus.TIMEOUT, 137, 37)
+        assert (info.status, info.exit_code, info.failed_code) == (JobStatus.KILLED, 137, 37)
 
 
 class TestMasterDown:

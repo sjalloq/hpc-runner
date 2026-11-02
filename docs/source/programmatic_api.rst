@@ -177,7 +177,10 @@ Monitoring jobs
 
 ``wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` blocks until
 the job reaches a terminal status (``COMPLETED``, ``FAILED``, ``CANCELLED``,
-``TIMEOUT`` or ``SKIPPED``; ``JobStatus.is_terminal``). ``PENDING``,
+``TIMEOUT``, ``KILLED`` or ``SKIPPED``; ``JobStatus.is_terminal``).
+``KILLED`` means the scheduler killed the job for exceeding a resource
+limit without saying which one; ``TIMEOUT`` is reserved for a scheduler
+that names the time limit. ``PENDING``,
 ``RUNNING`` and ``SUSPENDED`` (started, then suspended by the user or the
 queue; it holds its slot until resumed) are the active statuses. If the scheduler
 reports ``UNKNOWN`` continuously for ``unknown_after`` seconds (for example
@@ -186,7 +189,7 @@ than polling forever; ``timeout`` raises ``TimeoutError``.
 ``ArrayJobResult.wait()`` takes the same arguments and polls all tasks with
 one ``get_statuses`` call per tick. It returns one status for the array as
 a whole: active while any task is, ``COMPLETED`` only when every task is,
-otherwise the worst task (``FAILED``, then ``TIMEOUT``, ``CANCELLED``,
+otherwise the worst task (``FAILED``, then ``KILLED``, ``TIMEOUT``, ``CANCELLED``,
 ``SKIPPED``; an ``UNKNOWN`` task makes the whole ``UNKNOWN``). The same
 rule (``reduce_statuses``) decides ``status`` on the handle, a scheduler's
 answer for an array's base id, and a pipeline step's status.

@@ -923,14 +923,14 @@ class TestSGEStatuses:
             assert scheduler.get_status("800") == JobStatus.SKIPPED
             assert scheduler.get_exit_code("800") == 113
 
-    def test_qacct_failed_37_is_timeout(self, scheduler):
+    def test_qacct_failed_37_is_killed(self, scheduler):
         qacct = {
             "800": "jobnumber 800\n"
             "failed       37  : qmaster enforced h_rt, h_cpu, or h_vmem limit\n"
             "exit_status  0\n"
         }
         with patch_seam(self._respond(qacct)):
-            assert scheduler.get_status("800") == JobStatus.TIMEOUT
+            assert scheduler.get_status("800") == JobStatus.KILLED
 
     def test_execd_h_rt_kill_stays_failed(self, scheduler):
         qacct = {"800": "jobnumber 800\nfailed 100 : assumedly after job\nexit_status 137\n"}
@@ -974,16 +974,16 @@ class TestSGEParserStates:
             assert parse("") == {}
             assert parse("error: denied\n") == {}  # stderr text: no XML at all
 
-    def test_qacct_to_job_info_skipped_and_timeout(self):
+    def test_qacct_to_job_info_skipped_and_killed(self):
         from hpc_runner.schedulers.sge.parser import qacct_to_job_info
 
         skipped = qacct_to_job_info({"jobnumber": "1", "failed": "0", "exit_status": "113"})
         assert skipped.status == JobStatus.SKIPPED
         assert skipped.exit_code == 113
-        timeout = qacct_to_job_info(
+        killed = qacct_to_job_info(
             {"jobnumber": "2", "failed": "37  : qmaster", "exit_status": "0"}
         )
-        assert timeout.status == JobStatus.TIMEOUT
+        assert killed.status == JobStatus.KILLED
 
 
 class TestSGESubmissionContract:
