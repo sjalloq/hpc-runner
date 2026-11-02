@@ -43,6 +43,9 @@ class HPCConfig:
     :func:`~hpc_runner.resolve` applies them in :meth:`layers_for` order.
     """
 
+    #: The top-level ``scheduler`` key: the one scheduler this installation
+    #: submits to. ``HPC_SCHEDULER`` overrides it (``get_scheduler``).
+    scheduler: str | None = None
     defaults: dict[str, Any] = field(default_factory=dict)
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     types: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -396,6 +399,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
     """
     config_files = _resolve_extends(Path(path)) if path is not None else find_config_files()
 
+    scheduler: str | None = None
     merged: dict[str, Any] = {
         "defaults": {},
         "tools": {},
@@ -429,6 +433,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         for key in merged:
             if key in converted:
                 merged[key] = _merge(merged[key], converted[key])
+        scheduler = converted.get("scheduler", scheduler)  # the last file to set it wins
 
     # Structural: a type may only reference tools that exist (D2).
     for name, entry in merged["types"].items():
@@ -470,6 +475,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
             )
 
     config = HPCConfig(
+        scheduler=scheduler,
         defaults=merged["defaults"],
         tools=merged["tools"],
         types=merged["types"],

@@ -4,6 +4,7 @@
 # test_resources.py::test_memory_per_consumable loads this beside the default
 # hpc-runner-testbed.toml to read SGE's per-slot multiplication back.
 config_version = 1
+scheduler = "sge"
 
 [schedulers.sge]
 parallel_environment = "smp"

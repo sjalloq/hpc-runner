@@ -54,8 +54,9 @@ under `testbed/<family>/`, and `@pytest.mark.family(...)` a family
 directory; anything else fails collection. There is no family option: the
 flavour's directory is the family, and it picks the fixture class.
 
-Inside `login` the suite's environment is already set: `HPC_SCHEDULER=sge`,
-`HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml`,
+Inside `login` the suite's environment is already set:
+`HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml` (which
+names the scheduler, `scheduler = "sge"`),
 `HPC_SCRIPT_DIR=/work/cache/scripts`, `HPC_EXIT_DIR=/work/cache/exit`. The
 repo is mounted read-only at `/src`; each venv has an editable install of it
 (done at container start, no rebuild needed for source edits; a dependency

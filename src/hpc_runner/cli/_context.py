@@ -14,7 +14,6 @@ class Context:
 
     def __init__(self) -> None:
         self.config_path: Path | None = None
-        self.scheduler: str | None = None
         self.verbose: bool = False
         self._config: HPCConfig | None = None
 

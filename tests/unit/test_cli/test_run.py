@@ -16,9 +16,16 @@ def fast_wait(monkeypatch):
     monkeypatch.setattr(JobResult, "wait", partialmethod(JobResult.wait, poll_interval=0.05))
 
 
+@pytest.fixture(autouse=True)
+def local_scheduler(monkeypatch):
+    """The CLI runs against the local scheduler unless a test asks for SGE."""
+    monkeypatch.setenv("HPC_SCHEDULER", "local")
+
+
 @pytest.fixture
 def sge_dirs(monkeypatch, tmp_path):
-    """Keep SGE script/exit-sentinel dirs out of the real home directory."""
+    """Run against SGE, with its script/exit-sentinel dirs out of the real home."""
+    monkeypatch.setenv("HPC_SCHEDULER", "sge")
     monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
     monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
 
@@ -41,7 +48,7 @@ class TestRunCommand:
         """Test run with --dry-run."""
         result = runner.invoke(
             cli,
-            ["--scheduler", "local", "run", "--dry-run", "echo", "hello"],
+            ["run", "--dry-run", "echo", "hello"],
         )
         assert result.exit_code == 0
         assert "Dry Run" in result.output
@@ -50,22 +57,20 @@ class TestRunCommand:
     def test_dry_run_shows_parsed_mem_and_time(self, runner):
         result = runner.invoke(
             cli,
-            ["--scheduler", "local", "run", "--dry-run", "--mem", "16G", "--time", "4h", "true"],
+            ["run", "--dry-run", "--mem", "16G", "--time", "4h", "true"],
         )
         assert result.exit_code == 0, result.output
         assert "mem: 16 GiB (17179869184 bytes)" in result.output
         assert "time: 4:00:00 (14400 s)" in result.output
 
     def test_bare_integer_time_rejected(self, runner):
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "--time", "90", "true"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--time", "90", "true"])
         assert isinstance(result.exception, ConfigError)
         assert "spec: time: invalid time '90': ambiguous: use 90s or 90m" in str(result.exception)
 
     def test_dry_run_shows_no_venv(self, runner, monkeypatch):
         monkeypatch.delenv("VIRTUAL_ENV", raising=False)
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
+        result = runner.invoke(cli, ["run", "--dry-run", "echo", "hi"])
         assert result.exit_code == 0, result.output
         assert "venv: none" in result.output
 
@@ -74,15 +79,13 @@ class TestRunCommand:
         (venv / "bin").mkdir(parents=True)
         (venv / "bin" / "activate").write_text("")
         monkeypatch.setenv("VIRTUAL_ENV", str(venv))
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
+        result = runner.invoke(cli, ["run", "--dry-run", "echo", "hi"])
         assert result.exit_code == 0, result.output
         assert f"venv: {venv}" in result.output.replace("\n", "")
 
     def test_verbose_dry_run_shows_plain_module_lines(self, runner):
-        quiet = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
-        loud = runner.invoke(
-            cli, ["--verbose", "--scheduler", "local", "run", "--dry-run", "echo", "hi"]
-        )
+        quiet = runner.invoke(cli, ["run", "--dry-run", "echo", "hi"])
+        loud = runner.invoke(cli, ["--verbose", "run", "--dry-run", "echo", "hi"])
         assert "mktemp" in quiet.output
         assert loud.exit_code == 0, loud.output
         assert "mktemp" not in loud.output
@@ -93,8 +96,6 @@ class TestRunCommand:
         result = runner.invoke(
             cli,
             [
-                "--scheduler",
-                "local",
                 "run",
                 "--dry-run",
                 "--name",
@@ -116,7 +117,7 @@ class TestRunCommand:
         with runner.isolated_filesystem(temp_dir=temp_dir):
             result = runner.invoke(
                 cli,
-                ["--scheduler", "local", "run", "--batch", "echo", "hello"],
+                ["run", "--batch", "echo", "hello"],
             )
             assert result.exit_code == 0
             assert "Submitted job" in result.output or "local_" in result.output
@@ -126,30 +127,26 @@ class TestRunCommand:
         with runner.isolated_filesystem(temp_dir=temp_dir):
             result = runner.invoke(
                 cli,
-                ["--scheduler", "local", "run", "echo", "hello"],
+                ["run", "echo", "hello"],
             )
             assert result.exit_code == 0
             assert "completed successfully" in result.output
 
     def test_default_mode_is_interactive(self, runner, temp_dir):
         """Without --batch the dry run reports interactive mode."""
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hello"])
+        result = runner.invoke(cli, ["run", "--dry-run", "echo", "hello"])
         assert result.exit_code == 0
         assert "Mode: interactive" in result.output
 
     def test_batch_flag_selects_batch_mode(self, runner, temp_dir):
         """--batch switches the dry run to batch mode."""
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "--batch", "echo", "hello"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--batch", "echo", "hello"])
         assert result.exit_code == 0, result.output
         assert "Mode: batch" in result.output
 
     def test_short_flags_are_hpc_runners(self, runner, sge_dirs):
         """D-T43: with raw flags in -S, every short letter is ours: -b batch, -h help."""
-        result = runner.invoke(
-            cli, ["--scheduler", "sge", "run", "--dry-run", "-b", "-N", "held", "sleep", "9"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "-b", "-N", "held", "sleep", "9"])
         assert result.exit_code == 0, result.output
         assert "Mode: batch" in result.output
         assert "#$ -N held" in result.output
@@ -169,7 +166,7 @@ class TestRunCommand:
         """Array jobs are always batch, even without --batch."""
         result = runner.invoke(
             cli,
-            ["--scheduler", "sge", "run", "--dry-run", "--array", "1-4", "echo", "task"],
+            ["run", "--dry-run", "--array", "1-4", "echo", "task"],
         )
         assert result.exit_code == 0, result.output
         assert "Mode: batch" in result.output
@@ -178,22 +175,16 @@ class TestRunCommand:
     def test_removed_options_rejected(self, runner):
         """--job-type, --job-name, --interactive, --extra-module no longer exist."""
         for opt in ("--job-type", "--job-name", "--interactive", "--extra-module"):
-            result = runner.invoke(
-                cli, ["--scheduler", "local", "run", "--dry-run", opt, "x", "echo"]
-            )
+            result = runner.invoke(cli, ["run", "--dry-run", opt, "x", "echo"])
             assert result.exit_code != 0, opt
             assert "No such option" in result.output, opt
 
     def test_unknown_flag_is_a_usage_error(self, runner, temp_dir):
         """A flag hpc run does not define is rejected, never forwarded or run."""
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "-z", "batch.q", "echo", "hi"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "-z", "batch.q", "echo", "hi"])
         assert result.exit_code != 0
         assert "No such option" in result.output
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "--cpus", "4", "echo"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--cpus", "4", "echo"])
         assert result.exit_code != 0
         assert "No such option" in result.output
 
@@ -206,7 +197,7 @@ class TestSchedulerArgs:
         return CliRunner()
 
     def _dry(self, runner, *args):
-        return runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", *args])
+        return runner.invoke(cli, ["run", "--dry-run", *args])
 
     def test_one_string_is_split_like_a_shell(self, runner, temp_dir):
         result = self._dry(runner, "-S", "-q batch.q -l gpu=2", "echo", "hello")
@@ -314,7 +305,7 @@ cpu = 8
         try:
             result = runner.invoke(
                 cli,
-                ["--scheduler", "local", "run", "--dry-run", "python", "script.py"],
+                ["run", "--dry-run", "python", "script.py"],
             )
             assert result.exit_code == 0
             # Should pick up modules from [tools.python]
@@ -331,7 +322,7 @@ cpu = 8
         try:
             result = runner.invoke(
                 cli,
-                ["--scheduler", "local", "run", "--dry-run", "/usr/bin/python", "script.py"],
+                ["run", "--dry-run", "/usr/bin/python", "script.py"],
             )
             assert result.exit_code == 0
             # Should still detect "python" from /usr/bin/python
@@ -348,7 +339,7 @@ cpu = 8
         try:
             result = runner.invoke(
                 cli,
-                ["--scheduler", "local", "run", "--dry-run", "unknown_tool", "arg"],
+                ["run", "--dry-run", "unknown_tool", "arg"],
             )
             assert result.exit_code == 0
             # Should not have python modules
@@ -366,8 +357,6 @@ cpu = 8
             result = runner.invoke(
                 cli,
                 [
-                    "--scheduler",
-                    "local",
                     "run",
                     "--dry-run",
                     "--type",
@@ -389,9 +378,7 @@ cpu = 8
         old_cwd = os.getcwd()
         os.chdir(temp_dir)
         try:
-            result = runner.invoke(
-                cli, ["--scheduler", "local", "run", "--dry-run", "-t", "gpu", "echo", "hello"]
-            )
+            result = runner.invoke(cli, ["run", "--dry-run", "-t", "gpu", "echo", "hello"])
             assert result.exit_code == 0, result.output
         finally:
             os.chdir(old_cwd)
@@ -405,7 +392,7 @@ cpu = 8
         try:
             result = runner.invoke(
                 cli,
-                ["--scheduler", "local", "run", "--dry-run", "--cpu", "2", "python", "script.py"],
+                ["run", "--dry-run", "--cpu", "2", "python", "script.py"],
             )
             assert result.exit_code == 0
             # CPU should be overridden to 2, not 4 from config
@@ -473,16 +460,12 @@ class TestDepend:
 
     @pytest.mark.parametrize("text", ["bogus:1", "afterok:", "1 2", "afterok::1", "afterok"])
     def test_bad_depend_is_usage_error(self, runner, text):
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "--batch", "--depend", text, "echo"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--batch", "--depend", text, "echo"])
         assert result.exit_code == 2, result.output
         assert "Invalid --depend" in result.output
 
     def test_unknown_type_lists_valid_ones(self, runner):
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "--depend", "afterbogus:1", "echo"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--depend", "afterbogus:1", "echo"])
         assert result.exit_code == 2
         for name in ("afterok", "afterany", "after", "afternotok"):
             assert name in result.output
@@ -492,8 +475,6 @@ class TestDepend:
         result = runner.invoke(
             cli,
             [
-                "--scheduler",
-                "sge",
                 "run",
                 "--dry-run",
                 "--batch",
@@ -514,7 +495,7 @@ class TestDepend:
     def test_after_is_refused_on_sge(self, runner, sge_dirs):
         result = runner.invoke(
             cli,
-            ["--scheduler", "sge", "run", "--dry-run", "--batch", "--depend", "after:1", "echo"],
+            ["run", "--dry-run", "--batch", "--depend", "after:1", "echo"],
         )
         from hpc_runner.core.exceptions import NotSupportedError
 
@@ -527,9 +508,7 @@ class TestDepend:
 
         from hpc_runner.cli import main as cli_main
 
-        monkeypatch.setattr(
-            sys, "argv", ["hpc", "--scheduler", "sge", "run", "--depend", "afterok:1", "cmd"]
-        )
+        monkeypatch.setattr(sys, "argv", ["hpc", "run", "--depend", "afterok:1", "cmd"])
         runner = CliRunner()
         with runner.isolation() as (out, err, _):
             with pytest.raises(SystemExit) as info:
@@ -540,9 +519,7 @@ class TestDepend:
         )
 
     def test_bad_array_is_usage_error(self, runner):
-        result = runner.invoke(
-            cli, ["--scheduler", "local", "run", "--dry-run", "--array", "x-y", "echo"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--array", "x-y", "echo"])
         assert result.exit_code == 2
         assert "--array" in result.output
 
@@ -553,8 +530,6 @@ class TestPassthroughDirectives:
         result = CliRunner().invoke(
             cli,
             [
-                "--scheduler",
-                "sge",
                 "run",
                 "--dry-run",
                 "--batch",
@@ -576,7 +551,7 @@ class TestEnvResourceWaitOptions:
         return CliRunner()
 
     def _dry(self, runner, *args):
-        result = runner.invoke(cli, ["--scheduler", "sge", "run", "--dry-run", "--batch", *args])
+        result = runner.invoke(cli, ["run", "--dry-run", "--batch", *args])
         assert result.exit_code == 0, result.output
         return result.output
 
@@ -586,7 +561,7 @@ class TestEnvResourceWaitOptions:
         assert "export B='x=y z'" in out
 
     def test_env_bad_form(self, runner):
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--env", "NOVALUE", "echo"])
+        result = runner.invoke(cli, ["run", "--env", "NOVALUE", "echo"])
         assert result.exit_code == 2
         assert "KEY=VALUE" in result.output
 
@@ -596,19 +571,17 @@ class TestEnvResourceWaitOptions:
         assert "#$ -l xcelium_lic=1" in out
 
     def test_resource_bad_form(self, runner):
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--resource", "=2", "echo"])
+        result = runner.invoke(cli, ["run", "--resource", "=2", "echo"])
         assert result.exit_code == 2
         assert "NAME=VALUE" in result.output
 
     def test_wait_without_batch_is_usage_error(self, runner):
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--wait", "echo"])
+        result = runner.invoke(cli, ["run", "--wait", "echo"])
         assert result.exit_code == 2
         assert "--wait needs --batch" in result.output
 
     def test_wait_with_array_is_allowed(self, runner, sge_dirs):
-        result = runner.invoke(
-            cli, ["--scheduler", "sge", "run", "--dry-run", "--wait", "--array", "1-2", "echo"]
-        )
+        result = runner.invoke(cli, ["run", "--dry-run", "--wait", "--array", "1-2", "echo"])
         assert result.exit_code == 0, result.output
 
     def test_local_option_removed(self, runner):

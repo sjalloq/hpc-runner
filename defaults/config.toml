@@ -2,6 +2,11 @@ config_version = 1
 
 # hpc-runner default configuration
 
+# The one scheduler this installation submits to (sge, or local to run jobs
+# on this machine). Required: hpc-runner never guesses. HPC_SCHEDULER in the
+# environment overrides it.
+scheduler = "sge"
+
 [defaults]
 cpu = 1
 mem = "4G"                 # per job (D10): 16G, 4096M, 1.5GiB, ...

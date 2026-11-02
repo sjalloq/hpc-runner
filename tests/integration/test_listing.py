@@ -14,7 +14,7 @@ from tests.integration.cluster import Cluster
 
 pytestmark = pytest.mark.family("sge")
 
-HPC_KEYS = ("HPC_SCHEDULER", "HPC_RUNNER_CONFIG", "HPC_SCRIPT_DIR", "HPC_EXIT_DIR")
+HPC_KEYS = ("HPC_RUNNER_CONFIG", "HPC_SCRIPT_DIR", "HPC_EXIT_DIR")
 #: qmaster flushes accounting within 1 s on the default stack; allow more.
 QACCT_TIMEOUT = 30.0
 

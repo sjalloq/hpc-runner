@@ -785,6 +785,33 @@ and can proceed: `wait()` spinning on `UNKNOWN`, and batched
 
 ---
 
+## D17. Which scheduler does an installation use?
+
+Raised while bringing up the Open Cluster Scheduler testbed: the
+`qstat -help` probe in `detection.py` looked for "SGE" or "Grid Engine" and
+OCS prints "OCS 9.1.7".
+
+**Today:** the config has `[schedulers.<name>]` settings but nothing that
+says which scheduler to use. `hpc --scheduler NAME`, then `HPC_SCHEDULER`,
+then probing: SGE if `qsub` is on `PATH` and `SGE_ROOT` is set or
+`qstat -help` looks like SGE, else Slurm if `sbatch` is, else PBS, else
+`local`. `hpc monitor` and `Pipeline` never saw `--scheduler` and always
+probed. Probing runs a subprocess per start, picks by check order when two
+schedulers' commands are installed, and falls back to `local` silently, so
+on a login node without `SGE_ROOT` a batch job would run on that node.
+
+**Decision (2026-11-02):** there is one scheduler per installation and it
+is named, never detected. A top-level `scheduler = "<name>"` config key
+(any file in the chain; the last one to set it wins). `HPC_SCHEDULER` stays
+as the alternative and overrides the config. Nothing named is a
+`ConfigError` saying where to set it. Detection is removed, and so is the
+`--scheduler` CLI flag: nobody types it on every invocation, and a
+one-off local run is `HPC_SCHEDULER=local hpc run ...`. SGE variants (SoGE,
+OCS) are not separate names: the parser reads what each one writes, and a
+submit-side difference, if one appears, is a `[schedulers.sge]` setting.
+
+---
+
 ## D18. What status is a job the scheduler killed for a resource limit?
 
 **Today:** D-T30 (testbed review) maps SGE `failed 37` ("qmaster enforced

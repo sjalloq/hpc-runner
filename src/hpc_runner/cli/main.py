@@ -58,11 +58,6 @@ def _configure_logging(verbose: bool) -> None:
     help="Path to configuration file",
 )
 @click.option(
-    "--scheduler",
-    type=str,
-    help="Force scheduler (sge, slurm, pbs, local)",
-)
-@click.option(
     "--verbose",
     is_flag=True,
     help="Log every scheduler command and show full scheduler errors",
@@ -76,21 +71,16 @@ def _configure_logging(verbose: bool) -> None:
 )
 @click.version_option(package_name="hpc-runner")
 @pass_context
-def cli(
-    ctx: Context, config: Path | None, scheduler: str | None, verbose: bool, trace_dir: Path | None
-) -> None:
+def cli(ctx: Context, config: Path | None, verbose: bool, trace_dir: Path | None) -> None:
     """HPC job submission tool.
 
     Submit and manage jobs across different HPC schedulers (SGE, Slurm, PBS)
-    with a unified interface.
-
-    Any unrecognized short options are passed directly to the underlying
-    scheduler, allowing use of native flags like -N, -n, -q, etc.
+    with a unified interface. The scheduler is the one named by `scheduler`
+    in hpc-runner.toml, or by HPC_SCHEDULER in the environment.
     """
     global _context
     _context = ctx
     ctx.config_path = config
-    ctx.scheduler = scheduler
     ctx.verbose = verbose
     _configure_logging(verbose)
     if trace_dir is not None:

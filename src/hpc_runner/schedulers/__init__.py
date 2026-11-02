@@ -1,15 +1,15 @@
-"""Scheduler registry and auto-detection."""
+"""Scheduler registry."""
 
 from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from hpc_runner.core.config import load_config
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.schedulers.detection import detect_scheduler
 from hpc_runner.trace import activate_from_config
 
 if TYPE_CHECKING:
@@ -27,8 +27,12 @@ _SCHEDULERS: dict[str, str] = {
 def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -> BaseScheduler:
     """Get scheduler instance.
 
+    There is one scheduler per installation, and it is named, never
+    guessed: *name*, else ``HPC_SCHEDULER``, else the config's top-level
+    ``scheduler`` key.
+
     Args:
-        name: Scheduler name or None to auto-detect
+        name: Scheduler name, or None for the installation's.
         config: Configuration the scheduler reads its ``[schedulers.<name>]``
             settings from. None loads it afresh with ``load_config()``.
 
@@ -36,10 +40,18 @@ def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -
         Scheduler instance
 
     Raises:
-        ConfigError: *name* is not a registered scheduler.
+        ConfigError: Nothing names a scheduler, or the name is not a
+            registered scheduler.
     """
+    if config is None:
+        config = load_config()
     if name is None:
-        name = detect_scheduler()
+        name = os.environ.get("HPC_SCHEDULER") or config.scheduler
+    if name is None:
+        raise ConfigError(
+            'no scheduler configured; set `scheduler = "<name>"` in hpc-runner.toml '
+            f"or HPC_SCHEDULER in the environment ({', '.join(_SCHEDULERS)})"
+        )
 
     if name not in _SCHEDULERS:
         available = ", ".join(_SCHEDULERS)
@@ -60,8 +72,6 @@ def get_scheduler(name: str | None = None, *, config: HPCConfig | None = None) -
         ) from None
     scheduler_class = getattr(module, class_name)
 
-    if config is None:
-        config = load_config()
     # [trace] enabled: record every scheduler call from here on (no-op when
     # `hpc --trace` already installed a tracer; docs/dev/trace/DESIGN.md D-TR2).
     activate_from_config(config.trace)
@@ -106,6 +116,5 @@ __all__ = [
     "get_scheduler",
     "register_scheduler",
     "list_schedulers",
-    "detect_scheduler",
     "scheduler_config_keys",
 ]

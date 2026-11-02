@@ -168,3 +168,28 @@ def test_planned_scheduler_is_config_error(name):
         ConfigError, match=f"scheduler '{name}' is not implemented.*implemented: sge, local"
     ):
         get_scheduler(name, config=HPCConfig())
+
+
+class TestWhichScheduler:
+    """One scheduler per installation, named, never guessed: the argument,
+    else HPC_SCHEDULER, else the config's ``scheduler`` key."""
+
+    def test_config_key(self, monkeypatch):
+        monkeypatch.delenv("HPC_SCHEDULER", raising=False)
+        assert get_scheduler(config=HPCConfig(scheduler="local")).name == "local"
+
+    def test_environment_beats_config(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
+        assert get_scheduler(config=HPCConfig(scheduler="local")).name == "sge"
+
+    def test_argument_beats_environment(self, monkeypatch):
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+        assert get_scheduler("local", config=HPCConfig()).name == "local"
+
+    def test_nothing_named_is_config_error(self, monkeypatch):
+        """No probing of PATH or SGE_ROOT: an unnamed scheduler is an error."""
+        monkeypatch.delenv("HPC_SCHEDULER", raising=False)
+        monkeypatch.setenv("SGE_ROOT", "/opt/sge")
+        with pytest.raises(ConfigError, match="no scheduler configured; set `scheduler = "):
+            get_scheduler(config=HPCConfig())

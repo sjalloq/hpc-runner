@@ -48,6 +48,7 @@ def _write(root: Path, name: str, **data) -> Path:
 def _trace_from_cli(tmp_path, sge_fixtures, monkeypatch) -> Path:
     """A trace of hpc status in its three modes plus a batch submit, over the fake seam."""
     monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+    monkeypatch.setenv("HPC_SCHEDULER", "sge")
     monkeypatch.setenv("USER", "tester")
     monkeypatch.chdir(tmp_path)
     trace = tmp_path / "trace"
@@ -59,7 +60,7 @@ def _trace_from_cli(tmp_path, sge_fixtures, monkeypatch) -> Path:
         ["status", sge_fixtures.job("ok")],
         ["run", "--batch", "echo", "hi"],
     ):
-        result = runner.invoke(cli, ["--trace", str(trace), "--scheduler", "sge", *args])
+        result = runner.invoke(cli, ["--trace", str(trace), *args])
         assert result.exit_code == 0, (args, result.output)
     return trace
 

@@ -772,6 +772,35 @@ class TestExtendsErrors:
             load_config(tmp_path / "a.toml")
 
 
+class TestSchedulerKey:
+    """The top-level ``scheduler`` key: which scheduler the installation uses."""
+
+    def test_read(self, tmp_path):
+        assert (
+            load_config(_write(tmp_path, 'config_version = 1\nscheduler = "sge"\n')).scheduler
+            == "sge"
+        )
+
+    def test_absent_is_none(self, tmp_path):
+        assert load_config(_write(tmp_path, "config_version = 1\n")).scheduler is None
+
+    def test_later_file_wins(self, tmp_path):
+        base = _write(tmp_path, 'config_version = 1\nscheduler = "sge"\n', name="base.toml")
+        child = _write(tmp_path, f'config_version = 1\nextends = "{base}"\nscheduler = "local"\n')
+        assert load_config(child).scheduler == "local"
+
+    def test_inherited_from_base(self, tmp_path):
+        base = _write(tmp_path, 'config_version = 1\nscheduler = "sge"\n', name="base.toml")
+        child = _write(tmp_path, f'config_version = 1\nextends = "{base}"\n')
+        assert load_config(child).scheduler == "sge"
+
+    @pytest.mark.parametrize("value", ["1", '""', '["sge"]'])
+    def test_not_a_name_is_error(self, tmp_path, value):
+        path = _write(tmp_path, f"config_version = 1\nscheduler = {value}\n")
+        (err,) = _errors(path)
+        assert err.line == 2 and "scheduler: expected a scheduler name" in str(err)
+
+
 class TestSchema:
     def test_wrong_type_names_file_line_section_key(self, tmp_path):
         path = _write(tmp_path, 'config_version = 1\n\n[defaults]\nmem = "4G"\ncpu = "4"\n')

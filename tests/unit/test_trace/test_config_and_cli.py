@@ -65,6 +65,7 @@ class TestTraceSection:
 class TestGetSchedulerActivates:
     def test_enabled_in_config(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
         cfg = HPCConfig(trace={"enabled": True, "dir": str(tmp_path / "t")})
         get_scheduler("sge", config=cfg)
         tracer = current()
@@ -72,11 +73,13 @@ class TestGetSchedulerActivates:
 
     def test_disabled_in_config(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
         get_scheduler("sge", config=HPCConfig())
         assert current() is None
 
     def test_bad_max_days_is_a_config_error(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
         cfg = HPCConfig(trace={"enabled": True, "dir": str(tmp_path), "max_days": 0})
         with pytest.raises(ConfigError, match="max_days"):
             get_scheduler("sge", config=cfg)
@@ -87,9 +90,10 @@ class TestTraceFlag:
 
     def test_status_is_recorded(self, tmp_path, mock_sge_commands, sge_fixtures, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
         monkeypatch.setenv("USER", "tester")
         trace = tmp_path / "trace"
-        result = CliRunner().invoke(cli, ["--trace", str(trace), "--scheduler", "sge", "status"])
+        result = CliRunner().invoke(cli, ["--trace", str(trace), "status"])
         assert result.exit_code == 0, result.output
         records = [json.loads(p.read_text()) for p in trace.rglob("*.json")]
         assert len(records) == 1
@@ -98,6 +102,7 @@ class TestTraceFlag:
 
     def test_flag_beats_config(self, tmp_path, mock_sge_commands, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+        monkeypatch.setenv("HPC_SCHEDULER", "sge")
         cfg = _write(tmp_path, f'[trace]\nenabled = true\ndir = "{tmp_path / "cfg"}"\n')
         result = CliRunner().invoke(
             cli,
@@ -106,8 +111,6 @@ class TestTraceFlag:
                 str(cfg),
                 "--trace",
                 str(tmp_path / "flag"),
-                "--scheduler",
-                "sge",
                 "status",
             ],
         )

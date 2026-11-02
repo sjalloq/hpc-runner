@@ -284,7 +284,6 @@ class TestbedCluster:
     def host(self) -> Host:
         """The submitting host: this process's environment with the testbed's HPC_* set."""
         env = dict(os.environ)
-        env["HPC_SCHEDULER"] = self.name
         env["HPC_RUNNER_CONFIG"] = str(self.config_path)
         env.setdefault("HPC_SCRIPT_DIR", str(WORK_ROOT / "cache" / "scripts"))
         env.setdefault("HPC_EXIT_DIR", str(WORK_ROOT / "cache" / "exit"))

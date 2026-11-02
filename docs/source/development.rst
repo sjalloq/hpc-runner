@@ -17,7 +17,7 @@ Layout
 - ``src/hpc_runner/core/``: ``JobSpec`` → ``resolve()`` → ``Job``, the
   config loader and schema, units, expansion, results.
 - ``src/hpc_runner/schedulers/``: one package per scheduler (``sge``,
-  ``local``) plus detection and the registry. ``_subprocess.run_command``
+  ``local``) plus the registry. ``_subprocess.run_command``
   is the only place a scheduler CLI is run; tests patch it, never
   ``subprocess``.
 - ``src/hpc_runner/cli/``: the ``hpc`` command group.

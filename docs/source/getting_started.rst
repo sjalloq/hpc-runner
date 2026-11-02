@@ -56,25 +56,26 @@ a space in its name.
 Pick a scheduler
 ----------------
 
-By default hpc-runner detects the scheduler, in this order:
+An installation has one scheduler, and hpc-runner is told which; it never
+probes ``PATH`` or the environment to guess. Name it in the config (see
+:doc:`configuration`), usually once in the project or site file:
 
-1. ``HPC_SCHEDULER`` in the environment.
-2. SGE: ``qsub`` on ``PATH`` with ``SGE_ROOT`` set, or ``qstat -help``
-   reporting Grid Engine.
-3. Slurm: ``sbatch`` and ``squeue`` on ``PATH`` (not yet supported; see the
-   compatibility table on the :doc:`index` page).
-4. PBS: ``qsub`` on ``PATH`` with ``PBS_CONF_FILE`` set, or ``qsub --version``
-   reporting ``pbs_version`` (likewise).
-5. Local.
+.. code-block:: toml
 
-You can force one:
+   config_version = 1
+   scheduler = "sge"
+
+or with ``HPC_SCHEDULER`` in the environment, which overrides the config:
 
 .. code-block:: bash
 
-   hpc --scheduler sge run python train.py
    export HPC_SCHEDULER=sge
 
-``hpc --scheduler local run ...`` runs the job on this machine, through the
+With neither, every command that needs a scheduler stops with an error
+saying where to set it. See the compatibility table on the :doc:`index`
+page for the schedulers this release supports.
+
+``HPC_SCHEDULER=local hpc run ...`` runs the job on this machine, through the
 same generated script with the same ``module purge`` and ``module load``
 lines, so a workstation without a scheduler still gets the configured tool
 versions.

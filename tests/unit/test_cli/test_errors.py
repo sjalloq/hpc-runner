@@ -23,8 +23,12 @@ def _env(monkeypatch, tmp_path):
     logging.getLogger("hpc_runner").setLevel(logging.NOTSET)
 
 
-def _run_main(monkeypatch, args):
+def _run_main(monkeypatch, args, scheduler="sge"):
     """Run main() as the console script would; return (exit code, stdout, stderr)."""
+    if scheduler is None:
+        monkeypatch.delenv("HPC_SCHEDULER", raising=False)
+    else:
+        monkeypatch.setenv("HPC_SCHEDULER", scheduler)
     monkeypatch.setattr(sys, "argv", ["hpc", *args])
     runner = CliRunner()
     with runner.isolation() as (out, err, _):
@@ -35,9 +39,7 @@ def _run_main(monkeypatch, args):
 
 def test_submission_error_prints_one_line(monkeypatch):
     with patch_seam(lambda argv: (1, "", QSUB_REJECT)):
-        code, out, err = _run_main(
-            monkeypatch, ["--scheduler", "sge", "run", "--batch", "echo", "hi"]
-        )
+        code, out, err = _run_main(monkeypatch, ["run", "--batch", "echo", "hi"])
     assert code == 1
     assert err == 'error: Unable to run job: unknown queue "nope.q".\n'
     assert "Traceback" not in out + err
@@ -45,9 +47,7 @@ def test_submission_error_prints_one_line(monkeypatch):
 
 def test_verbose_adds_argv_and_full_stderr(monkeypatch):
     with patch_seam(lambda argv: (1, "", QSUB_REJECT)):
-        code, _, err = _run_main(
-            monkeypatch, ["--verbose", "--scheduler", "sge", "run", "--batch", "echo", "hi"]
-        )
+        code, _, err = _run_main(monkeypatch, ["--verbose", "run", "--batch", "echo", "hi"])
     assert code == 1
     lines = err.splitlines()
     assert lines[0] == 'error: Unable to run job: unknown queue "nope.q".'
@@ -56,9 +56,19 @@ def test_verbose_adds_argv_and_full_stderr(monkeypatch):
 
 
 def test_unknown_scheduler_is_one_line(monkeypatch):
-    code, _, err = _run_main(monkeypatch, ["--scheduler", "nope", "run", "--batch", "echo", "hi"])
+    code, _, err = _run_main(monkeypatch, ["run", "--batch", "echo", "hi"], scheduler="nope")
     assert code == 1
     assert err.startswith("error: unknown scheduler 'nope'")
+    assert err.count("\n") == 1
+
+
+def test_no_scheduler_configured_is_one_line(monkeypatch, tmp_path):
+    """Nothing names a scheduler: an error saying where to set it, never a guess."""
+    monkeypatch.chdir(tmp_path)  # no git root, no hpc-runner.toml
+    monkeypatch.delenv("HPC_RUNNER_CONFIG", raising=False)
+    code, _, err = _run_main(monkeypatch, ["run", "--batch", "echo", "hi"], scheduler=None)
+    assert code == 1
+    assert err.startswith("error: no scheduler configured; set `scheduler = ")
     assert err.count("\n") == 1
 
 
@@ -67,7 +77,7 @@ def test_verbose_logs_scheduler_argv(monkeypatch, tmp_path):
     empty = tmp_path / "empty-bin"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
-    code, _, err = _run_main(monkeypatch, ["--verbose", "--scheduler", "sge", "status", "123"])
+    code, _, err = _run_main(monkeypatch, ["--verbose", "status", "123"])
     assert code == 1
     assert "hpc_runner.schedulers: run: qstat -j 123 -xml" in err
     assert err.splitlines()[-1] == "error: qstat not found on PATH"
@@ -77,6 +87,6 @@ def test_quiet_by_default(monkeypatch, tmp_path):
     empty = tmp_path / "empty-bin"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
-    code, _, err = _run_main(monkeypatch, ["--scheduler", "sge", "status", "123"])
+    code, _, err = _run_main(monkeypatch, ["status", "123"])
     assert code == 1
     assert err == "error: qstat not found on PATH\n"

@@ -77,7 +77,7 @@ class TestCheck:
 
     def test_run_refuses_broken_config(self, runner, tmp_path):
         (tmp_path / "hpc-runner.toml").write_text("[defaults]\ncpu = 1\n")
-        result = runner.invoke(cli, ["--scheduler", "local", "run", "--dry-run", "echo", "hi"])
+        result = runner.invoke(cli, ["run", "--dry-run", "echo", "hi"])
         assert result.exit_code == 1
         assert "missing config_version" in str(result.exception)
 

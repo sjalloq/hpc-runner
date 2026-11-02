@@ -3,12 +3,11 @@ Job monitor
 
 ``hpc monitor`` opens a terminal dashboard of the scheduler's jobs, built
 with `Textual <https://textual.textualize.io/>`_. It uses the same
-scheduler detection and config as ``hpc run``.
+scheduler and config as ``hpc run``.
 
 .. code-block:: bash
 
    hpc monitor
-   hpc --scheduler sge monitor
 
 The screen has an **Active** tab (pending and running jobs, refreshed on a
 timer) and a **Completed** tab (recent accounting records), a filter line

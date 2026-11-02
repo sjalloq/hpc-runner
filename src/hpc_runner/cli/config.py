@@ -134,6 +134,10 @@ def init(ctx: Context) -> None:
 
 # hpc-runner configuration
 
+# The one scheduler this installation submits to: sge, or local to run jobs
+# on this machine. Required; HPC_SCHEDULER in the environment overrides it.
+scheduler = "sge"
+
 [defaults]
 # Default job settings
 cpu = 1

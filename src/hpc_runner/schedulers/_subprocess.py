@@ -1,7 +1,7 @@
 """The one place scheduler binaries are executed.
 
-Every scheduler CLI call (``qsub``, ``qstat``, ``qdel``, ``qacct``, ``qrsh``,
-detection probes) goes through :func:`run_command`.  It logs the argv at
+Every scheduler CLI call (``qsub``, ``qstat``, ``qdel``, ``qacct``, ``qrsh``)
+goes through :func:`run_command`.  It logs the argv at
 DEBUG, applies a timeout, and converts every ``subprocess`` failure into a
 :class:`~hpc_runner.core.exceptions.SchedulerError` subclass, so nothing
 from ``subprocess`` escapes the scheduler layer.  Tests patch this function

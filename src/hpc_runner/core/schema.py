@@ -31,6 +31,7 @@ PER_INVOCATION_FIELDS = frozenset({"command", "type", "dependencies", "array"})
 TOP_LEVEL_KEYS = (
     "config_version",
     "extends",
+    "scheduler",
     "defaults",
     "tools",
     "types",
@@ -507,6 +508,17 @@ def validate_file(
         c.error((), "extends", f"expected a path, got {_describe(data['extends'])}")
 
     converted: dict[str, Any] = {}
+
+    # Which scheduler this installation submits to. A name the registry does
+    # not know is reported by get_scheduler, which also sees schedulers
+    # registered at runtime.
+    if "scheduler" in data:
+        if isinstance(data["scheduler"], str) and data["scheduler"]:
+            converted["scheduler"] = data["scheduler"]
+        else:
+            c.error(
+                (), "scheduler", f"expected a scheduler name, got {_describe(data['scheduler'])}"
+            )
 
     if "defaults" in data:
         converted["defaults"] = _validate_job_layer(c, ("defaults",), data["defaults"])

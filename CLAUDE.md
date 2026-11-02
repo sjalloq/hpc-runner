@@ -80,7 +80,7 @@ hpc-testbed pytest --up           # the three above in one go (--keep leaves the
 # CLI usage
 hpc --help
 hpc run --dry-run echo hello
-hpc --scheduler sge run --batch --cpu 4 --mem 8G python script.py
+HPC_SCHEDULER=sge hpc run --batch --cpu 4 --mem 8G python script.py
 ```
 
 ## Architecture
@@ -107,7 +107,7 @@ A job is three values: `JobSpec` → `resolve(spec, config, host)` → `Job`.
 - **sge/parser.py** - All qstat/qacct/qsub output parsing; `sge/scheduler.py` is submit/status/cancel
 - **SGEScheduler** - Sun Grid Engine (qsub/qstat/qdel). All SGE-specific settings (PE name, resource names) are configurable via `[schedulers.sge]` config section
 - **LocalScheduler** - Runs jobs as local subprocesses (for testing without cluster)
-- **detection.py** - Auto-detects scheduler: HPC_SCHEDULER env > SGE (SGE_ROOT or `qstat -help`) > sbatch > PBS (PBS_CONF_FILE or `qsub --version`) > local fallback
+- **Which scheduler** - Named, never detected (one per installation): `get_scheduler(name)`, else `HPC_SCHEDULER`, else the config's top-level `scheduler` key; none is a `ConfigError`. There is no `--scheduler` CLI flag
 - **Registry** - `get_scheduler(name)` with lazy imports, `register_scheduler()` for custom schedulers
 
 ### CLI (`src/hpc_runner/cli/`)
@@ -118,7 +118,7 @@ Uses `rich-click` for styled output. One entry point, **`hpc`** (group), with su
 
 **Short flags are hpc-runner's own** (D-T43, October 2026): raw scheduler flags travel in `-S/--scheduler-args` as a quoted string, so no scheduler flag ever reaches click's parser and every short letter is free for `hpc run` (`-t` type, `-b` batch, `-c` cpu, `-N` name, `-q` queue, `-h` help ...). Any flag `hpc run` does not define is a usage error, never forwarded. Earlier designs reserved short letters for the scheduler and split argv on `--` (BUG-T4, D-T42); click's short-flag clustering made that unfixable (`-terse` matched `-t erse`), see `docs/dev/cli/RUN_ARG_PARSING.md`.
 
-**Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, env, resource) stay. `--wait` needs `--batch` (or `--array`); run locally with `hpc --scheduler local run`.
+**Policy belongs in config, not on the CLI**: options that override a standing policy (which modules load, which module paths are searched, whether the environment is inherited) were removed from the CLI in October 2026. If a job needs a different environment, add a `[types.x]` entry. Per-run knobs (type, cpu, mem, time, queue, name, array, depend, stdout/stderr, directory, env, resource) stay. `--wait` needs `--batch` (or `--array`); run locally with `HPC_SCHEDULER=local hpc run`.
 
 **Scheduler passthrough on `hpc run`**: `-S/--scheduler-args 'FLAGS'`, repeatable, split with `shlex` and set on `JobSpec.scheduler_args[<active scheduler>]`. Options stop at the first plain word (`allow_interspersed_args=False`), so the command's own flags are untouched; a command that starts with a dash needs `--` first.
 ```bash

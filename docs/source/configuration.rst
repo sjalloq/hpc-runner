@@ -32,6 +32,12 @@ version this hpc-runner does not know, is an error (the message gives the
 one-line fix); ``hpc config init`` writes it for you. The remaining
 top-level keys are:
 
+- ``scheduler = "sge"``: the scheduler this installation submits to
+  (``sge``, or ``local`` to run jobs on this machine). There is one per
+  installation and hpc-runner never guesses it: without this key, or
+  ``HPC_SCHEDULER`` in the environment (which overrides it), every command
+  that needs a scheduler fails with an error saying where to set it. Like
+  any other key, a later file in the chain overrides an earlier one.
 - ``extends = "path.toml"``: load another file first (relative to this
   file; variables expanded as in :ref:`variable-expansion`). The target must exist, and a cycle is an error.
 - ``[defaults]``: baseline job settings applied to all jobs
@@ -802,6 +808,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
 .. code-block:: toml
 
    config_version = 1
+   scheduler = "sge"
 
    [defaults]
    name = "job"

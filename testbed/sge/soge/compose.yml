@@ -100,7 +100,6 @@ services:
     init: true
     environment:
       SGE_ROLE: login
-      HPC_SCHEDULER: sge
       HPC_RUNNER_CONFIG: /src/testbed/sge/soge/hpc-runner-testbed.toml
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit

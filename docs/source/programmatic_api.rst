@@ -121,7 +121,9 @@ Submitting jobs
 ---------------
 
 Schedulers take their configuration explicitly. ``get_scheduler()`` with no
-name auto-detects; with no ``config`` it calls ``load_config()`` afresh.
+name uses ``HPC_SCHEDULER``, else the config's ``scheduler`` key, and raises
+``ConfigError`` when neither is set; with no ``config`` it calls
+``load_config()`` afresh.
 
 .. code-block:: python
 
@@ -437,8 +439,9 @@ Available types: ``AFTEROK``, ``AFTERANY``, ``AFTER``, ``AFTERNOTOK``.
 Choosing a scheduler
 ^^^^^^^^^^^^^^^^^^^^
 
-By default the scheduler is auto-detected at submit time.  You can pin it at
-construction:
+By default the pipeline submits to the installation's scheduler
+(``HPC_SCHEDULER``, else the config's ``scheduler`` key), looked up at submit
+time.  You can pin it at construction:
 
 .. code-block:: python
 

@@ -146,8 +146,8 @@ class Pipeline:
         are skipped.  Safe to call again after a partial failure.
 
         Args:
-            scheduler: Scheduler to use (auto-detect if None).  Falls back
-                to the scheduler passed to ``__init__``, then auto-detect.
+            scheduler: Scheduler to use.  Falls back to the scheduler passed
+                to ``__init__``, then the installation's (``get_scheduler``).
 
         Returns:
             Dict mapping job names to results

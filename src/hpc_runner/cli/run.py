@@ -153,7 +153,7 @@ def run(
         {"name": n, "value": v} for n, v in _parse_pairs(resource, "--resource", "NAME=VALUE")
     ]
 
-    scheduler = get_scheduler(ctx.scheduler, config=ctx.config)
+    scheduler = get_scheduler(config=ctx.config)
 
     # Array jobs can only be batch; everything else is interactive unless
     # --batch was given.

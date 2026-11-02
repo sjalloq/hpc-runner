@@ -34,8 +34,8 @@ Full documentation: <https://sjalloq.github.io/hpc-runner/>
 | LSF | Planned | |
 
 A scheduler moves to *Supported* when the integration suite passes against
-it. The scheduler is auto-detected; `hpc --scheduler NAME` or
-`HPC_SCHEDULER=NAME` forces one.
+it. Name the scheduler once in the config (`scheduler = "sge"`) or with
+`HPC_SCHEDULER=NAME`; hpc-runner never guesses it.
 
 ## Installation
 
