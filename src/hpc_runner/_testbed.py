@@ -143,10 +143,14 @@ def cmd_down(stack: Stack) -> None:
 
 
 def cmd_shell(stack: Stack, *, py: str) -> None:
-    """An interactive shell in ``login`` as ``tester`` with the venv on PATH."""
-    path = f"{venv_bin(py)}:/usr/local/bin:/usr/bin:/bin"
+    """An interactive shell in ``login`` as ``tester`` with the venv on PATH.
+
+    The venv goes in front of the image's own PATH, which is where a
+    flavour's scheduler binaries are (``/opt/ocs/bin/lx-amd64`` for OCS).
+    """
+    rc = f'PATH="{venv_bin(py)}:$PATH" exec bash'
     run(
-        stack.compose("exec", "-u", "tester", "-w", SRC_DIR, "-e", f"PATH={path}", "login", "bash"),
+        stack.compose("exec", "-u", "tester", "-w", SRC_DIR, "login", "bash", "-c", rc),
         check=False,
     )
 

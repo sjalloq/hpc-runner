@@ -119,8 +119,8 @@ class TestCommands:
         ((argv, _),) = calls
         assert argv[:7] == _compose(repo, "exec")
         assert "-u" in argv and argv[argv.index("-u") + 1] == "tester"
-        assert argv[argv.index("-e") + 1].startswith("PATH=/opt/venv/3.11/bin:")
-        assert argv[-2:] == ["login", "bash"]
+        # Prepended inside the container, so the image's scheduler bin stays.
+        assert argv[-4:] == ["login", "bash", "-c", 'PATH="/opt/venv/3.11/bin:$PATH" exec bash']
 
     def test_logs_passes_the_services(self, repo, calls):
         main(["logs", "master", "exec1"])
