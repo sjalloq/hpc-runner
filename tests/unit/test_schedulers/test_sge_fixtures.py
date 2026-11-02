@@ -852,6 +852,26 @@ class TestXmlDefects:
         )
         assert parse_qstat_j_xml(text)["name"] == "running"
 
+    def test_ocs_empty_tags_read_as_unknown(self, scheduler):
+        """OCS 9.1.x answers an unknown id with ``<>`` tags; repaired, the
+        reply is an unknown job, so details come from accounting."""
+        ocs_unknown = (
+            "<?xml version='1.0'?>\n"
+            '<unknown_jobs  xmlns:xsd="https://github.com/hpc-gridware/clusterscheduler'
+            '/raw/master/source/dist/util/resources/schemas/qstat/qstat.xsd">\n'
+            "  <>\n    <ST_name>999999</ST_name>\n    <ST_id>0</ST_id>\n  </>\n"
+            "</unknown_jobs>\n"
+        )
+        assert parse_qstat_j_xml(ocs_unknown) == {}
+
+        def respond(argv):
+            if argv[:2] == ["qstat", "-j"]:
+                return 0, ocs_unknown, ""
+            return make_sge_responder(FX)(argv)
+
+        with patch_seam(respond), pytest.raises(JobNotFoundError):
+            scheduler.get_job_details("999999")
+
     def test_attributes_are_not_touched(self):
         """``<job_list state="running">`` has a space and an ``=``: valid, left alone."""
         assert parse_qstat_xml_states(FX.text("qstat_mixed.xml"))[FX.job("running")] == "r"

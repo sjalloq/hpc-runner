@@ -46,6 +46,13 @@ def _history_entry(cluster: Cluster, job_id: str) -> dict[str, Any]:
         time.sleep(0.5)
 
 
+def _assert_times(entry: dict[str, Any]) -> None:
+    """Submit, start and end all read from the scheduler, in order
+    ("YYYY-mm-dd HH:MM:SS", so they compare as text)."""
+    times = [entry["submit_time"], entry["start_time"], entry["end_time"]]
+    assert all(times) and times == sorted(times), entry
+
+
 def test_status_active_history_and_details(cluster: Cluster) -> None:
     """`hpc status` lists a held job, `--history` and `<id>` report it once done."""
     # A far-future qsub -a start time keeps the job pending (-S carries raw flags, D-T43).
@@ -54,6 +61,7 @@ def test_status_active_history_and_details(cluster: Cluster) -> None:
 
     active = {j["job_id"]: j for j in _hpc_json(cluster, "status")}
     assert active[job_id]["status"] == "PENDING" and active[job_id]["name"] == "clistat"
+    assert active[job_id]["submit_time"], active[job_id]
     assert job_id in _hpc(cluster, "status")  # the table, too
 
     cluster.run(["qalter", "-a", "200001010000", job_id])  # start time in the past: eligible
@@ -61,9 +69,11 @@ def test_status_active_history_and_details(cluster: Cluster) -> None:
     done = _history_entry(cluster, job_id)
     assert (done["status"], done["exit_code"], done["failed_code"]) == ("FAILED", 3, 0)
     assert done["queue"] == "all.q" and done["node"] in {"exec1", "exec2"}
+    _assert_times(done)
 
     details = _hpc_json(cluster, "status", job_id)
     assert (details["job_id"], details["status"], details["exit_code"]) == (job_id, "FAILED", 3)
+    _assert_times(details)
     assert job_id not in _hpc(cluster, "status")  # gone from the active table
 
 

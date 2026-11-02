@@ -86,8 +86,8 @@ def _parse_job_element(elem: ET.Element) -> dict[str, Any] | None:
     - queue_name: Queue@host (for running jobs)
     - hard_req_queue: Requested queue (for pending jobs)
     - slots: Number of slots/CPUs
-    - JB_submission_time: Submission timestamp (epoch)
-    - JAT_start_time: Start timestamp (epoch, running jobs only)
+    - JB_submission_time: Submission timestamp (JAT_submission_time on OCS)
+    - JAT_start_time: Start timestamp (running jobs only)
     - tasks: Array task ID (for array jobs)
     """
     job_id_elem = elem.find("JB_job_number")
@@ -135,14 +135,14 @@ def _parse_job_element(elem: ET.Element) -> dict[str, Any] | None:
     if slots_elem is not None and slots_elem.text:
         job_info["slots"] = int(slots_elem.text)
 
-    # Submission time (epoch seconds or ISO 8601)
-    submit_text = elem.findtext(".//JB_submission_time")
+    # Submission time; OCS names the pending job's field JAT_submission_time
+    submit_text = elem.findtext(".//JB_submission_time") or elem.findtext(".//JAT_submission_time")
     if submit_text:
         submit_epoch = _parse_sge_timestamp(submit_text)
         if submit_epoch is not None:
             job_info["submit_time"] = submit_epoch
 
-    # Start time (epoch seconds, only for running jobs)
+    # Start time (only for running jobs)
     start_text = elem.findtext(".//JAT_start_time")
     if start_text:
         start_epoch = _parse_sge_timestamp(start_text)
@@ -196,9 +196,9 @@ def parse_qstat_plain(output: str) -> dict[str, Any]:
                 "state": parts[4],
             }
 
-            # Parse submit/start time (MM/DD/YYYY HH:MM:SS)
+            # Parse submit/start time (two columns: date and time)
             if len(parts) >= 7:
-                timestamp = _parse_qstat_datetime(parts[5], parts[6])
+                timestamp = _parse_sge_timestamp(f"{parts[5]} {parts[6]}")
                 if timestamp is not None:
                     if "r" in parts[4]:
                         jobs[job_id]["start_time"] = timestamp
@@ -219,26 +219,41 @@ def parse_qstat_plain(output: str) -> dict[str, Any]:
     return jobs
 
 
-def _parse_qstat_datetime(date_part: str, time_part: str) -> int | None:
-    """Parse qstat date/time into epoch seconds."""
+#: gridengine 8.1.9's fixed-format timestamps: qacct's ctime form
+#: ("Mon Feb 23 18:00:00 2026") and plain qstat's US date. Everything else
+#: is ISO 8601: 8.1.9's qstat -xml, and all OCS output, which adds
+#: microseconds and writes qacct and plain qstat with a space for the "T".
+_SGE_TIME_FORMATS = ("%a %b %d %H:%M:%S %Y", "%m/%d/%Y %H:%M:%S")
+
+
+def _parse_sge_datetime(value: str) -> datetime | None:
+    """A gridengine timestamp in any form it writes, as naive local time.
+
+    Epoch seconds (8.1.9 qstat -j -xml), ISO 8601 with "T" or a space and
+    optional microseconds, or one of ``_SGE_TIME_FORMATS``. The forms
+    cannot be mistaken for one another. None when it is none of them.
+    """
+    value = value.strip()
+    if value.isdigit():
+        return datetime.fromtimestamp(int(value))
     try:
-        dt = datetime.strptime(f"{date_part} {time_part}", "%m/%d/%Y %H:%M:%S")
+        return datetime.fromisoformat(value)
     except ValueError:
-        return None
-    return int(dt.timestamp())
+        pass
+    for fmt in _SGE_TIME_FORMATS:
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            pass
+    return None
 
 
 def _parse_sge_timestamp(value: str) -> int | None:
-    """Parse SGE timestamps that may be epoch seconds or ISO 8601."""
-    if value.isdigit():
-        try:
-            return int(value)
-        except ValueError:
-            return None
-    try:
-        return int(datetime.strptime(value, "%Y-%m-%dT%H:%M:%S").timestamp())
-    except ValueError:
-        return None
+    """A gridengine timestamp (see ``_parse_sge_datetime``) as epoch seconds."""
+    if value.strip().isdigit():
+        return int(value)
+    dt = _parse_sge_datetime(value)
+    return int(dt.timestamp()) if dt is not None else None
 
 
 def parse_qacct_output(output: str) -> dict[str, Any]:
@@ -474,9 +489,6 @@ def parse_qsub_output(output: str) -> str | None:
 
 _SEPARATOR_RE = re.compile(r"^=+$")
 
-# qacct timestamps: "Mon Feb 23 18:00:00 2026"
-_QACCT_TIME_FMT = "%a %b %d %H:%M:%S %Y"
-
 
 def parse_qacct_records(output: str) -> list[dict[str, Any]]:
     """Split multi-record qacct output into a list of parsed dicts.
@@ -505,17 +517,6 @@ def parse_qacct_records(output: str) -> list[dict[str, Any]]:
     flush()  # trailing block (no final separator)
 
     return records
-
-
-def _parse_qacct_timestamp(value: str) -> datetime | None:
-    """Parse a qacct timestamp string into a :class:`datetime`.
-
-    Handles the standard ``"Mon Feb 23 18:00:00 2026"`` format.
-    """
-    try:
-        return datetime.strptime(value.strip(), _QACCT_TIME_FMT)
-    except ValueError:
-        return None
 
 
 def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
@@ -575,15 +576,15 @@ def qacct_to_job_info(record: dict[str, Any]) -> JobInfo:
     # Timestamps
     qsub_time = record.get("qsub_time")
     if qsub_time:
-        job_info.submit_time = _parse_qacct_timestamp(qsub_time)
+        job_info.submit_time = _parse_sge_datetime(qsub_time)
 
     start_time = record.get("start_time")
     if start_time:
-        job_info.start_time = _parse_qacct_timestamp(start_time)
+        job_info.start_time = _parse_sge_datetime(start_time)
 
     end_time = record.get("end_time")
     if end_time:
-        job_info.end_time = _parse_qacct_timestamp(end_time)
+        job_info.end_time = _parse_sge_datetime(end_time)
 
     return job_info
 
@@ -653,30 +654,22 @@ def parse_qstat_j_xml(xml_output: str) -> dict[str, object]:
     if job_args:
         data["job_args"] = job_args
 
-    # Submission time
+    # Times: epoch seconds on 8.1.9, ISO 8601 on OCS
     submit_text = job_info.findtext(".//JB_submission_time")
     if submit_text:
-        try:
-            data["submit_time"] = int(submit_text)
-        except ValueError:
-            pass
+        submit_epoch = _parse_sge_timestamp(submit_text)
+        if submit_epoch is not None:
+            data["submit_time"] = submit_epoch
 
-    # Start time (for running jobs) - in JB_ja_tasks/ulong_sublist/JAT_start_time
-    task_start_text = job_info.findtext(".//JB_ja_tasks/ulong_sublist/JAT_start_time")
-    if task_start_text:
-        try:
-            data["start_time"] = int(task_start_text)
-        except ValueError:
-            pass
-
-    # Also check direct JAT_start_time (alternative structure)
-    if "start_time" not in data:
-        start_text = job_info.findtext(".//JAT_start_time")
-        if start_text:
-            try:
-                data["start_time"] = int(start_text)
-            except ValueError:
-                pass
+    # Start time (for running jobs) - in JB_ja_tasks/ulong_sublist/JAT_start_time,
+    # else a direct JAT_start_time (alternative structure)
+    start_text = job_info.findtext(
+        ".//JB_ja_tasks/ulong_sublist/JAT_start_time"
+    ) or job_info.findtext(".//JAT_start_time")
+    if start_text:
+        start_epoch = _parse_sge_timestamp(start_text)
+        if start_epoch is not None:
+            data["start_time"] = start_epoch
 
     # For interactive jobs (qrsh), get command from QRSH_COMMAND env var
     for env_elem in job_info.findall(".//JB_env_list/job_sublist"):
@@ -714,24 +707,18 @@ def parse_qstat_j_xml(xml_output: str) -> dict[str, object]:
     if data.get("merge") and data.get("stdout_path") and not data.get("stderr_path"):
         data["stderr_path"] = data["stdout_path"]
 
-    # Parse hard resource list
+    # Resource requests. gridengine 8.1.9 has JB_hard/soft_resource_list;
+    # OCS 9 moved them into JB_request_set_list, one set per -scope. Only
+    # the global set (JRS_scope 0) is read: hpc-runner never submits
+    # master or slave scoped requests.
     resources: dict[str, str] = {}
-    for qstat_elem in job_info.findall(".//JB_hard_resource_list/qstat_l_requests"):
-        res_name_elem = qstat_elem.find("CE_name")
-        res_val_elem = qstat_elem.find("CE_stringval")
-        if res_name_elem is not None and res_name_elem.text:
-            res_name = res_name_elem.text
-            res_val = res_val_elem.text if res_val_elem is not None else ""
-            resources[res_name] = res_val or ""
-
-    # Also check soft resources
-    for qstat_elem in job_info.findall(".//JB_soft_resource_list/qstat_l_requests"):
-        res_name_elem = qstat_elem.find("CE_name")
-        res_val_elem = qstat_elem.find("CE_stringval")
-        if res_name_elem is not None and res_name_elem.text:
-            res_name = res_name_elem.text
-            res_val = res_val_elem.text if res_val_elem is not None else ""
-            resources[f"{res_name} (soft)"] = res_val or ""
+    request_lists = [(job_info, "JB")]
+    for request_set in job_info.findall("JB_request_set_list/ulong_sublist"):
+        if request_set.findtext("JRS_scope") == "0":
+            request_lists.append((request_set, "JRS"))
+    for parent, prefix in request_lists:
+        _read_requests(parent.find(f"{prefix}_hard_resource_list"), resources, "")
+        _read_requests(parent.find(f"{prefix}_soft_resource_list"), resources, " (soft)")
 
     if resources:
         data["resources"] = resources
@@ -795,11 +782,29 @@ _XML_ILLEGAL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 #: the user typed ``%lt;`` literally.
 _BAD_LT_ESCAPE = "%lt;"
 
+#: OCS 9.1.x writes an element of a list with an empty name as ``<>`` ...
+#: ``</>`` (``qstat -j -xml`` of an unknown or finished job); master renames
+#: it ``<element>`` (CS-1991), not yet in any release. A tag always has a
+#: name and text never holds a raw ``<``, so these can only be this defect.
+_EMPTY_TAGS = (("<>", "<element>"), ("</>", "</element>"))
+
+
+def _read_requests(request_list: ET.Element | None, into: dict[str, str], suffix: str) -> None:
+    """Add each ``qstat_l_requests`` of *request_list* to *into* as name+suffix."""
+    if request_list is None:
+        return
+    for request in request_list.findall("qstat_l_requests"):
+        name = request.findtext("CE_name")
+        if name:
+            into[f"{name}{suffix}"] = request.findtext("CE_stringval") or ""
+
 
 def _repair_sge_xml(xml_output: str) -> str:
     """The text with gridengine's known XML defects repaired."""
     xml_output = _XML_ILLEGAL_RE.sub("", xml_output)
     xml_output = _SPACED_TAG_RE.sub(lambda m: f"<{m[1]}{m[2].replace(' ', '_')}>", xml_output)
+    for bad, good in _EMPTY_TAGS:
+        xml_output = xml_output.replace(bad, good)
     return xml_output.replace(_BAD_LT_ESCAPE, "&lt;")
 
 

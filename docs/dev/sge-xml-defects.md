@@ -22,6 +22,7 @@ marked OCS, which means `hpc-gridware/clusterscheduler` master as of
 | 1 | List name `"job ids"` becomes an XML tag | `qstat -j -xml` not well-formed when a job has some scheduler messages | captured (`qstat_j_requeue_pending.xml`) | still present |
 | 2 | `<` escaped as `%lt;` | well-formed, but `<` in any string value is corrupted | confirmed | fixed (`ocs_EscapedString.h`) |
 | 3 | Control characters not filtered | any C0 control char (other than tab, LF, CR) in a string makes the document unparseable | confirmed (env value `\x01`) | still present |
+| 1a | OCS 9.1.x: list with an empty name written as `<>` | `qstat -j -xml` of an unknown or finished job not well-formed | OCS testbed (9.1.7) | fixed on master (CS-1991), in no release |
 | 4 | Root element `comunication_error` (sic) | master-down document has a misspelt root | captured (`qstat_j_master_down.json`) | not checked |
 
 ## 1. `<job ids>`
@@ -68,8 +69,19 @@ sees this.
 `974661a00`, 2026-05-03, "XML output of jobs might contain empty tags for
 cull lists with an empty name") changed the empty-name case to write
 `<element>`. Its rewrite had dropped the `tag_ok` check and was writing
-`<>`. An OCS testbed (phase 5) will therefore show `<job ids>`,
-`<ulong_sublist>` and `<element>` as the three wrappers.
+`<>`. The fix is on master only: no release tag contains it (checked
+2026-11-02; newest is `V917_TAG`), and `V91_BRANCH` still has the
+one-condition check in `lWriteListXML_`. The OCS testbed (9.1.7) shows the
+`<>` form for `qstat -j <id> -xml` of a job the qmaster does not know: the
+id list comes from `str_list_parse_from_string` → `lAddElemStr`, which
+names it `""` (`cull_multitype.cc`), and is written under `<unknown_jobs>`
+(`clients/qstat/ocs_qstat_xml.cc:1220`). A running job's `qstat -j -xml`
+and the `qstat -xml` listing showed no `<>`.
+
+**hpc-runner (OCS).** `_repair_sge_xml` rewrites `<>` and `</>` to
+`<element>` and `</element>`, the name CS-1991 settled on. A tag always
+has a name and text never holds a raw `<`, so the rewrite is certain.
+Without it every lookup of a finished job raised `SchedulerOutputError`.
 
 **hpc-runner.** `_parse_xml_root` (`src/hpc_runner/schedulers/sge/parser.py`)
 rewrote `<job ids>` and `</job ids>` to `job_ids` before parsing (D-T46);

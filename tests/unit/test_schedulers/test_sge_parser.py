@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta
 
+import pytest
+
 from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.sge.parser import parse_qacct_records, qacct_to_job_info
 
@@ -216,6 +218,42 @@ class TestParseQstatJXml:
         assert (data["pe_name"], data["pe_range"]) == ("smp", "4")
         assert data["dependencies"] == ["41"]
 
+    #: OCS 9 request sets, as qstat -j -xml wrote them for a job submitted
+    #: with ``-l h_vmem=1G,h_rt=600 -soft -l hostname=exec1`` plus a
+    #: ``-scope master -l h_vmem=2G`` set (fields trimmed to name and value).
+    OCS_REQUEST_SETS = """
+      <JB_request_set_list>
+        <ulong_sublist>
+          <JRS_scope>0</JRS_scope>
+          <JRS_hard_resource_list>
+            <qstat_l_requests><CE_name>h_rt</CE_name><CE_stringval>600</CE_stringval></qstat_l_requests>
+            <qstat_l_requests><CE_name>h_vmem</CE_name><CE_stringval>1G</CE_stringval></qstat_l_requests>
+          </JRS_hard_resource_list>
+          <JRS_soft_resource_list>
+            <qstat_l_requests><CE_name>hostname</CE_name><CE_stringval>exec1</CE_stringval></qstat_l_requests>
+          </JRS_soft_resource_list>
+        </ulong_sublist>
+        <ulong_sublist>
+          <JRS_scope>1</JRS_scope>
+          <JRS_hard_resource_list>
+            <qstat_l_requests><CE_name>h_vmem</CE_name><CE_stringval>2G</CE_stringval></qstat_l_requests>
+          </JRS_hard_resource_list>
+        </ulong_sublist>
+      </JB_request_set_list>"""
+
+    def test_ocs_global_request_set(self):
+        """OCS keeps requests per -scope; only the global set (0) is read."""
+        from hpc_runner.schedulers.sge.parser import parse_qstat_j_xml
+
+        start = self.XML.index("      <JB_hard_resource_list>")
+        end = self.XML.index("</JB_hard_resource_list>") + len("</JB_hard_resource_list>")
+        xml = self.XML[:start] + self.OCS_REQUEST_SETS.strip("\n") + self.XML[end:]
+        assert parse_qstat_j_xml(xml)["resources"] == {
+            "h_rt": "600",
+            "h_vmem": "1G",
+            "hostname (soft)": "exec1",
+        }
+
     def test_garbage_is_empty(self):
         from hpc_runner.schedulers.sge.parser import parse_qstat_j_xml
 
@@ -227,3 +265,89 @@ class TestParseQstatJXml:
 
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path))
         assert SGEScheduler(HPCConfig()).task_job_id("42", 7) == "42.7"
+
+
+class TestSgeTimestamps:
+    """Every timestamp form gridengine writes: 8.1.9 (soge) and OCS 9.1."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            # 8.1.9 qstat -xml; OCS qstat -xml and qstat -j -xml
+            ("2026-11-01T22:02:25", datetime(2026, 11, 1, 22, 2, 25)),
+            ("2026-11-02T12:45:48.065281", datetime(2026, 11, 2, 12, 45, 48, 65281)),
+            # OCS qacct, and OCS plain qstat (date and time columns joined)
+            ("2026-11-02 12:45:48.065281", datetime(2026, 11, 2, 12, 45, 48, 65281)),
+            ("2026-11-02 12:45:48", datetime(2026, 11, 2, 12, 45, 48)),
+            # 8.1.9 qacct and 8.1.9 plain qstat
+            ("Mon Feb 23 18:00:00 2026", datetime(2026, 2, 23, 18, 0, 0)),
+            ("11/01/2026 22:02:25", datetime(2026, 11, 1, 22, 2, 25)),
+        ],
+    )
+    def test_forms(self, text, expected):
+        from hpc_runner.schedulers.sge.parser import _parse_sge_datetime, _parse_sge_timestamp
+
+        assert _parse_sge_datetime(text) == expected
+        assert _parse_sge_timestamp(text) == int(expected.timestamp())
+
+    def test_epoch(self):
+        """8.1.9 qstat -j -xml writes epoch seconds."""
+        from hpc_runner.schedulers.sge.parser import _parse_sge_datetime, _parse_sge_timestamp
+
+        assert _parse_sge_timestamp("1793570544") == 1793570544
+        assert _parse_sge_datetime("1793570544") == datetime.fromtimestamp(1793570544)
+
+    @pytest.mark.parametrize("text", ["", "-", "undefined", "Mon Feb 30 18:00:00 2026"])
+    def test_not_a_time(self, text):
+        from hpc_runner.schedulers.sge.parser import _parse_sge_datetime, _parse_sge_timestamp
+
+        assert _parse_sge_datetime(text) is None
+        assert _parse_sge_timestamp(text) is None
+
+    def test_ocs_pending_submission_time(self):
+        """OCS names a pending job's submit time JAT_submission_time."""
+        from hpc_runner.schedulers.sge.parser import parse_qstat_xml
+
+        xml = """<?xml version='1.0'?>
+<job_info  xmlns:xsd="https://github.com/hpc-gridware/clusterscheduler/raw/master/source/dist/util/resources/schemas/qstat/qstat.xsd">
+  <queue_info>
+  </queue_info>
+  <job_info>
+    <job_list state="pending">
+      <JB_job_number>93</JB_job_number>
+      <JAT_prio>0.00000</JAT_prio>
+      <JB_name>true</JB_name>
+      <JB_owner>alice</JB_owner>
+      <state>hqw</state>
+      <JAT_submission_time>2026-11-02T12:46:06.771234</JAT_submission_time>
+      <queue_name></queue_name>
+      <slots>1</slots>
+    </job_list>
+  </job_info>
+</job_info>
+"""
+        submitted = datetime(2026, 11, 2, 12, 46, 6)
+        assert parse_qstat_xml(xml)["93"]["submit_time"] == int(submitted.timestamp())
+
+    def test_ocs_qacct_record(self):
+        from hpc_runner.schedulers.sge.parser import parse_qacct_records, qacct_to_job_info
+
+        record = parse_qacct_records(
+            "==============================================================\n"
+            "qname                              all.q\n"
+            "hostname                           exec1\n"
+            "jobname                            sleep\n"
+            "jobnumber                          92\n"
+            "taskid                             undefined\n"
+            "qsub_time                          2026-11-02 12:45:48.065281\n"
+            "start_time                         2026-11-02 12:45:48.069963\n"
+            "end_time                           2026-11-02 12:45:54.081076\n"
+            "failed                             0\n"
+            "exit_status                        0\n"
+            "ru_wallclock                       6\n"
+            "wallclock                          6.886\n"
+        )[0]
+        info = qacct_to_job_info(record)
+        assert info.submit_time == datetime(2026, 11, 2, 12, 45, 48, 65281)
+        assert info.start_time == datetime(2026, 11, 2, 12, 45, 48, 69963)
+        assert info.end_time == datetime(2026, 11, 2, 12, 45, 54, 81076)
