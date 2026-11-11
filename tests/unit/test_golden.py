@@ -39,16 +39,14 @@ CONFIG = HPCConfig(
     tools={
         "python": {"modules": ["python/3.11"], "env_vars": {"PYTHONUNBUFFERED": "1"}},
     },
+    module_init_script="/site/modules/init.sh",
     schedulers={
         "sge": {
             "parallel_environment": "smp",
             "memory_resource": "h_vmem",
             "time_resource": "h_rt",
             "memory_per": "slot",
-            "module_init_script": "/site/modules/init.sh",
-            "module_system": "modules",
         },
-        "local": {"module_init_script": "/site/modules/init.sh", "module_system": "modules"},
     },
 )
 

@@ -38,6 +38,12 @@ top-level keys are:
   ``HPC_SCHEDULER`` in the environment (which overrides it), every command
   that needs a scheduler fails with an error saying where to set it. Like
   any other key, a later file in the chain overrides an earlier one.
+- ``module_init_script = "/path/init.sh"``: the script every job sources to
+  define ``module`` on the compute nodes. Empty, or absent, tries the
+  standard Environment Modules locations (``/etc/profile.d/modules.sh``,
+  ``/usr/share/Modules/init/bash``, ``/etc/modules/init/bash``). It
+  describes the nodes, not a scheduler, so it is set once here; a copy
+  under ``[schedulers.<name>]`` is an error.
 - ``extends = "path.toml"``: load another file first (relative to this
   file; variables expanded as in :ref:`variable-expansion`). The target must exist, and a cycle is an error.
 - ``[defaults]``: baseline job settings applied to all jobs
@@ -237,16 +243,6 @@ example ``[schedulers.slurm]`` today) is a warning and is not checked.
      - ``"job"``
      - ``"job"``: ``mem`` is requested as given; ``"slot"``: the memory
        resource is a per-slot consumable, so ``mem`` is divided by ``cpu``.
-   * - ``module_init_script``
-     - string
-     - ``""``
-     - Script sourced to define ``module``; empty tries the standard
-       locations.
-   * - ``module_system``
-     - ``"modules"``, ``"lmod"`` or ``""``
-     - ``""``
-     - ``"modules"`` (Environment Modules 4.3+) exports
-       ``MODULES_VERBOSITY=concise``.
    * - ``emulate_afterok``
      - boolean
      - ``true``
@@ -258,8 +254,9 @@ example ``[schedulers.slurm]`` today) is a warning and is not checked.
      - Exit sentinels older than this are removed when a scheduler is
        created. Raise it if dependency chains wait longer than a month.
 
-``[schedulers.local]`` (runs jobs as local subprocesses) reads
-``module_init_script`` and ``module_system`` with the same meaning.
+``[schedulers.local]`` (runs jobs as local subprocesses) has no settings.
+The module init script is the top-level ``module_init_script`` key, shared
+by every scheduler.
 
 .. _trace-settings:
 
@@ -696,18 +693,14 @@ and ``hpc run --dry-run`` shows ``venv: <path>`` or ``venv: none``.
 **Module output.** Module commands are quiet when they succeed and loud
 when they fail: each one's output is kept aside and printed, with a
 ``hpc-runner: module load X failed`` line, only if it fails, which stops
-the job. ``hpc --verbose run`` shows module output as it happens. A site
-running Environment Modules (4.3 or later) can declare it to make the
-module system itself terser:
+the job. ``hpc --verbose run`` shows module output as it happens. The
+script also exports ``MODULES_VERBOSITY=concise``, which makes Environment
+Modules 4.3 and later terser and is ignored by older versions. The module
+init script itself is the top-level ``module_init_script`` key:
 
 .. code-block:: toml
 
-   [schedulers.sge]
-   module_system = "modules"     # "modules", "lmod" or "" (the default)
-   module_init_script = ""       # site module init; empty = auto-detect
-
-With ``module_system = "modules"`` the script exports
-``MODULES_VERBOSITY=concise``.
+   module_init_script = ""       # site module init; empty tries the standard locations
 
 
 .. _tool-commands:
@@ -809,6 +802,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
 
    config_version = 1
    scheduler = "sge"
+   module_init_script = ""     # script sourced to define `module`; empty tries the standard locations
 
    [defaults]
    name = "job"
@@ -852,9 +846,6 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    time_resource = "h_rt"
    memory_per = "job"          # mem is per job; "slot" divides it by cpu for a per-slot consumable
    sentinel_ttl_days = 30      # exit sentinels older than this are swept
-
-   module_init_script = ""
-   module_system = "modules"
 
    [trace]
    enabled = false             # record every scheduler call (see Trace settings)

@@ -32,12 +32,20 @@ TOP_LEVEL_KEYS = (
     "config_version",
     "extends",
     "scheduler",
+    "module_init_script",
     "defaults",
     "tools",
     "types",
     "schedulers",
     "trace",
 )
+
+#: Keys that used to live under ``[schedulers.<name>]``, and what to do now.
+RETIRED_SCHEDULER_KEYS = {
+    "module_init_script": "moved to the top level of the file; set it outside any section",
+    "module_system": "removed; Environment Modules is the module system, and "
+    "MODULES_VERBOSITY=concise is always exported",
+}
 
 
 class _Invalid(Exception):
@@ -520,6 +528,18 @@ def validate_file(
                 (), "scheduler", f"expected a scheduler name, got {_describe(data['scheduler'])}"
             )
 
+    # The script sourced to define `module` on the nodes. A node fact, so it
+    # is set once for the installation rather than once per scheduler.
+    if "module_init_script" in data:
+        if isinstance(data["module_init_script"], str):
+            converted["module_init_script"] = data["module_init_script"]
+        else:
+            c.error(
+                (),
+                "module_init_script",
+                f"expected a path, got {_describe(data['module_init_script'])}",
+            )
+
     if "defaults" in data:
         converted["defaults"] = _validate_job_layer(c, ("defaults",), data["defaults"])
 
@@ -572,7 +592,11 @@ def _validate_scheduler(
     if declared is None:
         c.warning(section, f"no scheduler '{name}' in this hpc-runner; section not checked")
         return dict(table)
-    return _validate_typed(c, section, table, declared)
+    for key in RETIRED_SCHEDULER_KEYS.keys() & table.keys():
+        c.error(section, key, RETIRED_SCHEDULER_KEYS[key])
+    return _validate_typed(
+        c, section, {k: v for k, v in table.items() if k not in RETIRED_SCHEDULER_KEYS}, declared
+    )
 
 
 def _validate_typed(

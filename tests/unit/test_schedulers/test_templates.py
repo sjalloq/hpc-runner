@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from hpc_runner.core.config import HPCConfig
-from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.result import JobStatus
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
@@ -59,14 +58,17 @@ def _env_block(script: str) -> str:
     return script[script.index(BEGIN) : script.index(END) + len(END)]
 
 
-def _sched_config(**settings) -> HPCConfig:
-    return HPCConfig(schedulers={"sge": dict(settings), "local": dict(settings)})
+def _sched_config(module_init_script: str = "", **settings) -> HPCConfig:
+    return HPCConfig(
+        module_init_script=module_init_script,
+        schedulers={"sge": dict(settings), "local": dict(settings)},
+    )
 
 
 class TestSharedEnvironmentBlock:
     def test_three_templates_render_identical_blocks(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
-        config = _sched_config(module_init_script="/site/init.sh", module_system="modules")
+        config = _sched_config(module_init_script="/site/init.sh")
         job = _full_job(tmp_path)
         sge, local = SGEScheduler(config), LocalScheduler(config)
         batch = sge.preview(job)
@@ -98,7 +100,7 @@ class TestSharedEnvironmentBlock:
         from hpc_runner.core.dependency import Dependency
 
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit dir"))
-        config = _sched_config(module_init_script="/site dir/init.sh", module_system="modules")
+        config = _sched_config(module_init_script="/site dir/init.sh")
         host = make_host(env={"DISPLAY": ":0 'x'"})
         job = _full_job(
             tmp_path,
@@ -202,18 +204,12 @@ class TestModuleCommands:
         assert script.count("\ntrap ") == 1
         assert "trap _hpc_on_exit EXIT" in script
 
-    def test_modules_verbosity_only_for_environment_modules(self):
+    def test_modules_verbosity_always_exported_before_purge(self):
+        """Environment Modules is the module system; no key switches this on."""
         job = make_job("x")
-        assert "MODULES_VERBOSITY" not in LocalScheduler(HPCConfig()).preview(job)
-        for system in ("lmod", ""):
-            script = LocalScheduler(_sched_config(module_system=system)).preview(job)
-            assert "MODULES_VERBOSITY" not in script
-        script = LocalScheduler(_sched_config(module_system="modules")).preview(job)
-        assert script.index("export MODULES_VERBOSITY=concise") < script.index("module purge")
-
-    def test_unknown_module_system_is_error(self):
-        with pytest.raises(ConfigError, match="module_system"):
-            SGEScheduler(_sched_config(module_system="spack"))
+        for scheduler in (LocalScheduler(HPCConfig()), SGEScheduler(HPCConfig())):
+            script = scheduler.preview(job)
+            assert script.index("export MODULES_VERBOSITY=concise") < script.index("module purge")
 
     def test_module_init_script_quoted(self):
         script = LocalScheduler(_sched_config(module_init_script="/a b/init")).preview(

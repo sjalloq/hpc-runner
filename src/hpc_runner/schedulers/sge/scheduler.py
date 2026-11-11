@@ -182,8 +182,6 @@ class SGEScheduler(BaseScheduler):
         "memory_resource": str,
         "time_resource": str,
         "memory_per": str,
-        "module_init_script": str,
-        "module_system": str,
         "emulate_afterok": bool,
         "sentinel_ttl_days": int,
     }

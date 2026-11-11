@@ -22,9 +22,8 @@ elif [ -f /etc/modules/init/bash ]; then
     . /etc/modules/init/bash
 fi
 {% endif %}
-{% if environment.module_system == "modules" %}
+# Environment Modules 4.3+ prints less with this; older versions ignore it.
 export MODULES_VERBOSITY=concise
-{% endif %}
 {% if not environment.verbose %}
 
 # Module commands are quiet on success; their output is shown if one fails.

@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from hpc_runner.core.exceptions import (
     AccountingNotAvailable,
@@ -46,10 +46,8 @@ class LocalScheduler(BaseScheduler):
 
     name = "local"
 
-    CONFIG_KEYS = {
-        "module_init_script": str,
-        "module_system": str,
-    }
+    #: The local scheduler has no site settings; the section may exist, empty.
+    CONFIG_KEYS: ClassVar[Mapping[str, type]] = {}
 
     # Shell-side values; cpus, job_id, task_id and job_name are literals
     # known before the script runs (see hpc_vars).

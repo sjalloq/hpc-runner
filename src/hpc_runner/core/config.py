@@ -46,6 +46,9 @@ class HPCConfig:
     #: The top-level ``scheduler`` key: the one scheduler this installation
     #: submits to. ``HPC_SCHEDULER`` overrides it (``get_scheduler``).
     scheduler: str | None = None
+    #: The top-level ``module_init_script`` key: the script every job sources
+    #: to define ``module``; empty means the standard locations are tried.
+    module_init_script: str = ""
     defaults: dict[str, Any] = field(default_factory=dict)
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     types: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -400,6 +403,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
     config_files = _resolve_extends(Path(path)) if path is not None else find_config_files()
 
     scheduler: str | None = None
+    module_init_script = ""
     merged: dict[str, Any] = {
         "defaults": {},
         "tools": {},
@@ -433,7 +437,9 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         for key in merged:
             if key in converted:
                 merged[key] = _merge(merged[key], converted[key])
-        scheduler = converted.get("scheduler", scheduler)  # the last file to set it wins
+        # Top-level scalars: the last file to set one wins.
+        scheduler = converted.get("scheduler", scheduler)
+        module_init_script = converted.get("module_init_script", module_init_script)
 
     # Structural: a type may only reference tools that exist (D2).
     for name, entry in merged["types"].items():
@@ -476,6 +482,7 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
 
     config = HPCConfig(
         scheduler=scheduler,
+        module_init_script=module_init_script,
         defaults=merged["defaults"],
         tools=merged["tools"],
         types=merged["types"],

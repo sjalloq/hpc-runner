@@ -59,6 +59,12 @@ def show(ctx: Context, raw: bool) -> None:
         console.print("[bold]Merged configuration:[/bold]\n")
 
         lines = []
+        if config.scheduler:
+            lines.append(f"scheduler = {_format_toml_value(config.scheduler)}")
+        if config.module_init_script:
+            lines.append(f"module_init_script = {_format_toml_value(config.module_init_script)}")
+        if config.scheduler or config.module_init_script:
+            lines.append("")
         if config.defaults:
             lines.append("[defaults]")
             for k, v in config.defaults.items():
@@ -137,6 +143,10 @@ def init(ctx: Context) -> None:
 # The one scheduler this installation submits to: sge, or local to run jobs
 # on this machine. Required; HPC_SCHEDULER in the environment overrides it.
 scheduler = "sge"
+
+# Script every job sources to define `module` on the nodes; empty tries the
+# standard Environment Modules locations.
+# module_init_script = "/etc/profile.d/modules.sh"
 
 [defaults]
 # Default job settings

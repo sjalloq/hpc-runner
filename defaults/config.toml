@@ -7,6 +7,11 @@ config_version = 1
 # environment overrides it.
 scheduler = "sge"
 
+# Script every job sources to define `module` on the compute nodes. Empty
+# tries the standard Environment Modules locations. A node fact, so it is set
+# once here, not per scheduler.
+module_init_script = ""
+
 [defaults]
 cpu = 1
 mem = "4G"                 # per job (D10): 16G, 4096M, 1.5GiB, ...
@@ -34,14 +39,9 @@ memory_per = "slot"
 # (SGE -hold_jid alone is afterany). false: only afterany dependencies work.
 emulate_afterok = true
 
-# Module handling ('module purge' always runs first)
-module_init_script = ""     # Site-specific module init (empty = auto-detect)
-module_system = ""          # "modules" (Environment Modules), "lmod" or "" (unknown)
 
-# Local scheduler settings
+# Local scheduler: no settings
 [schedulers.local]
-module_init_script = ""
-module_system = ""
 
 # Slurm-specific settings (for future use)
 [schedulers.slurm]

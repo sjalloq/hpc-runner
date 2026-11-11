@@ -14,6 +14,7 @@ trap _hpc_on_exit EXIT
 # --- hpc-runner environment ---
 # Module system initialization
 . /site/modules/init.sh
+# Environment Modules 4.3+ prints less with this; older versions ignore it.
 export MODULES_VERBOSITY=concise
 
 # Module commands are quiet on success; their output is shown if one fails.

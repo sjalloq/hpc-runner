@@ -88,7 +88,7 @@ def local_site(tmp_path, monkeypatch):
     stub = tmp_path / "modules-init.sh"
     stub.write_text("module() { :; }\n")
     (tmp_path / "hpc-runner.toml").write_text(
-        f'config_version = 1\n\n[schedulers.local]\nmodule_init_script = "{stub}"\n'
+        f'config_version = 1\nmodule_init_script = "{stub}"\n'
     )
     for script in ("train.py", "preprocess.py", "evaluate.py"):
         (tmp_path / script).write_text(f"print('{script} done')\n")

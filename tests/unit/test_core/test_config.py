@@ -772,6 +772,40 @@ class TestExtendsErrors:
             load_config(tmp_path / "a.toml")
 
 
+class TestModuleInitScriptKey:
+    """The top-level ``module_init_script`` key: the script every job sources."""
+
+    def test_read(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\nmodule_init_script = "/site/init.sh"\n')
+        assert load_config(path).module_init_script == "/site/init.sh"
+
+    def test_absent_is_empty(self, tmp_path):
+        assert load_config(_write(tmp_path, "config_version = 1\n")).module_init_script == ""
+
+    def test_later_file_wins(self, tmp_path):
+        base = _write(tmp_path, 'config_version = 1\nmodule_init_script = "/a"\n', name="base.toml")
+        child = _write(
+            tmp_path, f'config_version = 1\nextends = "{base}"\nmodule_init_script = "/b"\n'
+        )
+        assert load_config(child).module_init_script == "/b"
+
+    @pytest.mark.parametrize("value", ["1", "true", '["/a"]'])
+    def test_not_a_path_is_error(self, tmp_path, value):
+        path = _write(tmp_path, f"config_version = 1\nmodule_init_script = {value}\n")
+        (err,) = _errors(path)
+        assert "module_init_script: expected a path" in str(err)
+
+    @pytest.mark.parametrize("scheduler", ["sge", "local"])
+    def test_under_a_scheduler_section_names_the_move(self, tmp_path, scheduler):
+        """It lived under [schedulers.<name>] until 2026-11-05 (D-S28)."""
+        path = _write(
+            tmp_path, f'config_version = 1\n[schedulers.{scheduler}]\nmodule_init_script = "/a"\n'
+        )
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert f"[schedulers.{scheduler}] module_init_script: moved to the top level" in str(err)
+
+
 class TestSchedulerKey:
     """The top-level ``scheduler`` key: which scheduler the installation uses."""
 
@@ -1070,9 +1104,19 @@ class TestSchedulerSections:
         assert load_config(path).schedulers["sge"] == {"memory_per": "job"}
 
     def test_wrong_type_rejected(self, tmp_path):
-        path = _write(tmp_path, "config_version = 1\n[schedulers.local]\nmodule_system = 1\n")
+        path = _write(tmp_path, "config_version = 1\n[schedulers.sge]\nparallel_environment = 1\n")
         (err,) = _errors(path)
         assert "expected str" in str(err)
+
+    @pytest.mark.parametrize("scheduler", ["sge", "local"])
+    def test_removed_module_system_names_the_removal(self, tmp_path, scheduler):
+        """Removed 2026-11-05 (D-S28): Environment Modules is the module system."""
+        path = _write(
+            tmp_path, f'config_version = 1\n[schedulers.{scheduler}]\nmodule_system = "modules"\n'
+        )
+        (err,) = _errors(path)
+        assert err.line == 3
+        assert f"[schedulers.{scheduler}] module_system: removed" in str(err)
 
     @pytest.mark.parametrize("key", ["purge_modules", "silent_modules", "expand_makeflags"])
     def test_deleted_script_flags_rejected(self, tmp_path, key):

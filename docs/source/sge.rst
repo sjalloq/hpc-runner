@@ -168,9 +168,8 @@ Environment and modules
 - Every job script then runs ``module purge`` (always; it is how the
   configured module versions are guaranteed) and the configured
   ``module use`` / ``module load`` commands, quietly unless one fails. Set
-  ``[schedulers.sge] module_init_script`` if the node's module init is not
-  in a standard place, and ``module_system = "modules"`` on Environment
-  Modules sites for terser output.
+  the top-level ``module_init_script`` if the node's module init is not in
+  a standard place.
 - ``${hpc.*}`` runtime values render as SGE variables: ``${hpc.cpus}`` is
   ``$NSLOTS``, ``${hpc.job_id}`` ``$JOB_ID``, ``${hpc.task_id}``
   ``$SGE_TASK_ID``, ``${hpc.tmpdir}`` ``$TMPDIR``, ``${hpc.job_name}``

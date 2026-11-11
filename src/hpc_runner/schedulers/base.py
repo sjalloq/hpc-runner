@@ -12,7 +12,7 @@ from types import EllipsisType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from hpc_runner.core.descriptors import SchedulerArg
-from hpc_runner.core.exceptions import ConfigError, NotSupportedError
+from hpc_runner.core.exceptions import NotSupportedError
 from hpc_runner.core.job import RENDER_ORDER
 from hpc_runner.core.result import TASK_ID_PLACEHOLDER
 from hpc_runner.schedulers import _subprocess
@@ -32,9 +32,6 @@ _HPC_REF = re.compile(r"\$\{hpc\.([A-Za-z_][A-Za-z0-9_]*)\}")
 _HOST_REF = "${hpc.host}"
 # Shell text that is a bare variable expansion, e.g. ``$NSLOTS``.
 _SHELL_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
-
-#: Accepted values of ``[schedulers.<name>] module_system``.
-MODULE_SYSTEMS = ("modules", "lmod", "")
 
 RenderContext = Literal["script", "path"]
 Stream = Literal["stdout", "stderr"]
@@ -84,15 +81,9 @@ class BaseScheduler(ABC):
 
     def __init__(self, config: HPCConfig) -> None:
         self.config = config
-        settings = config.get_scheduler_config(self.name)
-        # Site module setup shared by every backend's environment block.
-        self.module_init_script: str = settings.get("module_init_script", "")
-        self.module_system: str = settings.get("module_system", "")
-        if self.module_system not in MODULE_SYSTEMS:
-            raise ConfigError(
-                f"[schedulers.{self.name}] module_system: expected one of "
-                f"{', '.join(repr(m) for m in MODULE_SYSTEMS)}, got {self.module_system!r}"
-            )
+        # The module init script is a top-level key: it describes the nodes,
+        # not a scheduler. Shared by every backend's environment block.
+        self.module_init_script: str = config.module_init_script
 
     # =========================================================================
     # ${hpc.*} and the shared environment block
@@ -159,7 +150,6 @@ class BaseScheduler(ABC):
 
         return {
             "module_init_script": self.module_init_script,
-            "module_system": self.module_system,
             "verbose": verbose,
             "modules_path": [word(p) for p in job.modules_path],
             "modules_path_append": [word(p) for p in job.modules_path_append],
