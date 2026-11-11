@@ -1,0 +1,80 @@
+# Working notes: index
+
+The one place that says where each piece of work stands. Read this first;
+update it whenever a status or a next action changes. User documentation is
+`docs/source/` (Sphinx); how the code is put together is
+`docs/source/development.rst`; how to work here is `CLAUDE.md`.
+
+## Next actions, in order
+
+1. **Implement D-S29** (`slurm/DECISIONS.md`): remove `nodes` and `tasks`
+   (clause 4), make a backend refuse a portable key it cannot honour
+   (clause 5), add the backend-by-key contract test (clause 7).
+2. **Close the Slurm open questions** with the user, one at a time, in the
+   order given under "Open questions" in `slurm/DECISIONS.md`. Each answer
+   becomes a numbered amendment there.
+3. **Put the resource keys through D-S29 clause 2**: D-S21's three maps,
+   then `scratch` (open questions Q2 and Q18). The rows of
+   `slurm/RESOURCES_COMPARISON.md` a key relies on are re-checked against
+   their sources first; only eight quotes in it were independently checked.
+4. **Start the Slurm build** at D-S27 step 0 (housekeeping: D-S25, the
+   D-S21 config change, the D-S26 correction), then step 1 (the testbed).
+
+## Work
+
+| Work | Status | Read | What is left |
+|---|---|---|---|
+| Slurm backend | Decided (D-S1..D-S29), nothing implemented | `slurm/DECISIONS.md` | The four actions above |
+| Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
+| SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | A third flavour, `daimh/sge`, not started |
+| Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |
+| Scheduler trace | Done | `trace/DESIGN.md` (D-TR1..D-TR12) | Slurm support is open question Q14 |
+| `hpc run` argument parsing | Closed by D-T43 | `cli/RUN_ARG_PARSING.md` | Nothing |
+| `hpc monitor` TUI | Built; a rework is intended and not planned | `tui/TEXTUAL_STYLING_COOKBOOK.md` | No plan exists |
+
+## Every file here
+
+| File | What it is |
+|---|---|
+| `restructure/DECISIONS.md` | Decision log D1..D19: config layering, environment, units, errors, scheduler choice, statuses |
+| `testbed/TESTBED_REVIEW.md` | Decision log D-T1..D-T50 and bug list BUG-T1.., for the testbed and the integration suite |
+| `testbed/TESTBED_PLAN.md` | The plan the testbed was built from. Kept only because code comments cite its sections; where it and `TESTBED_REVIEW.md` differ, the review is right |
+| `test-review/LIFECYCLE_MATRIX.md` | Reference: SGE job states against the code that reads them, with the test covering each cell |
+| `trace/DESIGN.md` | Design and decision log D-TR1..D-TR12 for `hpc --trace` and `hpc trace` |
+| `cli/RUN_ARG_PARSING.md` | Record of the `--` passthrough design and why `-S/--scheduler-args` replaced it |
+| `sge-xml-defects.md` | Reference: four defects in gridengine XML output and how the parser repairs each |
+| `tui/TEXTUAL_STYLING_COOKBOOK.md` | Rules and checklist for styling `hpc monitor` |
+| `tui/TUI_HORIZONTAL_SCROLLBAR.md` | How the job table avoids a horizontal scrollbar |
+| `slurm/DECISIONS.md` | The Slurm plan: decisions D-S1..D-S29, open questions, parked items, implementation notes |
+| `slurm/SGE_SLURM_DIFFERENCES.md` | Fact base: how Slurm differs from SGE, with sources |
+| `slurm/RESOURCES_COMPARISON.md` | Fact base: 17 resource requests on SGE, Slurm, LSF and PBS, with sources; Appendix A is the earlier LSF and PBS research |
+
+Decision numbers: `D<n>` restructure, `D-T<n>` testbed, `D-TR<n>` trace,
+`D-S<n>` Slurm.
+
+## Rules for this folder
+
+- A decision is recorded only on the user's explicit answer.
+- A plan, review or research note is deleted once it has been carried out
+  or folded into a decision log; git keeps it.
+- No tickets and no second copy of a decision: work is taken from the
+  decision log, one item at a time.
+- Chat transcripts and exports are not kept in the repo.
+
+## Removed
+
+Removed in the reset of 2026-11-11 because the work they planned or reviewed
+was finished, or because their content moved into a file above.
+
+Read one with `git show 26aec97:docs/dev/<path>`:
+
+- `restructure/QA_REVIEW.md`, `restructure/SESSION_REVIEW.md`,
+  `restructure/QUESTIONS.md`
+- `testbed/TESTBED_DESIGN.md`, `testbed/TESTBED_RESEARCH.md`
+- `test-review/TEST_QA_REVIEW.md`, `test-review/GAP_PLAN.md`
+- `tui/HPC_MONITOR_TUI_PLAN.md`
+
+Never committed, so kept only on the maintainer's local branch
+`backup/tree-2026-11-11`: the 22 Slurm tickets with their review and spec,
+the resources research brief, the open-threads and LSF/PBS notes as separate
+files, the agent docs for the ticket tracker, and two chat exports.

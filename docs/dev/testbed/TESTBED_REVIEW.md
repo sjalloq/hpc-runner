@@ -1,5 +1,7 @@
 # Testbed build: review points — 2026-10-29 (autonomous)
 
+> Some notes cited below were removed in the reset of 2026-11-11; `docs/dev/README.md` ("Removed") says how to read them.
+
 Record of every place this session diverged from `TESTBED_PLAN.md`, or had to
 choose where the plan was silent. Sub-agents made no decisions: each question
 came back to the main session and is logged here with the choice made and

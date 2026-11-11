@@ -1,5 +1,7 @@
 # Scheduler trace: design and decisions — 2026-10-31
 
+> Some notes cited below were removed in the reset of 2026-11-11; `docs/dev/README.md` ("Removed") says how to read them.
+
 Why: the test QA fix pass (`docs/dev/test-review/TEST_QA_REVIEW.md` §6)
 found that five of its ten bugs were the parser meeting real scheduler
 output for the first time. Captured fixtures fixed that for the testbed's

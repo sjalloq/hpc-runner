@@ -680,7 +680,7 @@ def _cli(argv: list[str], respond, monkeypatch, tmp_path):
 
 
 class TestMatrixGaps:
-    """Readers over captures the matrix had no test for (GAP_PLAN.md W1, W3, W4, W6, W7)."""
+    """Readers over captures the lifecycle matrix had no test for."""
 
     @pytest.fixture
     def scheduler(self, monkeypatch, tmp_path):

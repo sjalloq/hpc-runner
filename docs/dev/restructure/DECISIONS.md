@@ -1,5 +1,7 @@
 # hpc-runner: design decisions to settle before the refactor
 
+> Some notes cited below were removed in the reset of 2026-11-11; `docs/dev/README.md` ("Removed") says how to read them.
+
 Companion to `QA_REVIEW.md`. The review mixed two kinds of finding: bugs with
 one correct fix, and places where the code does *something* but nobody has
 decided what the tool should do. This file holds the second kind. Each entry

@@ -1,5 +1,7 @@
 # hpc-runner test cluster: implementation plan
 
+> Some notes cited below were removed in the reset of 2026-11-11; `docs/dev/README.md` ("Removed") says how to read them.
+
 Status: decided 2026-10-29; **phases 0–4 built the same day** on
 `refactor/decisions` (`testbed/`, `tests/integration/`, the CI `integration`
 job). Where the build diverged from this text, `TESTBED_REVIEW.md` records

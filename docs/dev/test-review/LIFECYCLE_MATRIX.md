@@ -1,5 +1,7 @@
 # Job lifecycle matrix: SGE states × readers
 
+> Some notes cited below were removed in the reset of 2026-11-11; `docs/dev/README.md` ("Removed") says how to read them.
+
 Status: survey, 2026-10-31 night. Agreed in the evening session after the
 test QA review: the review's escapes were all cases where a reader met a
 scheduler state no test had shown it. This table is every state a job can be

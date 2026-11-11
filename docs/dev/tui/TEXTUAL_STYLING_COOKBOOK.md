@@ -6,6 +6,7 @@ A guide to achieving a polished, modern terminal UI aesthetic based on the Rovr 
 
 ## Table of Contents
 
+1. [Rules and checklist](#rules-and-checklist)
 1. [Design Philosophy](#design-philosophy)
 2. [Important: Themes Define Colors](#important-themes-define-colors)
 3. [Custom vs Standard Widgets](#custom-vs-standard-widgets)
@@ -21,6 +22,69 @@ A guide to achieving a polished, modern terminal UI aesthetic based on the Rovr 
 13. [Responsive Design](#responsive-design)
 14. [Button Styling Patterns](#button-styling-patterns)
 15. [Popup/Dropdown Styling](#popupdropdown-styling)
+
+---
+
+## Rules and checklist
+
+The short form of this document, for any edit to `src/hpc_runner/tui/`.
+Every style lives in `styles/monitor.tcss`; widget classes carry no
+`DEFAULT_CSS`.
+
+- **Transparent backgrounds everywhere**: `background: transparent` on every
+  widget, so the terminal shows through. Solid colour marks only a selected
+  or highlighted item.
+- **Round borders**: `border: round $border-blurred` unfocused,
+  `border: round $border` focused.
+- **Border titles in `$primary`**: `border-title-color: $primary` with
+  `border-title-background: transparent`.
+
+Standard patterns:
+
+```css
+/* Panels and containers */
+MyWidget {
+    background: transparent;
+    border: round $border-blurred;
+    border-title-color: $primary;
+    border-title-background: transparent;
+}
+
+MyWidget:focus, MyWidget:focus-within {
+    border: round $border;
+}
+
+/* Buttons: transparent with a border */
+Button {
+    background: transparent;
+    border: round $border-blurred;
+    color: $foreground;
+}
+
+Button:hover {
+    background: $boost;
+    border: round $border;
+}
+
+/* Popups and overlays */
+Popup {
+    layer: overlay;
+    background: transparent;
+    border: round $primary;
+}
+```
+
+Variables defined in `monitor.tcss`: `$border-blurred` (muted, unfocused),
+`$border` (bright, focused), `$primary` (teal accent, #88C0D0), `$error`
+(red, destructive actions).
+
+**Verify visually after every TUI edit** (`src/hpc_runner/tui/snapshot.py`
+renders a screen):
+
+1. Every background is transparent: the terminal shows through.
+2. Borders are round (`╭╮╰╯`).
+3. The only solid colour blocks are selected or highlighted items.
+4. Focus brightens the border.
 
 ---
 
