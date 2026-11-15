@@ -20,7 +20,7 @@ update it whenever a status or a next action changes. User documentation is
 | Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
 | SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | A third flavour, `daimh/sge`, not started |
 | Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |
-| Scheduler trace | Done | `trace/DESIGN.md` (D-TR1..D-TR12) | Slurm support is an open question in `slurm/PLAN.md` |
+| Scheduler trace | Recorder extended, `hpc trace` commands removed (2026-11-15); integration tests not yet run on the testbed | `trace/DESIGN.md` | Run `tests/integration/test_trace.py` on the SGE testbed |
 | `hpc run` argument parsing | Closed by D-T43 | `cli/RUN_ARG_PARSING.md` | Nothing |
 | `hpc monitor` TUI | Built; a rework is intended and not planned | `tui/TEXTUAL_STYLING_COOKBOOK.md` | No plan exists |
 
@@ -32,7 +32,7 @@ update it whenever a status or a next action changes. User documentation is
 | `testbed/TESTBED_REVIEW.md` | Decision log D-T1..D-T50 and bug list BUG-T1.., for the testbed and the integration suite |
 | `testbed/TESTBED_PLAN.md` | The plan the testbed was built from. Kept only because code comments cite its sections; where it and `TESTBED_REVIEW.md` differ, the review is right |
 | `test-review/LIFECYCLE_MATRIX.md` | Reference: SGE job states against the code that reads them, with the test covering each cell |
-| `trace/DESIGN.md` | Design and decision log D-TR1..D-TR12 for `hpc --trace` and `hpc trace` |
+| `trace/DESIGN.md` | What `hpc --trace` and `[trace]` record, and why |
 | `cli/RUN_ARG_PARSING.md` | Record of the `--` passthrough design and why `-S/--scheduler-args` replaced it |
 | `sge-xml-defects.md` | Reference: four defects in gridengine XML output and how the parser repairs each |
 | `tui/TEXTUAL_STYLING_COOKBOOK.md` | Rules and checklist for styling `hpc monitor` |

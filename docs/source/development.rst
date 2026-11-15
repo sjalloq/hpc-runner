@@ -119,10 +119,10 @@ Other packages
   and includes the shared ``templates/_environment.sh.j2``. Every
   interpolated value goes through the ``sh`` filter (``templates/engine.py``).
 - ``trace/``: the seam records every scheduler call as JSON (``hpc --trace
-  DIR`` or ``[trace] enabled = true``); ``hpc trace compare`` replays a trace
-  through the parsers and, with ``--fixtures``, names the call shapes no
-  fixture covers; ``hpc trace bundle`` scrubs and packs one. Design in
-  ``docs/dev/trace/DESIGN.md``.
+  DIR`` or ``[trace] enabled = true``), with the job script on the call
+  that submitted it (``note_script``); ``cli/main.py`` adds one record per
+  command line (``Invocation``): argv, config files, output, error, exit
+  code. Design in ``docs/dev/trace/DESIGN.md``.
 - ``tui/``: ``HpcMonitorApp`` (``app.py``) behind ``hpc monitor``; every
   style is in ``styles/monitor.tcss``; ``snapshot.py`` renders a screen for
   review. Styling rules: ``docs/dev/tui/TEXTUAL_STYLING_COOKBOOK.md``.
@@ -156,8 +156,7 @@ by whole argv from those files through ``make_sge_responder``
 that uses them runs once per flavour through ``sge_fixtures``. No scheduler
 text is typed from memory: a scenario the captures lack is a reason to
 extend the capture. Regenerate a flavour against its running stack when a
-scenario changes. The manifest also records the argv behind every file,
-which is what ``hpc trace compare --fixtures`` compares a trace against.
+scenario changes. The manifest also records the argv behind every file.
 
 The docs are tested too: every Python snippet in the README and the API
 guide compiles (those marked ``# doctest: local`` run against the local

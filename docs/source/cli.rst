@@ -15,11 +15,20 @@ These options come before the subcommand:
 - ``--verbose``: log every scheduler command (argv) to stderr, and on a
   scheduler error print the failing command and its full stderr (e.g. also
   shows script paths when ``--keep-script`` is used)
-- ``--trace DIR``: record every scheduler call (argv, exit status, stdout,
-  stderr) as one JSON file per call under ``DIR``, for this invocation. To
-  record every invocation during a period of use, set ``[trace] enabled =
-  true`` in the config instead (:ref:`trace-settings`); the flag wins when
-  both are given. ``hpc trace`` reads a trace back (below).
+- ``--trace DIR``: record what this command did, as JSON files under
+  ``DIR``. One file holds the command itself: the command line, the config
+  files read (path and text), every environment variable, everything
+  ``hpc`` printed, the error it raised and its exit code. One file per
+  scheduler command holds its argv, exit status, stdout and stderr, and,
+  for the command that submitted a job, the job script as the scheduler saw
+  it. To record every command during a period of use, set ``[trace] enabled
+  = true`` in the config instead (:ref:`trace-settings`); the flag wins
+  when both are given. A traced command ends with one line on stderr,
+  ``trace: N records written to DIR/<date>``. ``hpc monitor`` is never
+  traced, and ``--trace`` with it is an error. Nothing is scrubbed: a trace holds real user, host
+  and job names and the whole environment, which may include a token or
+  password. Read it before passing it on, and delete or edit any line that
+  must not leave your site.
 
 Errors are printed as one line, ``error: <message>``, and ``hpc`` exits 1.
 A Python traceback means a bug in hpc-runner.
@@ -161,25 +170,3 @@ Other commands
   error and warning, exit 1 on any error
 - ``hpc config resolve [-t TYPE] COMMAND...``: show the job ``COMMAND`` would
   get and which config layer supplied each value
-- ``hpc trace compare DIR [--fixtures FIXTURES] [--json]``: run every
-  scheduler output recorded under ``DIR`` (by ``--trace`` or ``[trace]``)
-  back through the parsers and list what they could not make sense of: a
-  parser exception, nothing parsed from text that holds something, a job
-  whose state maps to ``UNKNOWN``, a qacct field (exit status, runtime,
-  timestamps, failed reason) the record has but the result lacks. Each argv
-  *shape* (``qacct -j <arg>``, ``qstat -xml -u <arg>``, ...) is listed with
-  its call count. With ``--fixtures tests/unit/fixtures/sge/soge`` (a
-  flavour's captures) the shapes
-  no captured fixture covers are listed too. Exits 1 on any finding or
-  uncovered shape, so it can run unattended over a trace directory. A
-  finding is a parser bug: open an issue with the record attached.
-- ``hpc trace bundle DIR [-o FILE] [--raw] [--scrub NAME]``: pack the trace
-  for that issue. Usernames and hostnames are replaced everywhere by
-  ``user1``, ``host1``, ...; job names, projects, departments, accounts and
-  queues where the scheduler writes them; every value in a job's recorded
-  environment becomes ``[scrubbed]``. The map of what was replaced is
-  printed to stderr: read it before attaching the archive, and add
-  ``--scrub NAME`` for anything it missed. ``--raw`` skips the scrub for a
-  bundle that stays private. The archive holds ``meta.json`` (versions,
-  the scheduler banner, the ``[schedulers.*]`` config, scrubbed) and the
-  records under ``trace/``; ``hpc trace compare`` reads it extracted.

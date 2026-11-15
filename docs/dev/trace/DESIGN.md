@@ -1,117 +1,89 @@
-# Scheduler trace: design and decisions — 2026-10-31
+# Trace: what it records and why
 
-> Some notes cited below were removed in the reset of 2026-11-11; `docs/dev/README.md` ("Removed") says how to read them.
+Rewritten 2026-11-15. The earlier design (2026-10-31, decisions D-TR1 to
+D-TR12) also had `hpc trace compare` and `hpc trace bundle`; both were
+removed on the user's decision. Git keeps them (`84384c7`, `e3f8849`).
 
-Why: the test QA fix pass (`docs/dev/test-review/TEST_QA_REVIEW.md` §6)
-found that five of its ten bugs were the parser meeting real scheduler
-output for the first time. Captured fixtures fixed that for the testbed's
-one gridengine build. A user's cluster is a different build, and nothing
-from it may be committed. The trace is the bridge: hpc-runner records what
-the scheduler said and what it made of it, locally, so the user can check
-the parsers against their own site and report a mismatch with the exact
-text attached.
+## Why
 
-## What it is
+- The testbed covers one build of each scheduler. A user's cluster is a
+  different build, and nothing from it may be committed.
+- When hpc-runner misreads a site's scheduler, the report must hold
+  everything about the call: what was typed, the config, the script, what
+  the scheduler said and what hpc-runner made of it.
+- A trace is that record. It is local, raw and private. Nothing is
+  scrubbed and nothing packs or replays it: it is read as files.
 
-- **Recorder.** `run_command` (the one subprocess seam) writes one JSON
-  file per scheduler call when a trace is active: argv, return code,
-  stdout, stderr, elapsed seconds, timestamp, pid, cwd, hpc-runner
-  version, and `error` for a call that never returned (binary missing or
-  timed out). Interactive calls (`capture=False`) record `null` output.
-- **Activation.** `hpc --trace DIR` for one invocation, or `[trace]
-  enabled = true` in the config for every invocation during a window of
-  normal use. The flag wins. The config path is read by `get_scheduler()`,
-  so the CLI, the TUI and the programmatic API all record.
-- **`hpc trace compare DIR`.** Runs every recorded output back through the
-  parsers and lists what did not parse: an exception, an empty result, a
-  `JobInfo` with `UNKNOWN` status, a missing runtime or exit code when the
-  record had the field. With `--fixtures tests/unit/fixtures/sge/<flavour>` it also
-  lists argv shapes the trace contains that no captured fixture covers.
-- **`hpc trace bundle DIR`.** Packs a trace for an issue report:
-  usernames, hostnames, job names, projects and home paths replaced by
-  stable tokens, plus a `meta.json` (versions, scheduler banner, the
-  `[schedulers.*]` config). `--raw` skips the scrub for private use.
+## What is recorded
 
-## Decisions
+Under `<dir>/<YYYY-MM-DD>/`, two kinds of JSON file.
 
-- **D-TR1 Recording lives in the seam, not the scheduler.** Everything a
-  parser ever sees passes through `run_command`; one hook there covers
-  SGE today and Slurm/PBS when they land. The local scheduler is exempt
-  from the seam and is not traced (it runs no scheduler CLI).
-- **D-TR2 Activation is a module-level tracer, set once.** `trace.activate`
-  installs it; `get_scheduler()` calls `activate_from_config` which is a
-  no-op when a tracer is already active, so the flag beats the config.
-  Schedulers constructed directly (tests, embedding) trace only if the
-  caller activates. The package never activates on import.
-- **D-TR3 Record shape equals fixture shape.** The per-call JSON has the
-  same `argv/returncode/stdout/stderr` keys as the JSON fixtures written by
-  `tests/integration/capture.py`, so a record from a user's cluster can be
-  dropped into a fixture root and replayed by the unit suite unchanged.
-- **D-TR4 Layout is one directory per day, one file per call.**
-  `<dir>/<YYYY-MM-DD>/<HHMMSS.mmm>-<pid>-<cmd>.json`. The pid in the name
-  stitches the calls of one `hpc status` back together without reading
-  files; the day directory makes the sweep a name comparison.
-- **D-TR5 Dedupe by exact repeat.** A call whose argv, return code, stdout
-  and stderr equal the previous record *for that argv* is not written.
-  `hpc monitor` polls every few seconds and most snapshots are identical;
-  the trace keeps the moments something changed. The record that is kept
-  is the first of a run of identical ones. The comparison is seeded from
-  today's directory at activation, so a run of identical `hpc status`
-  invocations (separate processes) dedupes like a polling loop does. Off
-  with `dedupe = false`.
-- **D-TR6 Sweep by day directory.** At activation, day directories older
-  than `max_days` (default 14) are removed. Only directories whose name is
-  a date are touched, so a wrong `dir` cannot delete anything else.
-- **D-TR7 `[trace]` is a top-level config section**, keys `enabled`
-  (bool), `dir` (str, `~` expanded, default `~/.cache/hpc-runner/trace`),
-  `max_days` (int), `dedupe` (bool). Strict like every other section:
-  unknown keys and wrong types are errors. Scalars, later file wins.
-- **D-TR8 Scrubbing happens only on export.** The local trace is private
-  and raw so `compare` works on real names. `bundle` collects values from
-  structured places (qacct `owner`/`group`/`hostname`/`jobname`/`project`/
-  `department`/`account`/`qname`, qstat XML `JB_owner`/`JB_group`/
-  `JB_job_name`/`JB_name`/`queue_name`, qstat text columns, qsub's
-  `("name")`, qdel's `<user> has registered`, commlib's `on host "..."`,
-  argv `-u`/`-o`/`-N`/`-l hostname=` values, `/home/<user>`, the current
-  user and hostname). Users and hosts are replaced everywhere in every
-  file, longest first, at word boundaries (a name recurs in paths and
-  messages). Names (jobs, projects, queues) are replaced only where they
-  are written as such: a job may be called `array` or `ok` and a global
-  replacement would rewrite `job-array` and `state="running"` and break
-  the parsers. Every `VA_value` of a recorded job environment becomes
-  `[scrubbed]`. Values under two characters, non-identifier strings and
-  the scheduler's placeholders (`NONE`, `undefined`, `defaultdepartment`,
-  `sge`) are never tokens. The map is printed to stderr for review, and
-  `--scrub NAME` adds what it missed. No heuristic for free text: a job's
-  own stdout is never in a trace, only the scheduler's. The unit test
-  proves a scrubbed bundle still passes `compare` with the same shapes.
-- **D-TR9 `compare` is SGE-aware through one dispatch table.** It maps an
-  argv shape to the parser that consumes it; another scheduler adds rows.
-  Argv is normalised to a shape by replacing job ids (`\d+(\.\d+)?`),
-  script paths, user names after `-u`/`-o` and job names after `-N` with
-  placeholders, so `qacct -j 1203` and `qacct -j 1204` are one shape.
-- **D-TR10 Fixture coverage comes from the manifest, not a hard-coded
-  list.** `capture.py` records the argv of every file it writes in
-  `manifest.json`; `compare --fixtures` reads those argv, shapes them the
-  same way, and reports trace shapes with no fixture. The fixtures are
-  regenerated for this (ids change, structure does not).
-- **D-TR11 `compare` exits 1 when it finds anything**, so a cron job over
-  a trace directory can act on it; `--json` for machines.
+One per `hpc` command line, `<HHMMSS.mmm>-<pid>-hpc.json`:
 
-- **D-TR12 The first live `compare` found BUG-T2.** A trace of `hpc status
-  --history` on the testbed produced two findings on `qacct -j -o <arg> -b
-  <arg>`: the owner summary row parsed as a job with no number. The
-  captured fixture had never held the row (qacct prints it only for an
-  owner with non-zero wallclock, and the capture's jobs ran in 0 s), which
-  is why the strict xfail XPASSed during the QA fix pass. Fixed in
-  `parse_qacct_records` (blocks without `jobnumber` are not jobs), the
-  capture's bob job now sleeps so the fixture carries the row, and the
-  xfail is a plain test. Recorded here because it is the tool doing the
-  job it was built for, on its first run.
+- `kind`: `"invocation"`.
+- `argv`: the command line as typed.
+- `config`: every config file read, in merge order, path and text.
+- `env`: every environment variable, one per line, sorted by name. All of
+  it, not a list of prefixes: a scheduler's own variables change what a
+  command does (`SBATCH_PARTITION` beats a `#SBATCH -p` line,
+  `slurm/SGE_SLURM_DIFFERENCES.md` run S18), and a user who must remove a
+  value before passing a trace on deletes or edits that line.
+- `stdout`, `stderr`: everything `hpc` printed, without terminal control
+  codes. Cut at 1,000,000 characters (`output_truncated`).
+- `error`: type and message of the error that ended the command; a
+  traceback too when it was not a deliberate `HPCToolsError`.
+- `exit_code`, `time`, `elapsed`, `pid`, `cwd`, `version`.
 
-## Out of scope
+One per scheduler command, `<HHMMSS.mmm>-<pid>-<cmd>.json`:
 
-- Tracing the local scheduler (D-TR1).
-- Scrubbing free text or paths other than `$HOME` (D-TR8); the user
-  reviews the map before attaching a bundle.
-- Env-var activation; the flag and the config are the two paths.
+- `argv`, `returncode`, `stdout`, `stderr`: the same keys as the JSON
+  fixtures under `tests/unit/fixtures/`.
+- `error`: set for a command that never returned (missing binary, timeout).
+- `script`: path and text of the job script, on the command that
+  submitted it.
+- `time`, `elapsed`, `pid`, `cwd`, `version`.
+
+The pid in the file name ties a command line to its scheduler commands.
+
+## How
+
+- Scheduler commands are recorded in `run_command`, the one subprocess
+  seam, so every scheduler is covered without code of its own.
+- A scheduler calls `recorder.note_script(path, text)` when it writes a
+  job script. The next recorded command whose argv names that path takes
+  the text. A new scheduler must make the same call.
+- The command-line record is made by `main()` in `cli/main.py`
+  (`recorder.Invocation`): it copies what is written to `sys.stdout` and
+  `sys.stderr`, and writes the record when the process ends, if a trace is
+  active by then.
+- Activation: `hpc --trace DIR` for one command, or `[trace] enabled =
+  true` (read by `get_scheduler()`) for every command. The flag wins. The
+  package never activates on import.
+- Every scheduler command is written, repeats included, so each command
+  line has all of its scheduler commands beside it. There was a dedupe
+  (for `hpc monitor` polling); it was removed with monitor tracing on the
+  user's decision, 2026-11-15.
+- `hpc monitor` is never traced: the group callback in `cli/main.py` calls
+  `recorder.disable()`, which also stops `[trace] enabled` from starting
+  one. A trace is for debugging what a command submitted or read, not for
+  watching status. `hpc --trace DIR monitor` is a usage error.
+- Every traced command ends with one line on stderr, `trace: N records
+  written to <day directory>`, printed after the record is written so it
+  is not in it. Stderr, so `--json` output stays clean. Without it a
+  `[trace] enabled` left on is silent, and nothing removes what it writes.
+- Nothing is ever removed. The records are the user's to keep or delete;
+  the day directories make that a matter of deleting a directory. There
+  was a sweep (`max_days`); the user removed it, 2026-11-15.
+- `[trace]` keys: `enabled`, `dir` (default `~/.cache/hpc-runner/trace`).
+  Unknown keys and wrong types are errors (`dedupe` and `max_days`, keys
+  until 2026-11-15, are now unknown).
+
+## Not recorded
+
+- The local scheduler: it runs no scheduler command.
+- An interactive job's own output: it goes straight to the terminal.
+- `hpc monitor`: nothing, neither its screen nor its scheduler commands.
+- Use through the Python API has no command-line record; scheduler
+  commands and scripts are recorded once a trace is active.
+- If the terminal's encoding is misconfigured, click writes around the
+  copy and that output is missing from the record (not tested).

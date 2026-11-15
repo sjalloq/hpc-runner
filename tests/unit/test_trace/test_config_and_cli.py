@@ -23,10 +23,8 @@ def _write(tmp_path: Path, body: str) -> Path:
 
 class TestTraceSection:
     def test_loaded(self, tmp_path):
-        cfg = load_config(
-            _write(tmp_path, '[trace]\nenabled = true\ndir = "~/t"\nmax_days = 3\ndedupe = false\n')
-        )
-        assert cfg.trace == {"enabled": True, "dir": "~/t", "max_days": 3, "dedupe": False}
+        cfg = load_config(_write(tmp_path, '[trace]\nenabled = true\ndir = "~/t"\n'))
+        assert cfg.trace == {"enabled": True, "dir": "~/t"}
 
     def test_absent_is_empty(self, tmp_path):
         assert load_config(_write(tmp_path, "")).trace == {}
@@ -77,13 +75,6 @@ class TestGetSchedulerActivates:
         get_scheduler("sge", config=HPCConfig())
         assert current() is None
 
-    def test_bad_max_days_is_a_config_error(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
-        monkeypatch.setenv("HPC_SCHEDULER", "sge")
-        cfg = HPCConfig(trace={"enabled": True, "dir": str(tmp_path), "max_days": 0})
-        with pytest.raises(ConfigError, match="max_days"):
-            get_scheduler("sge", config=cfg)
-
 
 class TestTraceFlag:
     """``hpc --trace DIR`` over the captured SGE fixtures (the fake seam records too)."""
@@ -121,4 +112,5 @@ class TestTraceFlag:
     def test_help(self):
         result = CliRunner().invoke(cli, ["--help"])
         assert "--trace" in result.output
-        assert "trace" in result.output.split("Commands")[-1]
+        # `hpc trace` (compare, bundle) is gone: a trace is read as files.
+        assert " trace " not in result.output.split("Commands")[-1]

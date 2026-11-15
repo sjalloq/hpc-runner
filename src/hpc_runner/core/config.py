@@ -53,7 +53,7 @@ class HPCConfig:
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     types: dict[str, dict[str, Any]] = field(default_factory=dict)
     schedulers: dict[str, dict[str, Any]] = field(default_factory=dict)
-    #: The ``[trace]`` section (``enabled``, ``dir``, ``max_days``, ``dedupe``);
+    #: The ``[trace]`` section (``enabled``, ``dir``);
     #: read by ``get_scheduler`` to start recording scheduler calls.
     trace: dict[str, Any] = field(default_factory=dict)
 

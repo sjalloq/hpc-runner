@@ -56,8 +56,7 @@ Every job alive at a snapshot also gets ``qstat_j_<scenario>.xml``, its
 ``qstat -j <id> -xml`` in that state.
 
 ``manifest.json`` records the job id of every scenario and, for each file,
-what it is and the argv that produced it (``hpc trace compare --fixtures``
-reads the argv to tell which call shapes the fixtures cover).
+what it is and the argv that produced it.
 """
 
 from __future__ import annotations
@@ -199,7 +198,7 @@ class Capture:
         # `-b y sh -c "exit 113"` loses the quoting.
         skipped = self.qsub_script("skipped", "exit 113\n")
         # Submitted as scripts, the way hpc-runner submits (`qsub <script>`), so
-        # the recorded argv has the shape `hpc trace compare` sees in a trace.
+        # the recorded argv has the shape a trace of `hpc run` has.
         plain_script = self.script("qsubtxt.sh", "")
         array_script = self.script("qsubarr.sh", "#$ -t 1-4\n")
         self.capture("qsub.txt", ["qsub", str(plain_script)], "qsub stdout for a plain job")

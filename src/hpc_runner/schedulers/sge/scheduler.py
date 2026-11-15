@@ -65,6 +65,7 @@ from hpc_runner.schedulers.sge.parser import (
     state_to_status,
 )
 from hpc_runner.templates import render_template
+from hpc_runner.trace import recorder
 
 logger = logging.getLogger(__name__)
 
@@ -495,6 +496,7 @@ class SGEScheduler(BaseScheduler):
 
         script_path.write_text(script)
         script_path.chmod(0o755)
+        recorder.note_script(script_path, script)
 
         if keep_script:
             logger.debug("Script saved: %s", script_path)
@@ -552,6 +554,7 @@ class SGEScheduler(BaseScheduler):
         # Write script to shared filesystem
         script_path.write_text(script)
         script_path.chmod(0o755)
+        recorder.note_script(script_path, script)
 
         if keep_script:
             logger.debug("Script saved: %s", script_path)

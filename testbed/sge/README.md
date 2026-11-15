@@ -70,9 +70,8 @@ would show as such (none so far); nothing skips at run time.
 | | test_qsub_verifies_the_golden[4 SGE batch goldens] (`qsub -w v`; two verify, two get the expected site rejection) | pass | pass (`-binding linear:1` is rejected: OCS 9.1 changed the syntax) |
 | test_failures.py | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass | pass |
 | | qmaster stopped | not automated (D-T40): the `master_down` capture scenario and a unit test pin the error | not automated |
-| test_trace.py | test_flag_records_and_compares_clean (`hpc --trace`, `hpc trace compare --fixtures`) | pass | pass |
-| | test_config_enabled_trace (`[trace] enabled`, dedupe across invocations) | pass | pass |
-| | test_bundle_is_scrubbed_and_replays (`hpc trace bundle`) | pass | pass |
+| test_trace.py | test_flag_records_a_session (`hpc --trace`: command line, config, script, scheduler calls, output) | not run since the rewrite of 2026-11-15 | not run |
+| | test_config_enabled_trace (`[trace] enabled`, every scheduler call written) | not run since the rewrite of 2026-11-15 | not run |
 | | shared FS missing | not automated (D-T23); see "Manual checks" | not automated |
 
 ### Where OCS output differs from SoGE

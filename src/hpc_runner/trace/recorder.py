@@ -1,50 +1,66 @@
-"""Record scheduler calls as JSON files (docs/dev/trace/DESIGN.md D-TR1..D-TR7).
+"""Record what one ``hpc`` call did, as JSON files (docs/dev/trace/DESIGN.md).
 
 A :class:`Tracer` is installed once per process with :func:`activate`
 (``hpc --trace DIR``) or :func:`activate_from_config` (``[trace] enabled =
-true``, called by ``get_scheduler``). The subprocess seam calls
-:func:`record` after every scheduler command; with no tracer active that is
-a dictionary lookup and nothing else.
+true``, called by ``get_scheduler``). Two kinds of record are written under
+``<dir>/<YYYY-MM-DD>/``:
 
-Each record is one file, ``<dir>/<YYYY-MM-DD>/<HHMMSS.mmm>-<pid>-<cmd>.json``,
-with the keys the JSON fixtures under ``tests/unit/fixtures/`` use
-(``argv``, ``returncode``, ``stdout``, ``stderr``) plus ``time``,
-``elapsed``, ``pid``, ``cwd``, ``version`` and ``error``.
+- One per scheduler command, ``<HHMMSS.mmm>-<pid>-<cmd>.json``. The
+  subprocess seam calls :func:`record` after every command; with no tracer
+  active that is a dictionary lookup and nothing else. Keys: the ones the
+  JSON fixtures under ``tests/unit/fixtures/`` use (``argv``,
+  ``returncode``, ``stdout``, ``stderr``) plus ``time``, ``elapsed``,
+  ``pid``, ``cwd``, ``version``, ``error`` and, for the command that
+  submitted a job script, ``script`` (its path and text).
+- One per ``hpc`` command line, ``<HHMMSS.mmm>-<pid>-hpc.json``, written by
+  the CLI when the process ends (:class:`Invocation`): the command line,
+  the config files read, the whole environment, what ``hpc`` printed,
+  the error it raised and its exit code.
+
+Nothing is scrubbed: a trace holds real user, host and job names, and every
+environment variable, including any that hold a token or password.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
 import re
-import shutil
+import sys
 import time
+import traceback
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
-from hpc_runner.core.exceptions import ConfigError
+from typing import Any, TextIO
 
 logger = logging.getLogger("hpc_runner.trace")
 
 DEFAULT_TRACE_DIR = "~/.cache/hpc-runner/trace"
-DEFAULT_MAX_DAYS = 14
 
 #: ``[trace]`` keys and their types, for the config schema.
 TRACE_KEYS: Mapping[str, type] = {
     "enabled": bool,
     "dir": str,
-    "max_days": int,
-    "dedupe": bool,
 }
 
-_DAY_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+#: Terminal control sequences (colours, cursor moves, hyperlinks) removed
+#: from recorded output.
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+#: Recorded output of one ``hpc`` call is cut at this many characters.
+OUTPUT_LIMIT = 1_000_000
 
 _active: Tracer | None = None
+
+#: Set by :func:`disable` (``hpc monitor``): no trace starts in this process.
+_disabled = False
+
+#: Job scripts written by a scheduler and not yet submitted: path -> text.
+#: The record of the command whose argv names the path takes the text.
+_scripts: dict[str, str] = {}
 
 
 @dataclass
@@ -52,30 +68,8 @@ class Tracer:
     """Writes one JSON record per scheduler call under *root*."""
 
     root: Path
-    dedupe: bool = True
-    #: Digest of the last record written per argv (D-TR5), seeded from
-    #: today's directory so repeats across invocations dedupe too.
-    _last: dict[tuple[str, ...], str] = field(default_factory=dict, repr=False)
-
-    def seed(self) -> None:
-        """Load the last record per argv from today's directory (D-TR5)."""
-        day = self.root / datetime.now().strftime("%Y-%m-%d")
-        try:
-            paths = sorted(day.glob("*.json"))
-        except OSError:
-            return
-        for path in paths:
-            try:
-                data = json.loads(path.read_text())
-            except (OSError, ValueError):
-                continue
-            if isinstance(data, dict) and isinstance(data.get("argv"), list):
-                self._last[tuple(str(a) for a in data["argv"])] = _digest(
-                    data.get("returncode"),
-                    data.get("stdout"),
-                    data.get("stderr"),
-                    data.get("error"),
-                )
+    #: Records written by this process, for the closing line on stderr.
+    written: int = 0
 
     def record(
         self,
@@ -87,18 +81,9 @@ class Tracer:
         elapsed: float,
         error: str | None = None,
     ) -> Path | None:
-        """Write the record; return its path, or None when deduplicated or unwritable."""
-        key = tuple(argv)
-        signature = _digest(returncode, stdout, stderr, error)
-        if self.dedupe and self._last.get(key) == signature:
-            return None
-        self._last[key] = signature
-
+        """Write the record; return its path, or None when unwritable."""
         now = datetime.now()
-        day = self.root / now.strftime("%Y-%m-%d")
-        stem = f"{now.strftime('%H%M%S')}.{now.microsecond // 1000:03d}-{os.getpid()}-{_name(argv)}"
-        path = day / f"{stem}.json"
-        data = {
+        data: dict[str, Any] = {
             "argv": list(argv),
             "returncode": returncode,
             "stdout": stdout,
@@ -110,10 +95,21 @@ class Tracer:
             "cwd": os.getcwd(),
             "version": _version(),
         }
+        for arg in argv:
+            if arg in _scripts:
+                data["script"] = {"path": arg, "text": _scripts.pop(arg)}
+                break
+        return self.write(now, _name(argv), data)
+
+    def write(self, when: datetime, name: str, data: Mapping[str, Any]) -> Path | None:
+        """Write *data* as ``<day>/<time>-<pid>-<name>.json``; None when unwritable."""
+        day = self.root / when.strftime("%Y-%m-%d")
+        stem = f"{when.strftime('%H%M%S')}.{when.microsecond // 1000:03d}-{os.getpid()}-{name}"
+        path = day / f"{stem}.json"
         try:
             day.mkdir(parents=True, exist_ok=True)
-            # A second call in the same millisecond from the same pid is possible
-            # (dedupe skips the common case); never overwrite.
+            # A second call in the same millisecond from the same pid is
+            # possible; never overwrite.
             n = 0
             while path.exists():
                 n += 1
@@ -122,39 +118,8 @@ class Tracer:
         except OSError as exc:
             logger.warning("trace: cannot write %s: %s", path, exc)
             return None
+        self.written += 1
         return path
-
-    def sweep(self, max_days: int) -> list[Path]:
-        """Remove day directories older than *max_days*; return what was removed (D-TR6)."""
-        cutoff = time.time() - max_days * 86400
-        removed: list[Path] = []
-        try:
-            children = list(self.root.iterdir())
-        except OSError:
-            return removed
-        for child in children:
-            if not child.is_dir() or not _DAY_DIR.match(child.name):
-                continue
-            try:
-                stamp = datetime.strptime(child.name, "%Y-%m-%d").timestamp()
-            except ValueError:
-                continue
-            # The directory holds records written during that day; it is old
-            # once the whole day is past the cutoff.
-            if stamp + 86400 < cutoff:
-                shutil.rmtree(child, ignore_errors=True)
-                removed.append(child)
-        return removed
-
-
-def _digest(
-    returncode: int | None, stdout: str | None, stderr: str | None, error: str | None
-) -> str:
-    h = hashlib.sha1()
-    for part in (returncode, stdout, stderr, error):
-        h.update(repr(part).encode())
-        h.update(b"\0")
-    return h.hexdigest()
 
 
 def _name(argv: Sequence[str]) -> str:
@@ -173,33 +138,41 @@ def current() -> Tracer | None:
     return _active
 
 
-def activate(
-    directory: str | Path, *, max_days: int = DEFAULT_MAX_DAYS, dedupe: bool = True
-) -> Tracer:
-    """Install a tracer writing under *directory* (``~`` expanded); sweep old days.
+def activate(directory: str | Path) -> Tracer:
+    """Install a tracer writing under *directory* (``~`` expanded).
 
     Replaces any active tracer: the CLI flag calls this before the config is
-    read, and :func:`activate_from_config` then leaves it alone (D-TR2).
+    read, and :func:`activate_from_config` then leaves it alone. Nothing
+    under *directory* is ever removed: the records are the user's to keep
+    or delete.
     """
     global _active
     root = Path(directory).expanduser()
-    tracer = Tracer(root=root, dedupe=dedupe)
-    removed = tracer.sweep(max_days)
-    if dedupe:
-        tracer.seed()
-    if removed:
-        logger.debug(
-            "trace: swept %d day director%s", len(removed), "y" if len(removed) == 1 else "ies"
-        )
+    tracer = Tracer(root=root)
     _active = tracer
     logger.debug("trace: recording to %s", root)
     return tracer
 
 
 def deactivate() -> None:
-    """Remove the active tracer (tests)."""
-    global _active
+    """Remove the active tracer and any :func:`disable` (tests)."""
+    global _active, _disabled
     _active = None
+    _disabled = False
+    _scripts.clear()
+
+
+def disable() -> None:
+    """Record nothing in this process, whatever ``[trace]`` says.
+
+    Called for ``hpc monitor``: a trace is for debugging what a command
+    submitted or reported once, and the monitor asks the scheduler the same
+    question every few seconds for as long as it is open.
+    """
+    global _active, _disabled
+    _active = None
+    _disabled = True
+    _scripts.clear()
 
 
 def activate_from_config(trace: Mapping[str, Any]) -> Tracer | None:
@@ -207,22 +180,14 @@ def activate_from_config(trace: Mapping[str, Any]) -> Tracer | None:
 
     Returns the tracer now active (possibly the pre-existing one), or None
     when the table does not enable tracing.
-
-    Raises:
-        ConfigError: ``max_days`` is below 1.
     """
+    if _disabled:
+        return None
     if _active is not None:
         return _active
     if not trace.get("enabled", False):
         return None
-    max_days = int(trace.get("max_days", DEFAULT_MAX_DAYS))
-    if max_days < 1:
-        raise ConfigError(f"[trace] max_days: must be at least 1, got {max_days}")
-    return activate(
-        trace.get("dir", DEFAULT_TRACE_DIR),
-        max_days=max_days,
-        dedupe=bool(trace.get("dedupe", True)),
-    )
+    return activate(trace.get("dir", DEFAULT_TRACE_DIR))
 
 
 def record(
@@ -244,3 +209,146 @@ def record(
             elapsed=elapsed,
             error=error,
         )
+
+
+def note_script(path: str | Path, text: str) -> None:
+    """Remember a job script a scheduler is about to submit.
+
+    The record of the command whose argv names *path* carries the text, so
+    the trace shows the directives and module loads the scheduler saw even
+    though the file deletes itself. Nothing is kept when no trace is active.
+    """
+    if _active is not None:
+        _scripts[str(path)] = text
+
+
+class _Tee:
+    """A text stream that passes everything on to *stream* and keeps a copy."""
+
+    def __init__(self, stream: TextIO) -> None:
+        self._stream = stream
+        self._parts: list[str] = []
+        self._size = 0
+        self.truncated = False
+
+    def write(self, text: str) -> int:
+        if not isinstance(text, str):
+            # A text stream, like the one wrapped: click probes with bytes
+            # to tell the two apart.
+            raise TypeError(f"write() argument must be str, not {type(text).__name__}")
+        if self._size < OUTPUT_LIMIT:
+            self._parts.append(text[: OUTPUT_LIMIT - self._size])
+            self._size += len(text)
+            self.truncated = self._size > OUTPUT_LIMIT
+        else:
+            self.truncated = self.truncated or bool(text)
+        return self._stream.write(text)
+
+    def text(self) -> str:
+        return _ANSI.sub("", "".join(self._parts))
+
+    def __getattr__(self, name: str) -> Any:
+        # isatty, fileno, flush, encoding: the terminal's own answers, so
+        # colour and width detection do not change under a trace.
+        return getattr(self._stream, name)
+
+
+class Invocation:
+    """One ``hpc`` command line, recorded when the process ends.
+
+    The CLI entry point creates one, runs the command inside
+    :meth:`capture` and calls :meth:`finish`. The record is written only if
+    a tracer is active by then (the flag or ``[trace]``), so an untraced
+    call costs two stream wrappers and nothing else.
+    """
+
+    def __init__(self, argv: Sequence[str]) -> None:
+        self.argv = [str(a) for a in argv]
+        self.started = datetime.now()
+        self._clock = time.monotonic()
+        self._stdout: _Tee | None = None
+        self._stderr: _Tee | None = None
+
+    def capture(self) -> None:
+        """Start copying what is written to ``sys.stdout`` and ``sys.stderr``."""
+        self._stdout = _Tee(sys.stdout)
+        self._stderr = _Tee(sys.stderr)
+        sys.stdout = self._stdout
+        sys.stderr = self._stderr
+
+    def release(self) -> None:
+        """Put the real streams back (before a full-screen UI, and at the end)."""
+        if self._stdout is not None and sys.stdout is self._stdout:
+            sys.stdout = self._stdout._stream
+        if self._stderr is not None and sys.stderr is self._stderr:
+            sys.stderr = self._stderr._stream
+
+    def finish(
+        self,
+        *,
+        exit_code: int,
+        error: BaseException | None = None,
+        config_files: Sequence[Path] = (),
+    ) -> Path | None:
+        """Release the streams and write the record; None when no trace is active.
+
+        Args:
+            exit_code: What the process is about to exit with.
+            error: The exception that ended the command, if one did. An
+                ``HPCToolsError`` is recorded by type and message; anything
+                else is a bug and is recorded with its traceback.
+            config_files: The config files read, in merge order.
+        """
+        self.release()
+        tracer = _active
+        if tracer is None:
+            return None
+        data: dict[str, Any] = {
+            "kind": "invocation",
+            "argv": self.argv,
+            "exit_code": exit_code,
+            "stdout": self._stdout.text() if self._stdout is not None else None,
+            "stderr": self._stderr.text() if self._stderr is not None else None,
+            "output_truncated": bool(
+                (self._stdout is not None and self._stdout.truncated)
+                or (self._stderr is not None and self._stderr.truncated)
+            ),
+            "error": _describe(error),
+            "config": [_read(path) for path in config_files],
+            # All of it: a scheduler's own variables (SBATCH_*, SGE_ROOT, ...)
+            # change what a command does, and no list of prefixes stays complete.
+            "env": dict(sorted(os.environ.items())),
+            "time": self.started.isoformat(timespec="milliseconds"),
+            "elapsed": round(time.monotonic() - self._clock, 3),
+            "pid": os.getpid(),
+            "cwd": os.getcwd(),
+            "version": _version(),
+        }
+        path = tracer.write(self.started, "hpc", data)
+        if path is not None:
+            # Said every time, on the real stderr (after the record, so not
+            # in it): a trace left on in a config is otherwise silent, and
+            # nothing removes what it writes.
+            noun = "record" if tracer.written == 1 else "records"
+            print(f"trace: {tracer.written} {noun} written to {path.parent}", file=sys.stderr)
+        return path
+
+
+def _describe(error: BaseException | None) -> dict[str, str] | None:
+    if error is None:
+        return None
+    from hpc_runner.core.exceptions import HPCToolsError
+
+    described = {"type": type(error).__name__, "message": str(error)}
+    if not isinstance(error, HPCToolsError):
+        described["traceback"] = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
+    return described
+
+
+def _read(path: Path) -> dict[str, str | None]:
+    try:
+        return {"path": str(path), "text": path.read_text()}
+    except OSError as exc:
+        return {"path": str(path), "text": None, "error": str(exc)}

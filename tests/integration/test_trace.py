@@ -1,8 +1,9 @@
-"""``hpc --trace`` and ``[trace]`` against the live scheduler, replayed by ``hpc trace compare``.
+"""``hpc --trace`` and ``[trace]`` against the live scheduler.
 
 The unit suite proves the recorder over the captured fixtures; this proves
-that a trace of real ``hpc`` invocations parses clean and that every call
-shape they produce has a captured fixture (docs/dev/trace/DESIGN.md D-TR10).
+that a trace of real ``hpc`` commands holds the command line, the config,
+the script, the scheduler's answers and what ``hpc`` printed
+(docs/dev/trace/DESIGN.md).
 """
 
 from __future__ import annotations
@@ -14,14 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.integration.cluster import SRC_ROOT, Cluster
+from tests.integration.cluster import Cluster
 
 pytestmark = pytest.mark.scheduler("sge")
 
-#: Each flavour's captures are in a subdirectory (``hpc-testbed ... --flavour <name> capture``).
-FIXTURES = SRC_ROOT / "tests" / "unit" / "fixtures" / "sge"
-#: How each flavour's ``qstat -help`` starts (the bundle's ``scheduler`` field).
-VERSION_PREFIX = {"soge": "SGE", "ocs": "OCS"}
 QACCT_TIMEOUT = 30.0
 
 
@@ -29,11 +26,16 @@ def _hpc(cluster: Cluster, *args: str, check: bool = True) -> str:
     return cluster.run([str(cluster.hpc_cli), *args], timeout=90, check=check).stdout
 
 
-def _records(trace: Path) -> list[dict]:
-    return [json.loads(p.read_text()) for p in sorted(trace.rglob("*.json"))]
+def _records(trace: Path) -> tuple[list[dict], list[dict]]:
+    """``(command-line records, scheduler-command records)`` under *trace*."""
+    records = [json.loads(p.read_text()) for p in sorted(trace.rglob("*.json"))]
+    return (
+        [r for r in records if r.get("kind") == "invocation"],
+        [r for r in records if r.get("kind") != "invocation"],
+    )
 
 
-def test_flag_records_and_compares_clean(cluster: Cluster, workdir: Path) -> None:
+def test_flag_records_a_session(cluster: Cluster, workdir: Path) -> None:
     trace = workdir / "trace"
     out = _hpc(
         cluster, "--trace", str(trace), "run", "--batch", "--directory", str(workdir), "true"
@@ -53,27 +55,27 @@ def test_flag_records_and_compares_clean(cluster: Cluster, workdir: Path) -> Non
         time.sleep(1)
     _hpc(cluster, "--trace", str(trace), "status", job_id)
 
-    records = _records(trace)
+    invocations, records = _records(trace)
     commands = {r["argv"][0] for r in records}
     assert {"qsub", "qstat", "qacct"} <= commands, commands
     submit = next(r for r in records if r["argv"][0] == "qsub")
     assert submit["returncode"] == 0 and f"Your job {job_id}" in submit["stdout"]
     assert all(r["error"] is None for r in records), records
+    # The script qsub saw, though the file has deleted itself.
+    assert submit["script"]["path"] == submit["argv"][1]
+    assert submit["script"]["text"].startswith("#!/bin/bash")
+    assert "#$ -N" in submit["script"]["text"]
+    assert not Path(submit["script"]["path"]).exists()
 
-    proc = cluster.run(
-        [
-            str(cluster.hpc_cli),
-            "trace",
-            "compare",
-            str(trace),
-            "--fixtures",
-            str(FIXTURES / cluster.flavour),
-        ],
-        check=False,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "Every record parsed" in proc.stdout
-    assert "no captured fixture" not in proc.stdout
+    # One record per command line, each with what was typed and printed.
+    run = next(r for r in invocations if "run" in r["argv"])
+    assert run["argv"][-5:] == ["run", "--batch", "--directory", str(workdir), "true"]
+    assert run["exit_code"] == 0 and run["error"] is None
+    assert f"Submitted job {job_id}" in run["stdout"]
+    assert run["pid"] == submit["pid"]
+    assert [c["path"] for c in run["config"]] and all(c["text"] for c in run["config"])
+    assert len(invocations) >= 5
+    assert all(r["exit_code"] == 0 for r in invocations), invocations
 
 
 def test_config_enabled_trace(cluster: Cluster, workdir: Path) -> None:
@@ -86,36 +88,12 @@ def test_config_enabled_trace(cluster: Cluster, workdir: Path) -> None:
         f'[trace]\nenabled = true\ndir = "{trace}"\n'
     )
     _hpc(cluster, "--config", str(config), "status")
-    _hpc(cluster, "--config", str(config), "status")  # identical: deduplicated
-    records = _records(trace)
-    assert len(records) == 1, [r["argv"] for r in records]
-    assert records[0]["argv"][:2] == ["qstat", "-xml"]
+    _hpc(cluster, "--config", str(config), "status")  # identical: written again
+    invocations, records = _records(trace)
+    assert len(records) == 2, [r["argv"] for r in records]
+    assert all(r["argv"][:2] == ["qstat", "-xml"] for r in records)
     assert "<job_info" in records[0]["stdout"]
-
-
-def test_bundle_is_scrubbed_and_replays(cluster: Cluster, workdir: Path) -> None:
-    """A bundle of a live trace names no user or host and still passes compare."""
-    import tarfile
-
-    trace = workdir / "trace"
-    _hpc(cluster, "--trace", str(trace), "status")
-    _hpc(cluster, "--trace", str(trace), "status", "--history")
-    out = workdir / "issue.tar.gz"
-    proc = cluster.run([str(cluster.hpc_cli), "trace", "bundle", str(trace), "-o", str(out)])
-    assert proc.stdout.strip() == str(out), proc.stdout
-    assert "tester -> user" in proc.stderr, proc.stderr
-
-    extracted = workdir / "x"
-    with tarfile.open(out) as tar:
-        tar.extractall(extracted, filter="data")
-    (top,) = extracted.iterdir()
-    texts = [p.read_text() for p in (top / "trace").rglob("*.json")]
-    assert texts
-    for text in texts:
-        for word in ("tester", "exec1", "exec2", "login", "/home/"):
-            assert word not in text, (word, text[:300])
-    meta = json.loads((top / "meta.json").read_text())
-    assert meta["scrubbed"] is True
-    assert meta["scheduler"].startswith(VERSION_PREFIX[cluster.flavour]), meta["scheduler"]
-    proc = cluster.run([str(cluster.hpc_cli), "trace", "compare", str(top / "trace")], check=False)
-    assert proc.returncode == 0, proc.stdout
+    # Each command line has its own scheduler call (same pid) and names the config chain.
+    assert len(invocations) == 2
+    assert {r["pid"] for r in records} == {i["pid"] for i in invocations}
+    assert str(config) in [c["path"] for c in invocations[0]["config"]]

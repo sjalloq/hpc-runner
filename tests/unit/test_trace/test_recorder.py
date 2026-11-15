@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from hpc_runner.core.exceptions import (
-    ConfigError,
     SchedulerCommandError,
     SchedulerTimeoutError,
     SchedulerUnavailableError,
@@ -24,6 +23,7 @@ from hpc_runner.trace import (
     activate_from_config,
     current,
     deactivate,
+    disable,
 )
 
 PY = sys.executable
@@ -96,29 +96,19 @@ class TestRecordAtTheSeam:
         assert rec["stdout"] is None and rec["stderr"] is None
 
 
-class TestDedupe:
-    def test_identical_repeat_is_dropped(self, tmp_path):
+class TestEveryCallIsWritten:
+    def test_identical_repeat_is_kept(self, tmp_path):
         activate(tmp_path)
         for _ in range(3):
             run_command([PY, "-c", "print('same')"], timeout=10)
-        assert len(_records(tmp_path)) == 1
+        assert len(_records(tmp_path)) == 3
 
-    def test_change_is_kept(self, tmp_path):
+    def test_repeat_in_a_new_process_is_kept(self, tmp_path):
         activate(tmp_path)
-        run_command([PY, "-c", "print('a')"], timeout=10)
-        run_command([PY, "-c", "print('a')"], timeout=10)
-        run_command([PY, "-c", "print('b')"], timeout=10)
-        assert [r["argv"][-1] for r in _records(tmp_path)] == ["print('a')", "print('b')"]
-
-    def test_different_argv_are_independent(self, tmp_path):
-        tracer = activate(tmp_path)
-        tracer.record(["qstat", "-xml"], returncode=0, stdout="x", stderr="", elapsed=0)
-        tracer.record(["qacct", "-j", "1"], returncode=0, stdout="x", stderr="", elapsed=0)
-        assert len(_records(tmp_path)) == 2
-
-    def test_dedupe_off(self, tmp_path):
-        activate(tmp_path, dedupe=False)
         run_command([PY, "-c", "print('same')"], timeout=10)
+        deactivate()
+        # A new process: a fresh tracer over the same directory.
+        activate(tmp_path)
         run_command([PY, "-c", "print('same')"], timeout=10)
         assert len(_records(tmp_path)) == 2
 
@@ -133,7 +123,7 @@ class TestDedupe:
                 return datetime(2026, 10, 31, 12, 0, 0, 123000)
 
         monkeypatch.setattr(mod, "datetime", Frozen)
-        tracer = Tracer(tmp_path, dedupe=False)
+        tracer = Tracer(tmp_path)
         tracer.record(["qstat"], returncode=0, stdout="a", stderr="", elapsed=0)
         tracer.record(["qstat"], returncode=0, stdout="b", stderr="", elapsed=0)
         names = sorted(p.name for p in tmp_path.rglob("*.json"))
@@ -141,34 +131,6 @@ class TestDedupe:
             f"120000.123-{os.getpid()}-qstat-1.json",
             f"120000.123-{os.getpid()}-qstat.json",
         ]
-
-
-class TestSweep:
-    def test_old_day_directories_removed(self, tmp_path):
-        today = date.today()
-        old = tmp_path / (today - timedelta(days=20)).isoformat()
-        recent = tmp_path / (today - timedelta(days=3)).isoformat()
-        other = tmp_path / "notes"
-        for d in (old, recent, other):
-            d.mkdir()
-            (d / "x.json").write_text("{}")
-        removed = Tracer(tmp_path).sweep(max_days=14)
-        assert removed == [old]
-        assert not old.exists() and recent.exists() and other.exists()
-
-    def test_boundary_day_is_kept(self, tmp_path):
-        edge = tmp_path / (date.today() - timedelta(days=14)).isoformat()
-        edge.mkdir()
-        assert Tracer(tmp_path).sweep(max_days=14) == []
-
-    def test_missing_root_is_fine(self, tmp_path):
-        assert Tracer(tmp_path / "nope").sweep(14) == []
-
-    def test_activate_sweeps(self, tmp_path):
-        old = tmp_path / (date.today() - timedelta(days=40)).isoformat()
-        old.mkdir()
-        activate(tmp_path, max_days=14)
-        assert not old.exists()
 
 
 class TestActivation:
@@ -186,7 +148,6 @@ class TestActivation:
             == Path(DEFAULT_TRACE_DIR).expanduser()
             == tmp_path / ".cache/hpc-runner/trace"
         )
-        assert tracer.dedupe is True
 
     def test_disabled_or_empty_table_does_nothing(self):
         assert activate_from_config({}) is None
@@ -194,17 +155,13 @@ class TestActivation:
         assert current() is None
 
     def test_config_values_used(self, tmp_path):
-        tracer = activate_from_config({"enabled": True, "dir": str(tmp_path), "dedupe": False})
-        assert tracer is not None and tracer.root == tmp_path and tracer.dedupe is False
+        tracer = activate_from_config({"enabled": True, "dir": str(tmp_path)})
+        assert tracer is not None and tracer.root == tmp_path
 
     def test_flag_beats_config(self, tmp_path):
         flag = activate(tmp_path / "flag")
         assert activate_from_config({"enabled": True, "dir": str(tmp_path / "cfg")}) is flag
         assert current() is flag
-
-    def test_max_days_below_one(self, tmp_path):
-        with pytest.raises(ConfigError, match=r"\[trace\] max_days"):
-            activate_from_config({"enabled": True, "dir": str(tmp_path), "max_days": 0})
 
     def test_deactivate(self, tmp_path):
         activate(tmp_path)
@@ -220,24 +177,16 @@ class TestActivation:
         assert "trace: cannot write" in caplog.text
 
 
-class TestDedupeAcrossProcesses:
-    def test_seeded_from_todays_directory(self, tmp_path):
-        first = activate(tmp_path)
-        run_command([PY, "-c", "print('same')"], timeout=10)
-        deactivate()
-        # A new process: a fresh tracer over the same directory.
-        second = activate(tmp_path)
-        assert second is not first
-        run_command([PY, "-c", "print('same')"], timeout=10)
-        assert len(_records(tmp_path)) == 1
-        run_command([PY, "-c", "print('other')"], timeout=10)
-        assert len(_records(tmp_path)) == 2
+class TestDisable:
+    def test_no_trace_starts_once_disabled(self, tmp_path):
+        activate(tmp_path)
+        disable()
+        assert current() is None
+        assert activate_from_config({"enabled": True, "dir": str(tmp_path)}) is None
+        run_command([PY, "-c", "print('x')"], timeout=10)
+        assert _records(tmp_path) == []
 
-    def test_seed_ignores_junk(self, tmp_path):
-        day = tmp_path / date.today().isoformat()
-        day.mkdir()
-        (day / "junk.json").write_text("[1]")
-        (day / "bad.json").write_text("{")
-        tracer = Tracer(tmp_path)
-        tracer.seed()
-        assert tracer._last == {}
+    def test_deactivate_clears_it(self, tmp_path):
+        disable()
+        deactivate()
+        assert activate_from_config({"enabled": True, "dir": str(tmp_path)}) is not None

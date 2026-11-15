@@ -263,13 +263,29 @@ by every scheduler.
 Trace settings
 --------------
 
-``[trace]`` turns on a recording of every scheduler command hpc-runner
-runs (``qsub``, ``qstat``, ``qacct``, ...), one JSON file per call with the
-argv, exit status, stdout and stderr, under one directory per day. It is
-the same recording ``hpc --trace DIR`` makes for a single invocation, kept
-across every invocation while the setting is on, so a period of normal use
-can be checked against the parsers afterwards with ``hpc trace compare``
-and packed, scrubbed, for a bug report with ``hpc trace bundle`` (:doc:`cli`).
+``[trace]`` turns on a recording of what every ``hpc`` command does, as
+JSON files under one directory per day. It is the same recording ``hpc
+--trace DIR`` makes for a single command (:doc:`cli`), kept across every
+command while the setting is on:
+
+- ``<time>-<pid>-hpc.json``, one per ``hpc`` command: the command line
+  (``argv``), the config files read with their text (``config``), the
+  whole environment, one variable per line (``env``), what ``hpc`` printed (``stdout``,
+  ``stderr``, without colour codes), the error it raised (``error``) and
+  its ``exit_code``.
+- ``<time>-<pid>-<command>.json``, one per scheduler command (``qsub``,
+  ``qstat``, ``qacct``, ...): ``argv``, ``returncode``, ``stdout``,
+  ``stderr``. The record of the command that submitted a job also has
+  ``script``: the path and full text of the job script, which otherwise
+  deletes itself.
+
+The process id in the file name ties a command to the scheduler commands
+it ran. The output of an interactive job goes straight to the terminal and
+is not recorded. ``hpc monitor`` is never traced, with the flag or the
+setting: a trace is for debugging what a command submitted or read. Nothing is
+scrubbed: the records hold real user, host and job names and every
+environment variable, which may include a token or password. Before a
+record leaves your site, delete or edit the lines that must not.
 
 .. list-table::
    :header-rows: 1
@@ -282,29 +298,23 @@ and packed, scrubbed, for a bug report with ``hpc trace bundle`` (:doc:`cli`).
    * - ``enabled``
      - bool
      - ``false``
-     - Record scheduler calls.
+     - Record every ``hpc`` command.
    * - ``dir``
      - string
      - ``~/.cache/hpc-runner/trace``
      - Where the records go (``~`` is expanded). Private to you: nothing is
-       scrubbed until ``hpc trace bundle``.
-   * - ``max_days``
-     - integer
-     - ``14``
-     - Day directories older than this are removed when recording starts.
-   * - ``dedupe``
-     - bool
-     - ``true``
-     - Do not write a call whose argv and output equal the previous call
-       with that argv. ``hpc monitor`` polls every few seconds and most
-       snapshots are identical; the trace keeps the first of each run.
+       scrubbed.
 
 .. code-block:: toml
 
    [trace]
    enabled = true
    dir = "~/.cache/hpc-runner/trace"
-   max_days = 14
+
+Nothing removes old records: every command adds files for as long as the
+setting is on, and says so in a closing line on stderr (``trace: 3 records
+written to ...``). Turn it off when you have what you need, and delete the day
+directories you no longer want.
 
 The local scheduler runs no scheduler command and is not traced.
 
