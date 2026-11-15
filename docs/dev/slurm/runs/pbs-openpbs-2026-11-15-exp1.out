@@ -1,0 +1,157 @@
+=== P1 plain qsub: directory, environment, login shell, default output name
+id=2.master
+env.sh
+env.sh.e2
+env.sh.o2
+JOB=2.master IDX=[unset] NCPUS=[1] PWD=/home/tester O_WORKDIR=/work/pval-1794737561 HOST=exec1
+PATH=/home/tester/.local/bin:/home/tester/bin:/usr/share/Modules/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/opt/pbs/bin
+HOME=[/home/tester] MARK=[unset] TMPDIR=[/var/tmp/pbs.2.master]
+login=no fn: undefined module: function
+job_state = F
+exec_host = exec1/0
+exec_vnode = (exec1:ncpus=1)
+Resource_List.ncpus = 1
+Resource_List.nodect = 1
+Resource_List.place = pack
+Resource_List.select = 1:ncpus=1
+substate = 92
+comment = Job run at Sun Nov 15 at 10:12 on (exec1:ncpus=1) and finished
+Exit_status = 0
+=== P2 -V: caller's variables and a bash function
+JOB=3.master IDX=[unset] NCPUS=[1] PWD=/home/tester O_WORKDIR=/work/pval-1794737561 HOST=exec1
+PATH=/home/tester/.local/bin:/home/tester/bin:/usr/share/Modules/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/opt/pbs/bin
+HOME=[/home/tester] MARK=[unset] TMPDIR=[/var/tmp/pbs.3.master]
+login=no fn: undefined module: function
+=== P3 -v MARK
+HOME=[/home/tester] MARK=[from-caller] TMPDIR=[/var/tmp/pbs.4.master]
+=== P4 exit codes: exit 3, kill -9 self, kill -15 self
+[exit 3] job_state=F Exit_status=3
+[kill -9 $$] job_state=F Exit_status=265
+[kill -15 $$] job_state=F Exit_status=271
+=== P5 output into a missing directory
+submit: 8.master
+job_state = E
+exec_host = exec1/0
+exec_vnode = (exec1:ncpus=1)
+Resource_List.ncpus = 1
+Resource_List.nodect = 1
+Resource_List.place = pack
+Resource_List.select = 1:ncpus=1
+substate = 51
+comment = Job run at Sun Nov 15 at 10:12 on (exec1:ncpus=1)
+Exit_status = 0
+ls: cannot access 'nodir': No such file or directory
+=== P6 unknown names at submit: job-wide, inside select, queue, bad boolean
+[-l nosuch=1] rc=187 qsub: Unknown resource Resource_List.nosuch
+[-l select=1:nosuch=1] rc=187 qsub: Unknown resource: nosuch
+[-q nosuch] rc=170 qsub: Unknown queue
+[-l select=1:fast=maybe] rc=166 qsub: Illegal attribute or resource value
+[-l select=1:ncpus=99] rc=0 13.master
+[-l lic=5] rc=0 14.master
+[-W depend=afterok:999999.master] rc=0 15.master
+8.master E
+13.master Q
+14.master Q
+8.master: comment = Job run at Sun Nov 15 at 10:12 on (exec1:ncpus=1)
+13.master: comment = Can Never Run: Insufficient amount of resource: ncpus (R: 99 A: 4
+14.master: comment = Can Never Run: Insufficient amount of server resource: lic (R: 5
+/tmp/pexp1.sh: line 29: xargs: command not found
+=== P7 size suffixes on scratch: 500mb 500MB 500m 500M 1G 1gb 1GB bare
+[scratch=500mb] rc=0 16.master Resource_List.scratch=500mb Resource_List.select=1:scratch=500mb
+[scratch=500MB] rc=0 17.master Resource_List.scratch=500mb Resource_List.select=1:scratch=500MB
+[scratch=500m] rc=0 18.master Resource_List.scratch=500mb Resource_List.select=1:scratch=500m
+[scratch=500M] rc=0 19.master Resource_List.scratch=500mb Resource_List.select=1:scratch=500M
+[scratch=1G] rc=0 20.master Resource_List.scratch=1gb Resource_List.select=1:scratch=1G
+[scratch=1gb] rc=0 21.master Resource_List.scratch=1gb Resource_List.select=1:scratch=1gb
+[scratch=1GB] rc=0 22.master Resource_List.scratch=1gb Resource_List.select=1:scratch=1GB
+[scratch=500] rc=0 23.master Resource_List.scratch=500b Resource_List.select=1:scratch=500
+=== P8 scratch is booked: two jobs on exec1, 600mb each of 1gb
+24.master R comment = Job run at Sun Nov 15 at 10:13 on (exec1:scratch=614400kb:ncpus=1
+25.master Q comment = Not Running: Insufficient amount of resource: host
+     resources_available.scratch = 1gb
+     resources_assigned.scratch = 614400kb
+=== P9 licence is counted: three jobs, lic=1 each, 2 available
+qstat: 8.master Job has finished, use -x or -H to obtain historical job information
+8.master E
+13.master Q comment = Can Never Run: Insufficient amount of resource: ncpus (R: 99 A: 4
+14.master Q comment = Can Never Run: Insufficient amount of server resource: lic (R: 5
+26.master R comment = Job run at Sun Nov 15 at 10:13 on (exec1:ncpus=1)
+27.master R comment = Job run at Sun Nov 15 at 10:13 on (exec2:ncpus=1)
+28.master Q comment = Not Running: Insufficient amount of server resource: lic (R: 1 A:
+    resources_available.lic = 2
+    resources_assigned.lic = 2
+    pbs_license_min = 0
+    pbs_license_max = 2147483647
+    pbs_license_linger_time = 31536000
+    license_count = Avail_Global:1000000 Avail_Local:1000000 Used:0 High_Use:0
+/tmp/pexp1.sh: line 35: xargs: command not found
+=== P10 feature and gpu: where they run
+[-l select=1:fast=True] rc=0 job_state=F exec_host=exec1/0 Resource_List.select=1:fast=True  comment = Job run at Sun Nov 15 at 10:13 on (exec1:ncpus=1) and finished
+[-l select=1:fast=true] rc=0 job_state=F exec_host=exec1/0 Resource_List.select=1:fast=true  comment = Job run at Sun Nov 15 at 10:13 on (exec1:ncpus=1) and finished
+[-l select=1:fast=1] rc=0 job_state=F exec_host=exec1/1 Resource_List.select=1:fast=1  comment = Job run at Sun Nov 15 at 10:13 on (exec1:ncpus=1) and finished
+[-l select=1:fast=False] rc=0 job_state=F exec_host=exec2/0 Resource_List.select=1:fast=False  comment = Job run at Sun Nov 15 at 10:13 on (exec2:ncpus=1) and finished
+[-l select=1:ngpus=1] rc=0 job_state=F exec_host=exec1/1 Resource_List.select=1:ngpus=1  comment = Job run at Sun Nov 15 at 10:13 on (exec1:ngpus=1:ncpus=1) and fin
+[-l select=1:ngpus=2] rc=0 job_state=Q Resource_List.select=1:ngpus=2  comment = Can Never Run: Insufficient amount of resource: ngpus (R: 2 A: 1
+[-l select=1:host=exec2] rc=0 job_state=F exec_host=exec2/0 Resource_List.select=1:host=exec2  comment = Job run at Sun Nov 15 at 10:13 on (exec2:ncpus=1) and finished
+[-l select=1:mem=1gb] rc=0 job_state=F exec_host=exec1/0 Resource_List.mem=1gb Resource_List.select=1:mem=1gb  comment = Job run at Sun Nov 15 at 10:14 on (exec1:mem=1048576kb:ncpus=1) a
+[-l mem=1gb] rc=0 job_state=F exec_host=exec1/0 Resource_List.mem=1gb Resource_List.select=1:mem=1gb:ncpus=1  comment = Job run at Sun Nov 15 at 10:14 on (exec1:mem=1048576kb:ncpus=1) a
+[-l select=1:ncpus=2] rc=0 job_state=F exec_host=exec1/0*2 Resource_List.select=1:ncpus=2  comment = Job run at Sun Nov 15 at 10:14 on (exec1:ncpus=2) and finished
+=== P11 arrays: ids, per-subjob resources, output names, a failing subjob
+id=39[].master
+13.master 99 Q
+14.master 1 Q
+39[].master 2 B
+39[1].master 2 R
+39[2].master 2 R
+39[3].master 2 Q
+Job Id: 39[1].master
+    job_state = F
+    exec_host = exec1/0*2
+    Resource_List.ncpus = 2
+    Exit_status = 0
+Job Id: 39[2].master
+    job_state = F
+    exec_host = exec2/0*2
+    Resource_List.ncpus = 2
+    Exit_status = 1
+    job_state = F
+    Exit_status = 0
+    array_state_count = Queued:0 Running:0 Exiting:0 Expired:0
+arr.sh
+arr.sh.e39.1
+arr.sh.e39.2
+arr.sh.e39.3
+arr.sh.o39.1
+arr.sh.o39.2
+arr.sh.o39.3
+JOB=39[1].master ARRAYID=39[].master IDX=1 NCPUS=2
+=== P12 dependencies: afterok on a parent that fails / succeeds
+child of failed parent:
+job_state = F
+substate = 92
+child of good parent:
+job_state = F
+Exit_status = 0
+=== P13 priority, time limit, cancel
+walltime: comment = Job run at Sun Nov 15 at 10:14 on (exec1:ncpus=1) and exceeded re Exit_status = -29
+running: R held: H u
+after qdel 45.master: job_state = F comment = Job run at Sun Nov 15 at 10:14 on (exec1:ncpus=1) and terminated  Exit_status = 271
+after qdel 46.master: job_state = F
+[-p 100] rc=0 47.master
+[-p -100] rc=0 48.master
+[-p 2000] rc=2 qsub: illegal -p value
+usage: qsub [-a date_time] [-A account_string] [-c interval]
+	[-C directive_prefix] [-e path] [-f ] [-h ] [-I [-X]] [-j oe|eo] [-J X-Y[:Z]]
+	[-k keep] [-l resource_list] [-m mail_options] [-M user_list]
+	[-N jobname] [-o path] [-p priority] [-P project] [-q queue] [-r y|n]
+	[-R o|e|oe] [-S path] [-u user_list] [-W otherattributes=value...]
+	[-v variable_list] [-V ] [-z] [script | -- command [arg1 ...]]
+       qsub --version
+=== P14 qstat on an unknown id; history of a finished job
+qstat: Unknown Job Id 999999.master
+rc=153
+qstat: Unknown Job Id 999999.master
+rc=153
+qstat: 42.master Job has finished, use -x or -H to obtain historical job information
+plain qstat on a finished job rc=35
+=== done

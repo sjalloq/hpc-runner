@@ -12,7 +12,7 @@ with no provenance is as suspect as a config value nobody can trace.
 | this code: a name, a path, a signature, a behaviour | the file and line read this session, or the command run and its output |
 | a scheduler or a library | its source at a named tag, its man page, or a capture under `tests/unit/fixtures/` |
 | a command: an acceptance step, a build, a test | the command run this session and what it printed |
-| a decision | its number in a `DECISIONS.md` |
+| a decision | the plan or decision file that states it |
 
 Recall of the architecture, of a man page, of how a flag usually works or of
 what a test file probably contains is the hypothesis that sends you to the
@@ -51,4 +51,4 @@ silent wherever a Slurm choice met existing code (the output pattern, the
 shared module keys, the interactive exit-code path), because the planning
 research covered Slurm and left hpc-runner's own code to recall. The tickets
 were deleted in the reset of 2026-11-11; what the review found is in
-`docs/dev/slurm/DECISIONS.md` ("Open questions", "Implementation notes").
+`docs/dev/slurm/PLAN.md` ("Open questions", "Build notes").

@@ -16,8 +16,8 @@ pytest                                            # unit suite (tests/unit); int
 mypy src/hpc_runner && ruff check src/hpc_runner tests && ruff format src/hpc_runner tests
 make -C docs html SPHINXOPTS="-W --keep-going"    # warnings are errors
 pytest tests/unit/test_golden.py --update-golden  # only after an intended template change
-hpc-testbed pytest --up                           # integration suite against SGE in Docker
-hpc-testbed --flavour ocs capture                 # regenerate that flavour's fixtures from its running stack
+hpc-testbed --scheduler sge pytest --up           # integration suite against SGE in Docker (--flavour ocs for the other release)
+hpc-testbed --scheduler sge --flavour ocs capture # regenerate that flavour's fixtures from its running stack
 hpc run --dry-run echo hello                      # preview a script; HPC_SCHEDULER=local hpc run ... runs one here
 ```
 
@@ -29,8 +29,13 @@ hpc run --dry-run echo hello                      # preview a script; HPC_SCHEDU
   written as `unverified`, never as fact. A plan that touches existing code
   includes a pass over that code, with the same care as the pass over the
   external system. Procedure: `docs/agents/evidence.md`.
+- **Research is finished only when it is verified.** Every claim in a
+  research file has been checked against its source by a second, independent
+  pass. A file with unchecked or unconfirmed claims is reported as
+  unfinished, in the first line of the hand-over, and nothing is planned or
+  decided on it until the gaps are closed or the user accepts them by name.
 - **Scheduler output comes from captures.** Parser tests read
-  `tests/unit/fixtures/<family>/<flavour>/`, written by `hpc-testbed capture`
+  `tests/unit/fixtures/<scheduler>/<flavour>/`, written by `hpc-testbed capture`
   from the Docker testbed in `testbed/`. A text no capture provides is an
   escalation, not a hand-written fixture. Nothing captured from a real work
   cluster enters the repo, scrubbed or not.
@@ -70,11 +75,12 @@ hpc run --dry-run echo hello                      # preview a script; HPC_SCHEDU
 - `docs/dev/README.md` is the index: every piece of work, its status, the
   one file to read and the next action. Read it first; update it whenever a
   status or next action changes.
-- `docs/dev/<topic>/`: one folder per piece of work, holding its decision
-  log of numbered items (D1.., D-T.., D-TR.., D-S..) and any reference the
-  code cites. A plan or review is deleted once it has been carried out
+- `docs/dev/<topic>/`: one folder per piece of work, holding its plan or
+  decision file and any reference the code cites. Plans are terse bullet
+  points in plain words: no new numbered decision labels, no terms the file
+  does not define. A plan or review is deleted once it has been carried out
   (git keeps it). Not built by Sphinx, never at the repo root. There are no
-  tickets: work is taken from a decision log, one item at a time.
+  tickets: work is taken from the plan, one item at a time.
 - `docs/agents/evidence.md`: the provenance procedure.
 - `hpc monitor` styling: `docs/dev/tui/TEXTUAL_STYLING_COOKBOOK.md`, rules
   and checklist at the top. Verify visually after any TUI edit.

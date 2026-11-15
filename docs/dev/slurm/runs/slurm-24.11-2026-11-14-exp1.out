@@ -1,0 +1,139 @@
+=== S1 plain sbatch: cwd, cpus var, login shell, env size (default --export=ALL)
+JOB=3 ARRAY=_ CPT=[unset] NTASKS=[unset] ONNODE=[1] PWD=/work/val-1794672325 HOST=exec1
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+HOME=[/home/tester] USER=[] MARK=[from-caller] VAR2=[unset]
+login=no nvars=92 nslurm=34
+fn: undefined module: function BASH_FUNC=3
+JobID|JobName|State|ExitCode|AllocCPUS|ReqMem|NodeList|Reason
+3|env.sh|COMPLETED|0:0|1|100M|exec1|None
+3.batch|batch|COMPLETED|0:0|1||exec1|
+=== S2 -c 2 without -n: tasks, cpus
+JOB=4 ARRAY=_ CPT=[2] NTASKS=[unset] ONNODE=[2] PWD=/work/val-1794672325 HOST=exec1
+   NumNodes=1 NumCPUs=2 NumTasks=1 CPUs/Task=2 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=2,mem=200M,node=1,billing=2
+   AllocTRES=cpu=2,mem=200M,node=1,billing=2
+=== S3 --export=NONE
+JOB=5 ARRAY=_ CPT=[unset] NTASKS=[unset] ONNODE=[1] PWD=/work/val-1794672325 HOST=exec1
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+HOME=[/home/tester] USER=[tester] MARK=[unset] VAR2=[unset]
+login=no nvars=91 nslurm=36
+fn: undefined module: function BASH_FUNC=3
+=== S4 --export=MARK (explicit list, no ALL)
+JOB=6 ARRAY=_ CPT=[unset] NTASKS=[unset] ONNODE=[1] PWD=/work/val-1794672325 HOST=exec1
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+HOME=[/home/tester] USER=[tester] MARK=[from-caller] VAR2=[unset]
+login=no nvars=92 nslurm=36
+fn: undefined module: function BASH_FUNC=3
+=== S5 --export=ALL,VAR2=x with VAR2=caller in the environment: which value wins
+HOME=[/home/tester] USER=[tester] MARK=[from-caller] VAR2=[x]
+=== S6 bash function through ALL and through NONE
+fn: function module: function BASH_FUNC=4
+fn: undefined module: function BASH_FUNC=3
+=== S7 parent -c 2 submits child without -c: child's SLURM_CPUS_PER_TASK
+parent CPT=2 JOB=10
+11
+JOB=11 ARRAY=_ CPT=[1] NTASKS=[unset] ONNODE=[1] PWD=/work/val-1794672325 HOST=exec1
+=== S8 output into a missing directory (24.11)
+JobID|JobName|State|ExitCode|AllocCPUS|ReqMem|NodeList|Reason
+12|env.sh|COMPLETED|0:0|1|100M|exec1|None
+12.batch|batch|COMPLETED|0:0|1||exec1|
+total 4
+drwxr-xr-x 1 tester tester  12 Nov 14 16:05 .
+drwxr-xr-x 1 tester tester   6 Nov 14 16:05 ..
+-rw-r--r-- 1 tester tester 282 Nov 14 16:05 s8.out
+=== S9 exit codes in sacct: exit 3, kill -9 self, kill -15 self
+[exit 3]
+13|wrap|FAILED|3:0|1|100M|exec1|None
+13.batch|batch|FAILED|3:0|1||exec1|
+[kill -9 $$]
+14|wrap|FAILED|0:9|1|100M|exec1|None
+14.batch|batch|CANCELLED|0:9|1||exec1|
+[kill -15 $$]
+15|wrap|FAILED|0:15|1|100M|exec1|None
+15.batch|batch|CANCELLED|0:15|1||exec1|
+=== S10 srun: exit code, signal, output streams, cwd, allocation released
+srun: error: exec1: task 0: Exited with exit code 7
+err
+out
+/work/val-1794672325
+rc=7
+srun: error: exec1: task 0: Killed
+srun: Force Terminated StepId=17.0
+kill9 rc=137
+srun: error: exec1: task 0: Terminated
+srun: Force Terminated StepId=18.0
+kill15 rc=143
+squeue after srun: 0 jobs
+=== S11 srun failures, with and without SLURM_EXIT_ERROR
+srun: error: invalid partition specified: nosuch
+srun: error: Unable to allocate resources: Invalid partition name specified
+bad partition rc=1
+srun: error: invalid partition specified: nosuch
+srun: error: Unable to allocate resources: Invalid partition name specified
+bad partition with SLURM_EXIT_ERROR=112 rc=112
+bad account rc=0
+srun: error: exec1: task 0: Exited with exit code 5
+command exit 5 with SLURM_EXIT_ERROR rc=5
+=== S12 srun --export=NONE environment
+JOB=21 ARRAY=_ CPT=[unset] NTASKS=[1] ONNODE=[1] PWD=/work/val-1794672325 HOST=exec1
+PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:.
+HOME=[] USER=[] MARK=[unset] VAR2=[unset]
+login=no nvars=52 nslurm=48
+fn: undefined module: undefined BASH_FUNC=0
+rc=0
+=== S13 srun client killed (INT twice, HUP, TERM)
+srun: interrupt (one more within 1 sec to abort)
+srun: StepId=22.0 task 0: running
+srun: sending Ctrl-C to StepId=22.0
+srun: forcing job termination
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+sig INT: srun rc=130 job 22
+22|sleep|CANCELLED by 1003|0:0|1|100M|exec1|None
+22.0|sleep|CANCELLED by 1003|0:2|1||exec1|
+srun: forcing job termination
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd-exec1: error: *** STEP 23.0 ON exec1 CANCELLED AT 2026-11-14T16:06:11 ***
+srun: error: exec1: task 0: Killed
+sig HUP: srun rc=137 job 23
+23|sleep|FAILED|0:9|1|100M|exec1|None
+23.0|sleep|CANCELLED by 1003|0:9|1||exec1|
+srun: forcing job termination
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd-exec1: error: *** STEP 24.0 ON exec1 CANCELLED AT 2026-11-14T16:06:19 ***
+srun: error: exec1: task 0: Killed
+sig TERM: srun rc=137 job 24
+24|sleep|FAILED|0:9|1|100M|exec1|None
+24.0|sleep|CANCELLED by 1003|0:9|1||exec1|
+=== S14 sbatch rejections
+[-p nosuch] rc=1 sbatch: error: invalid partition specified: nosuch
+sbatch: error: Batch job submission failed: Invalid partition name specified
+[-A nosuch] rc=0 Submitted batch job 25
+[--gres=nosuch:1] rc=1 sbatch: error: Invalid generic resource (gres) specification
+[-C nosuch] rc=1 sbatch: error: Batch job submission failed: Invalid feature specification
+[-L nosuch:1] rc=1 sbatch: error: Batch job submission failed: Invalid license specification
+[-L lic:5] rc=1 sbatch: error: Batch job submission failed: Invalid license specification
+[--gres=gpu:5] rc=1 sbatch: error: Batch job submission failed: Requested node configuration is not available
+[--tmp=5000] rc=1 sbatch: error: Temporary disk specification can not be satisfied
+sbatch: error: Batch job submission failed: Requested node configuration is not available
+[--mem=999999] rc=1 sbatch: error: Memory specification can not be satisfied
+sbatch: error: Batch job submission failed: Requested node configuration is not available
+[-d afterok:999999] rc=1 sbatch: error: Batch job submission failed: Job dependency problem
+=== S15 accepted requests: where they run
+[-C fast] COMPLETED|exec1|100M|billing=1,cpu=1,mem=100M,node=1
+[--gres=gpu:1] COMPLETED|exec1|100M|billing=1,cpu=1,mem=100M,node=1
+[-L lic:1] COMPLETED|exec1|100M|billing=1,cpu=1,mem=100M,node=1
+[--tmp=800] COMPLETED|exec1|100M|billing=1,cpu=1,mem=100M,node=1
+[--mem=1G] COMPLETED|exec1|1G|billing=1,cpu=1,mem=1G,node=1
+[--mem=1000] COMPLETED|exec1|1000M|billing=1,cpu=1,mem=1000M,node=1
+=== S16 --tmp is a filter: two jobs at once on exec1, each --tmp=800 of TmpDisk=1000
+36 RUNNING exec1 None
+37 RUNNING exec1 None
+=== S17 licences are counted: three jobs, -L lic:1 each, Total=2
+40 PENDING Licenses
+38 RUNNING None
+39 RUNNING None
+    Total=2 Used=2 Free=0 Reserved=0 Remote=no
+=== S18 SBATCH_PARTITION against a #SBATCH directive and against the command line
+directive all, env short -> short
+cmdline all, env short -> all
+=== done

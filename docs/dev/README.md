@@ -7,28 +7,20 @@ update it whenever a status or a next action changes. User documentation is
 
 ## Next actions, in order
 
-1. **Implement D-S29** (`slurm/DECISIONS.md`): remove `nodes` and `tasks`
-   (clause 4), make a backend refuse a portable key it cannot honour
-   (clause 5), add the backend-by-key contract test (clause 7).
-2. **Close the Slurm open questions** with the user, one at a time, in the
-   order given under "Open questions" in `slurm/DECISIONS.md`. Each answer
-   becomes a numbered amendment there.
-3. **Put the resource keys through D-S29 clause 2**: D-S21's three maps,
-   then `scratch` (open questions Q2 and Q18). The rows of
-   `slurm/RESOURCES_COMPARISON.md` a key relies on are re-checked against
-   their sources first; only eight quotes in it were independently checked.
-4. **Start the Slurm build** at D-S27 step 0 (housekeeping: D-S25, the
-   D-S21 config change, the D-S26 correction), then step 1 (the testbed).
+1. Review `slurm/PLAN.md` against the two fact files (research closed
+   2026-11-15; testbeds for SGE, Slurm and PBS exist; LSF dropped).
+2. Answer the open questions in `slurm/PLAN.md`, one at a time.
+3. Continue down "Order of work".
 
 ## Work
 
 | Work | Status | Read | What is left |
 |---|---|---|---|
-| Slurm backend | Decided (D-S1..D-S29), nothing implemented | `slurm/DECISIONS.md` | The four actions above |
+| Slurm backend | Research closed; plan under review; nothing built | `slurm/PLAN.md` | The actions above |
 | Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
 | SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | A third flavour, `daimh/sge`, not started |
 | Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |
-| Scheduler trace | Done | `trace/DESIGN.md` (D-TR1..D-TR12) | Slurm support is open question Q14 |
+| Scheduler trace | Done | `trace/DESIGN.md` (D-TR1..D-TR12) | Slurm support is an open question in `slurm/PLAN.md` |
 | `hpc run` argument parsing | Closed by D-T43 | `cli/RUN_ARG_PARSING.md` | Nothing |
 | `hpc monitor` TUI | Built; a rework is intended and not planned | `tui/TEXTUAL_STYLING_COOKBOOK.md` | No plan exists |
 
@@ -45,12 +37,12 @@ update it whenever a status or a next action changes. User documentation is
 | `sge-xml-defects.md` | Reference: four defects in gridengine XML output and how the parser repairs each |
 | `tui/TEXTUAL_STYLING_COOKBOOK.md` | Rules and checklist for styling `hpc monitor` |
 | `tui/TUI_HORIZONTAL_SCROLLBAR.md` | How the job table avoids a horizontal scrollbar |
-| `slurm/DECISIONS.md` | The Slurm plan: decisions D-S1..D-S29, open questions, parked items, implementation notes |
+| `slurm/PLAN.md` | The Slurm plan: what is decided, order of work, open questions |
 | `slurm/SGE_SLURM_DIFFERENCES.md` | Fact base: how Slurm differs from SGE, with sources |
 | `slurm/RESOURCES_COMPARISON.md` | Fact base: 17 resource requests on SGE, Slurm, LSF and PBS, with sources; Appendix A is the earlier LSF and PBS research |
 
-Decision numbers: `D<n>` restructure, `D-T<n>` testbed, `D-TR<n>` trace,
-`D-S<n>` Slurm.
+Decision numbers in the older files (code comments cite them): `D<n>`
+restructure, `D-T<n>` testbed, `D-TR<n>` trace. The Slurm plan has none.
 
 ## Rules for this folder
 
@@ -58,7 +50,9 @@ Decision numbers: `D<n>` restructure, `D-T<n>` testbed, `D-TR<n>` trace,
 - A plan, review or research note is deleted once it has been carried out
   or folded into a decision log; git keeps it.
 - No tickets and no second copy of a decision: work is taken from the
-  decision log, one item at a time.
+  plan, one item at a time.
+- Plans are bullet points in plain words. No numbered decision labels, no
+  terms the file does not define.
 - Chat transcripts and exports are not kept in the repo.
 
 ## Removed

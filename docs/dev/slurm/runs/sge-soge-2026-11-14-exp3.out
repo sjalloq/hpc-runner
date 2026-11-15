@@ -1,0 +1,41 @@
+=== G1 gpu consumable with no complex_values anywhere, 3 jobs
+job 51: 0 in qstat; ran on: exec2
+job 52: 0 in qstat; ran on: exec1
+job 53: 0 in qstat; ran on: exec2
+-- gpu=5:
+job 54:      54 0.50000 hostname   tester       qw    11/14/2026 15:34:46                                    1
+cat: gp5.out: No such file or directory
+tester has deleted job 54
+=== G2 BOOL complex display_win_gui=TRUE set on exec1 only
+"complex_values" of "exechost" is empty - Adding new element(s).
+root@master modified "exec1" in exechost list
+complex_values        display_win_gui=TRUE
+value=1 rc=0 job=55 -> exec1
+value=1 rc=0 job=56 -> exec1
+value=1 rc=0 job=57 -> exec1
+value=TRUE rc=0 job=58 -> exec1
+value=TRUE rc=0 job=59 -> exec1
+value=TRUE rc=0 job=60 -> exec1
+value=true rc=0 job=61 -> exec1
+value=true rc=0 job=62 -> exec1
+value=true rc=0 job=63 -> exec1
+value=0 rc=0 job=64 -> state qw
+value=0 rc=0 job=65 -> state qw
+value=0 rc=0 job=66 -> state qw
+value=FALSE rc=0 job=67 -> state qw
+value=FALSE rc=0 job=68 -> state qw
+value=FALSE rc=0 job=69 -> state qw
+value=2 rc=0 job=70 -> state qw
+value=2 rc=0 job=71 -> state qw
+value=2 rc=0 job=72 -> state qw
+value=yes rc=1 job=Unable to run job: attribute "display_win_gui" is not a boolean value
+Exiting. ->
+value=yes rc=1 job=Unable to run job: attribute "display_win_gui" is not a boolean value
+Exiting. ->
+value=yes rc=1 job=Unable to run job: attribute "display_win_gui" is not a boolean value
+Exiting. ->
+-- no request, 4 jobs:
+      1 exec1
+      3 exec2
+"NONE" is not a valid list attribute value for -mattr.  Try using -rattr instead.
+complex_values        display_win_gui=TRUE

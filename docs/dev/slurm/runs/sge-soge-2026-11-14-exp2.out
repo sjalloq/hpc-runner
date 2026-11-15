@@ -1,0 +1,76 @@
+=== F1 bash functions through -V: one-line body, multi-line body; what the job sees
+caller env:
+BASH_FUNC_ml%%=() {  module ml "$@"
+}
+BASH_FUNC_module%%=() {  local _mlredir=0;
+ if [ -n "${MODULES_REDIRECT_OUTPUT+x}" ]; then
+ if [ "$MODULES_REDIRECT_OUTPUT" = '0' ]; then
+ _mlredir=0;
+ else
+--
+BASH_FUNC_one%%=() {  echo one-ran
+}
+BASH_FUNC_multi%%=() {  echo multi-1;
+ echo multi-2
+BASH_FUNC vars in job env:
+0
+one: not defined
+multi: not defined
+/var/spool/gridengine/execd/exec1/job_scripts/30: line 4: one: command not found
+/var/spool/gridengine/execd/exec1/job_scripts/30: line 4: multi: command not found
+PLAINVAR=[line1
+line2]
+-- with -S /bin/bash:
+BASH_FUNC vars in job env:
+0
+one: not defined
+multi: not defined
+/var/spool/gridengine/execd/exec2/job_scripts/31: line 4: one: command not found
+/var/spool/gridengine/execd/exec2/job_scripts/31: line 4: multi: command not found
+PLAINVAR=[line1
+line2]
+=== F2 hostname=!exec1, six jobs; and hostname=!exec2
+cat: h2.out: No such file or directory
+      5 exec2
+cat: g3.out: No such file or directory
+      5 exec1
+=== F3 consumable gpu: is it set anywhere? then request it
+HOSTNAME                ARCH         NCPU NSOC NCOR NTHR  LOAD  MEMTOT  MEMUSE  SWAPTO  SWAPUS
+----------------------------------------------------------------------------------------------
+global                  -               -    -    -    -     -       -       -       -       -
+exec1                   lx-amd64       14    1   12   14  1.18   30.8G   13.0G    4.0G    4.0G
+exec2                   lx-amd64       14    1   12   14  1.15   30.8G   12.9G    4.0G    4.0G
+rc=0 job=44
+Following jobs do not exist:
+44
+=== F4 qrsh client killed (SIGINT, SIGHUP, SIGTERM): what happens to the remote job
+sig INT: qrsh pid 19897 job 45 before:
+     45 0.50000 sleep      tester       r     11/14/2026 15:33:21 all.q@exec2                        1
+qrsh rc=0
+after:
+job 45 gone from qstat
+failed       100 : assumedly after job
+exit_status  137                  (Killed)
+sig HUP: qrsh pid 20722 job 46 before:
+     46 0.50000 sleep      tester       r     11/14/2026 15:33:33 all.q@exec2                        1
+qrsh rc=0
+after:
+job 46 gone from qstat
+failed       100 : assumedly after job
+exit_status  137                  (Killed)
+sig TERM: qrsh pid 21546 job 47 before:
+     47 0.50000 sleep      tester       r     11/14/2026 15:33:46 all.q@exec1                        1
+qrsh rc=0
+after:
+job 47 gone from qstat
+failed       100 : assumedly after job
+exit_status  137                  (Killed)
+=== F5 login shell? job with -S /bin/bash and default; does ~/.bash_profile or ~/.bashrc run
+JOB_ID=48 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec1
+shell_opts: /var/spool/gridengine/execd/exec1/job_scripts/48 login=no
+-- with -V:
+JOB_ID=49 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec1
+shell_opts: /var/spool/gridengine/execd/exec1/job_scripts/49 login=no
+-- qrsh command:
+login=no
+=== done

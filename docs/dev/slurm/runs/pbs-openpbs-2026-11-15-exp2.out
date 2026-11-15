@@ -1,0 +1,24 @@
+     resources_available.arch = linux
+     resources_available.fast = True
+     resources_available.host = exec1
+     resources_available.mem = 32277152kb
+     resources_available.ncpus = 2
+     resources_available.ngpus = 1
+     resources_available.scratch = 1gb
+     resources_available.vnode = exec1
+resources: "ncpus, mem, arch, host, vnode, aoe, eoe, ngpus, scratch, lic, fast"
+=== Q1 -V without an exported function
+MARK=[unset] fn=undefined
+=== Q2 -V with an exported one-line function
+MARK=[unset] fn=undefined
+=== Q3 -V with an exported two-statement function
+MARK=[unset] fn=undefined
+=== Q4 qsub -I with a terminal
+qsub: job 4.master ready
+
+exec1
+/dev/pts/0
+
+qsub: job 4.master completed
+rc=0
+clean rc=0

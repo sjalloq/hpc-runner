@@ -1,0 +1,124 @@
+=== T1 is the sacct row there when sbatch returns? (5 held jobs)
+job 44: sacct at once -> []  squeue -> [PD JobHeldUser]
+job 45: sacct at once -> []  squeue -> [PD JobHeldUser]
+job 46: sacct at once -> []  squeue -> [PD JobHeldUser]
+job 47: sacct at once -> []  squeue -> [PD JobHeldUser]
+job 48: sacct at once -> []  squeue -> [PD JobHeldUser]
+=== T2 time from the controller showing the job finished to sacct showing it (5 jobs)
+/tmp/exp2.sh: line 16: bc: command not found
+job 49: controller COMPLETED at 1794736512.383928244, sacct COMPLETED at 1794736512.609657463, sacct minus controller =  s
+/tmp/exp2.sh: line 16: bc: command not found
+job 50: controller COMPLETED at 1794736515.451971683, sacct COMPLETED at 1794736515.539219990, sacct minus controller =  s
+/tmp/exp2.sh: line 16: bc: command not found
+job 51: controller COMPLETED at 1794736518.392320174, sacct COMPLETED at 1794736518.618951528, sacct minus controller =  s
+/tmp/exp2.sh: line 16: bc: command not found
+job 52: controller COMPLETED at 1794736521.464685473, sacct COMPLETED at 1794736521.550086999, sacct minus controller =  s
+/tmp/exp2.sh: line 16: bc: command not found
+job 53: controller COMPLETED at 1794736524.396134583, sacct COMPLETED at 1794736524.619156264, sacct minus controller =  s
+=== T3 state names: squeue short and long, sacct, for pending / running / held
+job 54: squeue %t=[R] %T=[RUNNING] reason=[None] sacct=[RUNNING]
+job 55: squeue %t=[PD] %T=[PENDING] reason=[JobHeldUser] sacct=[PENDING]
+=== T4 suspend, resume, requeue (as root)
+suspended: squeue=[S SUSPENDED] sacct=[SUSPENDED]
+resumed: squeue=[R RUNNING] sacct=[RUNNING]
+requeued: squeue=[PD PENDING BeginTime] sacct=[REQUEUED]
+JobID|State|ExitCode|Start|End
+54|REQUEUED|0:0|2026-11-15T09:55:27|2026-11-15T09:55:32
+54.batch|CANCELLED|0:15|2026-11-15T09:55:27|2026-11-15T09:55:32
+=== T5 cancel pending and running
+JobID|JobName|State|ExitCode|Reason
+55|wrap|CANCELLED by 1003|0:0|None
+JobID|JobName|State|ExitCode|Reason
+54|wrap|CANCELLED by 1003|0:0|None
+JobID|JobName|State|ExitCode|Reason
+56|wrap|CANCELLED by 1003|0:0|None
+56.batch|batch|CANCELLED|0:15|
+=== T6 dependencies: afterok on a parent that fails
+no kill flag:  squeue=[PD PENDING DependencyNeverSatisfied]
+JobID|JobName|State|ExitCode|Reason
+58|wrap|PENDING|0:0|Dependency
+kill flag yes: squeue=[]
+JobID|JobName|State|ExitCode|Reason
+59|wrap|CANCELLED|0:0|Dependency
+   JobState=CANCELLED Reason=DependencyNeverSatisfied Dependency=afterok:57(failed)
+after scancel of the stuck one:
+JobID|JobName|State|ExitCode|Reason
+58|wrap|CANCELLED by 1003|0:0|Dependency
+=== T7 dependencies: afterok / afterany / after on a parent that succeeds; afterok on a parent already finished
+60 COMPLETED
+61 COMPLETED
+62 COMPLETED
+63 COMPLETED
+afterok on finished parent 60: rc=0 [64]
+state: COMPLETED
+=== T8 arrays: ids, throttle, output names, sacct rows, a failing task
+sbatch --parsable printed: 65
+65_1 RUNNING None
+65_2 RUNNING None
+65_[3-4%2] PENDING JobArrayTaskLimit
+sacct while running:
+JobID|State|ExitCode
+65_[1-4%2]|PENDING|0:0
+sacct at the end:
+JobID|JobIDRaw|State|ExitCode
+65_1|66|COMPLETED|0:0
+65_1.batch|66.batch|COMPLETED|0:0
+65_2|67|FAILED|1:0
+65_2.batch|67.batch|FAILED|1:0
+65_3|68|COMPLETED|0:0
+65_3.batch|68.batch|COMPLETED|0:0
+65_4|65|COMPLETED|0:0
+65_4.batch|65.batch|COMPLETED|0:0
+sacct -X:
+JobID|State|ExitCode
+65_1|COMPLETED|0:0
+65_2|FAILED|1:0
+65_3|COMPLETED|0:0
+65_4|COMPLETED|0:0
+arr.sh
+slurm-65_1.out
+slurm-65_2.out
+slurm-65_3.out
+slurm-65_4.out
+JOB=66 ARRAYJOB=65 TASK=1
+=== T9 default output file name and where it goes
+slurm-69.out
+hi
+/work/val2-1794736507/sub
+--chdir: /work/val2-1794736507/sub
+=== T10 time limit
+JobID|JobName|State|ExitCode|Reason
+71|wrap|TIMEOUT|0:0|None
+71.batch|batch|CANCELLED|0:15|
+=== T11 login shell: plain shebang and 'bash -l' shebang; ~/.bash_profile and ~/.bashrc
+l1: login=no
+l2: PROFILE_RAN login=yes
+l1 with --export=NONE: login=no
+=== T12 srun inside a batch job submitted with -c 2
+batch CPT=2
+step CPT=2 ONNODE=2
+srun rc=0
+JobID|JobName|State|AllocCPUS
+75|allocation|COMPLETED|2
+75.batch|batch|COMPLETED|2
+75.0|bash|COMPLETED|2
+=== T13 --pty: with a terminal (via script) and without
+/dev/pts/0
+in-pty
+rc=0
+srun: error: ioctl(TIOCGWINSZ): Inappropriate ioctl for device
+srun: error: Not using a pseudo-terminal, disregarding --pty option
+not a tty
+no-terminal
+rc=0
+=== T14 whitespace in a directive value
+unquoted: rc=255 [sbatch: error: Invalid directive found in batch script: words] name=[]
+quoted: rc=0 [78] name=[]
+=== T15 details of a finished job from the controller, and of an unknown id
+JobId=79 JobName=wrap
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=4294901690 Nice=0 Account=proj QOS=normal
+slurm_load_jobs error: Invalid job id specified
+rc=1
+sacct unknown id rc=0 (empty output above)
+=== done

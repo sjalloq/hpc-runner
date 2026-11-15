@@ -1,0 +1,138 @@
+=== E1 no -pe: slots
+--- e1.out
+JOB_ID=2 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec1
+PATH=/tmp/2.1.all.q:/usr/local/bin:/bin:/usr/bin
+shell_opts: /var/spool/gridengine/execd/exec1/job_scripts/2 login=no
+qname        all.q
+hostname     exec1
+taskid       undefined
+slots        1
+failed       0
+exit_status  0
+=== E2 -pe smp 2: slots, host
+--- e2.out
+JOB_ID=3 SGE_TASK_ID=undefined NSLOTS=2 PWD=/home/tester/val HOST=exec2
+PATH=/tmp/3.1.all.q:/usr/local/bin:/bin:/usr/bin
+shell_opts: /var/spool/gridengine/execd/exec2/job_scripts/3 login=no
+qname        all.q
+hostname     exec2
+taskid       undefined
+slots        2
+failed       0
+exit_status  0
+=== E3 default cwd (no -cwd), default PATH (no -V)
+--- e3.out
+JOB_ID=4 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester HOST=exec1
+PATH=/tmp/4.1.all.q:/usr/local/bin:/bin:/usr/bin
+shell_opts: /var/spool/gridengine/execd/exec1/job_scripts/4 login=no
+=== E4 PATH under -V
+--- e4.out
+JOB_ID=5 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec2
+PATH=/tmp/5.1.all.q:/marker/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+shell_opts: /var/spool/gridengine/execd/exec2/job_scripts/5 login=no
+=== E5 -v SGE_TASK_ID=77 JOB_ID=5 on a plain job
+submitted=6
+--- e5.out
+JOB_ID=6 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec1
+PATH=/tmp/6.1.all.q:/usr/local/bin:/bin:/usr/bin
+shell_opts: /var/spool/gridengine/execd/exec1/job_scripts/6 login=no
+=== E6 -V with caller JOB_ID=5 SGE_TASK_ID=9 in env (stale parent values)
+submitted=7
+--- e6.out
+JOB_ID=7 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec2
+PATH=/tmp/7.1.all.q:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+shell_opts: /var/spool/gridengine/execd/exec2/job_scripts/7 login=no
+=== E7 bash function through -V
+--- e7.out
+/var/spool/gridengine/execd/exec1/job_scripts/8: line 2: type: myfn: not found
+/var/spool/gridengine/execd/exec1/job_scripts/8: line 2: myfn: command not found
+=== E8 output to missing directory
+submitted=9
+error reason          1:      11/14/2026 15:31:22 [1003:9149]: error: can't open output file "/home/tester/val/nodir/sub/e8.out": No such file or directory
+job-ID  prior   name       user         state submit/start at     queue                          slots ja-task-ID
+-----------------------------------------------------------------------------------------------------------------
+      9 0.50000 env.sh     tester       Eqw   11/14/2026 15:31:22                                    1
+ls: cannot access 'nodir': No such file or directory
+qname        all.q
+hostname     exec2
+taskid       undefined
+slots        1
+failed       26  : opening input/output file
+exit_status  0
+=== E9 exit codes: 3, 99, 100
+code 3 job 10: qstat:
+failed       0
+exit_status  3
+code 99 job 11: qstat:
+     11 0.50000 x99.sh     tester       Rq    11/14/2026 15:31:44                                    1
+failed       25  : rescheduling
+exit_status  99
+failed       25  : rescheduling
+exit_status  99
+code 100 job 12: qstat:
+     12 0.50000 x100.sh    tester       Eqw   11/14/2026 15:31:51                                    1
+failed       30  : application error returned
+exit_status  100
+=== E10 unknown resource name
+Unable to run job: unknown resource "nosuch"
+Exiting.
+rc=1
+=== E11 hostname exclusion
+rc=0 job=14
+--- e11.out
+JOB_ID=14 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec2
+PATH=/tmp/14.1.all.q:/usr/local/bin:/bin:/usr/bin
+shell_opts: /var/spool/gridengine/execd/exec2/job_scripts/14 login=no
+=== E12 BOOL =1 and =TRUE (display_win_gui is BOOL)
+Unable to run job: Job 15 (-l display_win_gui=1) cannot run in queue "all.q@exec1" because job requests unknown resource (display_win_gui)
+Job 15 (-l display_win_gui=1) cannot run in queue "all.q@exec2" because job requests unknown resource (display_win_gui)
+Job 15 (-l display_win_gui=1) cannot run in queue "short.q@exec1" because job requests unknown resource (display_win_gui)
+Job 15 (-l display_win_gui=1) cannot run in queue "short.q@exec2" because job requests unknown resource (display_win_gui)
+verification: no suitable queues
+Exiting.
+rc=1
+Unable to run job: Job 16 (-l display_win_gui=TRUE) cannot run in queue "all.q@exec1" because job requests unknown resource (display_win_gui)
+Job 16 (-l display_win_gui=TRUE) cannot run in queue "all.q@exec2" because job requests unknown resource (display_win_gui)
+Job 16 (-l display_win_gui=TRUE) cannot run in queue "short.q@exec1" because job requests unknown resource (display_win_gui)
+Job 16 (-l display_win_gui=TRUE) cannot run in queue "short.q@exec2" because job requests unknown resource (display_win_gui)
+verification: no suitable queues
+Exiting.
+rc=1
+Unable to run job: Job 17 (-l display_win_gui=2) cannot run in queue "all.q@exec1" because job requests unknown resource (display_win_gui)
+Job 17 (-l display_win_gui=2) cannot run in queue "all.q@exec2" because job requests unknown resource (display_win_gui)
+Job 17 (-l display_win_gui=2) cannot run in queue "short.q@exec1" because job requests unknown resource (display_win_gui)
+Job 17 (-l display_win_gui=2) cannot run in queue "short.q@exec2" because job requests unknown resource (display_win_gui)
+verification: no suitable queues
+Exiting.
+rc=1
+=== E13 qrsh exit codes
+exit7 -> rc=7
+kill9 -> rc=137
+kill15 -> rc=143
+Job was rejected because job requests unknown queue "nosuch.q"
+badqueue -> rc=1
+unknown resource "nosuch"
+badresource -> rc=1
+=== E14 qrsh without command rejects -cwd / -V
+error: Unknown option -wd
+rc=1
+error: Unknown option -V
+rc=1
+=== E15 qrsh with command: cwd, -cwd, output streaming, PATH
+err
+/home/tester
+out
+/home/tester/val
+=== E16 array child: non-array job submitted with -V from inside an array task
+--- parent.out
+parent JOB_ID=25 SGE_TASK_ID=3
+26
+--- child.out
+JOB_ID=26 SGE_TASK_ID=undefined NSLOTS=1 PWD=/home/tester/val HOST=exec1
+PATH=/tmp/26.1.all.q:/tmp/25.3.all.q:/usr/local/bin:/bin:/usr/bin
+shell_opts: /var/spool/gridengine/execd/exec1/job_scripts/26 login=no
+=== E17 which queue without -q
+qname        all.q
+qname        all.q
+qname        all.q
+=== done

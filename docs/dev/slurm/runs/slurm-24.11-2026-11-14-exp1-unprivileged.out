@@ -1,0 +1,132 @@
+=== S1 plain sbatch: cwd, cpus var, login shell, env size (default --export=ALL)
+JOB=2 ARRAY=_ CPT=[unset] NTASKS=[unset] ONNODE=[1] PWD=/work/val-1794671632 HOST=exec1
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+HOME=[/home/tester] USER=[] MARK=[from-caller] VAR2=[unset]
+login=no nvars=92 nslurm=34
+fn: undefined module: function BASH_FUNC=3
+JobID|JobName|State|ExitCode|AllocCPUS|ReqMem|NodeList|Reason
+2|env.sh|COMPLETED|0:0|1|100M|exec1|None
+2.batch|batch|COMPLETED|0:0|1||exec1|
+=== S2 -c 2 without -n: tasks, cpus
+JOB=3 ARRAY=_ CPT=[2] NTASKS=[unset] ONNODE=[2] PWD=/work/val-1794671632 HOST=exec1
+   NumNodes=1 NumCPUs=2 NumTasks=1 CPUs/Task=2 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=2,mem=200M,node=1,billing=2
+   AllocTRES=cpu=2,mem=200M,node=1,billing=2
+=== S3 --export=NONE
+TIMEOUT waiting 4 (state RUNNING)
+cat: s3.out: No such file or directory
+=== S4 --export=MARK (explicit list, no ALL)
+cat: s4.out: No such file or directory
+=== S5 --export=ALL,VAR2=x with VAR2=caller in the environment: which value wins
+TIMEOUT waiting 6 (state RUNNING)
+grep: s5.out: No such file or directory
+=== S6 bash function through ALL and through NONE
+grep: s6a.out: No such file or directory
+TIMEOUT waiting 8 (state PENDING)
+grep: s6b.out: No such file or directory
+=== S7 parent -c 2 submits child without -c: child's SLURM_CPUS_PER_TASK
+TIMEOUT waiting 9 (state PENDING)
+cat: parent.out: No such file or directory
+tail: cannot open 'parent.out' for reading: No such file or directory
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+sacct: fatal: Bad job/step specified: -o
+TIMEOUT waiting  (state )
+grep: child.out: No such file or directory
+=== S8 output into a missing directory (24.11)
+TIMEOUT waiting 10 (state PENDING)
+JobID|JobName|State|ExitCode|AllocCPUS|ReqMem|NodeList|Reason
+10|env.sh|PENDING|0:0|0|100M|None assigned|None
+ls: cannot access 'nodir/sub': No such file or directory
+=== S9 exit codes in sacct: exit 3, kill -9 self, kill -15 self
+exec1  | slurmd-exec1: Launching batch job 1 for UID 1001
+exec1  | slurmd-exec1: Launching batch job 2 for UID 1003
+exec1  | slurmd-exec1: Launching batch job 3 for UID 1003
+exec1  | slurmd-exec1: fatal: clone: Operation not permitted

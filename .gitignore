@@ -59,6 +59,8 @@ dmypy.json
 
 # HPC job outputs (don't commit job logs)
 *.out
+# Testbed run outputs are evidence the research files cite.
+!docs/dev/slurm/runs/*.out
 *.err
 *.o[0-9]*
 *.e[0-9]*

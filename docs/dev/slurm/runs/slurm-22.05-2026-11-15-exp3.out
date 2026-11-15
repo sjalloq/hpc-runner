@@ -1,0 +1,19 @@
+slurm-wlm 22.05.8
+=== U1 held job, watched for 40 s
+job 80
+  +1027 ms: [80|heldjob|short|PENDING|0:0|100M|JobHeldUser ]
+=== U2 job that runs for 3 s, watched for 40 s
+job 81
+  +651 ms: [81|allocation||PENDING|0:0|16?|None ]
+  +841 ms: [81|runjob|short|RUNNING|0:0|100M|None ]
+  +3677 ms: [81|runjob|short|COMPLETED|0:0|100M|None ]
+=== U3 job that exits at once, watched for 40 s
+job 82
+  +679 ms: [82|allocation||FAILED|3:0|16?|None ]
+  +869 ms: [82|quickjob|short|FAILED|3:0|100M|None ]
+=== U4 the same three ids again, 60 s later
+JobID|JobName|Partition|State|ExitCode|ReqMem|Reason
+80|heldjob|short|CANCELLED by 1003|0:0|100M|JobHeldUser
+81|runjob|short|COMPLETED|0:0|100M|None
+82|quickjob|short|FAILED|3:0|100M|None
+=== done

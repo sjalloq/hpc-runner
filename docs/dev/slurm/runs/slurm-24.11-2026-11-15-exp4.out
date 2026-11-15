@@ -1,0 +1,7 @@
+# Slurm 24.11.5 testbed, 2026-11-15, as tester on login. --nice as an ordinary user.
+# for n in -10 10 ""; do sbatch --parsable -H -o /dev/null ${n:+--nice=$n} --wrap true; scontrol show job <id> | grep -o "Priority=[0-9]* Nice=[-0-9]*"; done
+[--nice=-10] rc=1 sbatch: error: Batch job submission failed: Invalid --nice value
+[--nice=10] rc=0 2
+Priority=0 Nice=10
+[--nice=] rc=0 3
+Priority=0 Nice=0
