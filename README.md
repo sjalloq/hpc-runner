@@ -135,7 +135,7 @@ and the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html).
 ```bash
 source sourceme                   # .venv with the dev extras
 pytest                            # unit suite
-hpc-testbed pytest --up           # integration suite against SGE in Docker
+hpc-testbed --scheduler sge pytest --up   # integration suite against SGE in Docker
 ```
 
 See the [development page](https://sjalloq.github.io/hpc-runner/development.html)

@@ -1,0 +1,112 @@
+# PBS testbed, openpbs flavour (OpenPBS v23.06.06 built from source on Rocky
+# Linux 8). Run through the hpc-testbed driver, which passes
+# `-p hpc-testbed-pbs-openpbs`. Same shape as the SGE and Slurm stacks. Container
+# names are shared with them, so only one scheduler can be up at a time.
+
+x-image: &image hpc-testbed-pbs-openpbs:local
+
+x-hosts: &hosts
+  - "master:10.79.0.10"
+  - "exec1:10.79.0.11"
+  - "exec2:10.79.0.12"
+  - "login:10.79.0.13"
+
+x-node: &node
+  image: *image
+  extra_hosts: *hosts
+  volumes:
+    - home:/home
+    - work:/work
+    - ../../../tests/modulefiles:/opt/modulefiles:ro
+
+services:
+  master:
+    <<: *node
+    build:
+      context: ../../..
+      dockerfile: testbed/pbs/openpbs/Dockerfile
+    hostname: master
+    container_name: master
+    environment: { PBS_ROLE: master }
+    networks:
+      pbs: { ipv4_address: 10.79.0.10 }
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/hpc-testbed/configured && /opt/pbs/bin/qstat -B >/dev/null"]
+      interval: 1s
+      timeout: 5s
+      retries: 180
+      start_period: 60s
+      start_interval: 1s
+
+  exec1:
+    <<: *node
+    hostname: exec1
+    container_name: exec1
+    environment: { PBS_ROLE: exec }
+    networks:
+      pbs: { ipv4_address: 10.79.0.11 }
+    depends_on:
+      master: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/pbs/bin/pbsnodes exec1 | grep -Eq 'state = (free|job-busy)'"]
+      interval: 1s
+      timeout: 5s
+      retries: 90
+      start_period: 10s
+      start_interval: 1s
+
+  exec2:
+    <<: *node
+    hostname: exec2
+    container_name: exec2
+    environment: { PBS_ROLE: exec }
+    networks:
+      pbs: { ipv4_address: 10.79.0.12 }
+    depends_on:
+      master: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/pbs/bin/pbsnodes exec2 | grep -Eq 'state = (free|job-busy)'"]
+      interval: 1s
+      timeout: 5s
+      retries: 90
+      start_period: 10s
+      start_interval: 1s
+
+  login:
+    <<: *node
+    hostname: login
+    container_name: login
+    init: true
+    environment:
+      PBS_ROLE: login
+      HPC_SCRIPT_DIR: /work/cache/scripts
+      HPC_EXIT_DIR: /work/cache/exit
+    volumes:
+      - home:/home
+      - work:/work
+      - ../../../tests/modulefiles:/opt/modulefiles:ro
+      - ../../..:/src:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      pbs: { ipv4_address: 10.79.0.13 }
+    depends_on:
+      exec1: { condition: service_healthy }
+      exec2: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/hpc-testbed/configured && /opt/pbs/bin/qstat -B >/dev/null"]
+      interval: 1s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
+      start_interval: 1s
+
+networks:
+  pbs:
+    ipam:
+      config:
+        - subnet: 10.79.0.0/24
+
+volumes:
+  home: {}
+  work: {}

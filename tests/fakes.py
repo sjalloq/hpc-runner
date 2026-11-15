@@ -78,7 +78,7 @@ def make_job(
 
 
 # =============================================================================
-# Captured scheduler output (tests/unit/fixtures/<family>/)
+# Captured scheduler output (tests/unit/fixtures/<scheduler>/)
 # =============================================================================
 
 FIXTURES_ROOT = Path(__file__).resolve().parent / "unit" / "fixtures"

@@ -4,7 +4,7 @@ Each vendor implementation of the SGE lineage is a *flavour*: a self-contained
 directory with its own image, compose file, cell configuration and testbed
 config, tested on its own and never grouped with another (docs/dev/testbed/TESTBED_PLAN.md
 section 1). The fixture (`tests/integration/cluster.py`) and the test files
-are shared; `--flavour <name>` selects the stack that is up.
+are shared; `--scheduler sge --flavour <name>` selects the stack that is up.
 
 | Flavour | Lineage | Source | Status |
 |---|---|---|---|
@@ -20,8 +20,8 @@ Only one flavour's stack can run at a time: both use the container names
 ## Support matrix
 
 One row per integration test, grouped by file (tests/integration/). Each
-column is the result of `hpc-testbed --flavour <name> pytest` on
-2026-11-02. A test deselected for a flavour with `@pytest.mark.flavour`
+column is the result of `hpc-testbed --scheduler sge --flavour <name> pytest` on
+2026-11-02. A test deselected for a flavour with `@pytest.mark.flavour("sge/<name>")`
 would show as such (none so far); nothing skips at run time.
 
 | File | Test | `soge` | `ocs` |

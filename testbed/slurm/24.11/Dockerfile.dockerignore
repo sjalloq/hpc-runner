@@ -1,0 +1,5 @@
+# Build context is the repo root; send only what the Dockerfile uses.
+*
+!pyproject.toml
+!testbed/common/
+!testbed/slurm/common/

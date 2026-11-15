@@ -16,9 +16,9 @@ import pytest
 
 from tests.integration.cluster import SRC_ROOT, Cluster
 
-pytestmark = pytest.mark.family("sge")
+pytestmark = pytest.mark.scheduler("sge")
 
-#: Each flavour's captures are in a subdirectory (``hpc-testbed --flavour <name> capture``).
+#: Each flavour's captures are in a subdirectory (``hpc-testbed ... --flavour <name> capture``).
 FIXTURES = SRC_ROOT / "tests" / "unit" / "fixtures" / "sge"
 #: How each flavour's ``qstat -help`` starts (the bundle's ``scheduler`` field).
 VERSION_PREFIX = {"soge": "SGE", "ocs": "OCS"}

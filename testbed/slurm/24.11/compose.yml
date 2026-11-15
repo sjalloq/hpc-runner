@@ -1,0 +1,158 @@
+# Slurm testbed, 24.11 flavour (Debian trixie slurm-wlm 24.11.5). Run through
+# the hpc-testbed driver, which passes `-p hpc-testbed-slurm-24-11`. Same shape as
+# the SGE stacks (testbed/sge/soge/compose.yml) plus a database for slurmdbd.
+# Container names are the SGE ones, so the two schedulers cannot be up at once.
+
+x-image: &image hpc-testbed-slurm-24.11:local
+
+x-hosts: &hosts
+  - "master:10.78.0.10"
+  - "exec1:10.78.0.11"
+  - "exec2:10.78.0.12"
+  - "login:10.78.0.13"
+  - "db:10.78.0.14"
+
+x-volumes: &volumes
+  - home:/home
+  - work:/work
+  - munge:/etc/munge
+  - ../../../tests/modulefiles:/opt/modulefiles:ro
+
+x-node: &node
+  image: *image
+  extra_hosts: *hosts
+  volumes: *volumes
+
+services:
+  db:
+    image: mariadb:11.8
+    hostname: db
+    container_name: db
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: slurm_acct_db
+      MARIADB_USER: slurm
+      MARIADB_PASSWORD: slurm
+    # slurmdbd asks for these (accounting.html, "MySQL Configuration").
+    command: ["--innodb-buffer-pool-size=1024M", "--innodb-lock-wait-timeout=900"]
+    volumes:
+      - db:/var/lib/mysql
+    networks:
+      slurm: { ipv4_address: 10.78.0.14 }
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  master:
+    <<: *node
+    build:
+      context: ../../..
+      dockerfile: testbed/slurm/24.11/Dockerfile
+    hostname: master
+    container_name: master
+    environment: { SLURM_ROLE: master }
+    volumes:
+      - home:/home
+      - work:/work
+      - munge:/etc/munge
+      - state:/var/spool/slurmctld
+      - ../../../tests/modulefiles:/opt/modulefiles:ro
+    networks:
+      slurm: { ipv4_address: 10.78.0.10 }
+    depends_on:
+      db: { condition: service_healthy }
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/hpc-testbed/configured && scontrol ping | grep -q UP"]
+      interval: 1s
+      timeout: 5s
+      retries: 120
+      start_period: 30s
+      start_interval: 1s
+
+  exec1:
+    <<: *node
+    hostname: exec1
+    container_name: exec1
+    environment: { SLURM_ROLE: exec }
+    # slurmd builds the login environment for --export=NONE in new PID and
+    # mount namespaces; without this capability clone() fails and slurmd
+    # exits ("fatal: clone: Operation not permitted", 24.11.5).
+    cap_add: [SYS_ADMIN]
+    networks:
+      slurm: { ipv4_address: 10.78.0.11 }
+    depends_on:
+      master: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "scontrol show node exec1 | grep -Eq 'State=(IDLE|MIXED|ALLOCATED)'"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+      start_interval: 1s
+
+  exec2:
+    <<: *node
+    hostname: exec2
+    container_name: exec2
+    environment: { SLURM_ROLE: exec }
+    # slurmd builds the login environment for --export=NONE in new PID and
+    # mount namespaces; without this capability clone() fails and slurmd
+    # exits ("fatal: clone: Operation not permitted", 24.11.5).
+    cap_add: [SYS_ADMIN]
+    networks:
+      slurm: { ipv4_address: 10.78.0.12 }
+    depends_on:
+      master: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "scontrol show node exec2 | grep -Eq 'State=(IDLE|MIXED|ALLOCATED)'"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+      start_interval: 1s
+
+  login:
+    <<: *node
+    hostname: login
+    container_name: login
+    init: true
+    environment:
+      SLURM_ROLE: login
+      HPC_SCRIPT_DIR: /work/cache/scripts
+      HPC_EXIT_DIR: /work/cache/exit
+    volumes:
+      - home:/home
+      - work:/work
+      - munge:/etc/munge
+      - ../../../tests/modulefiles:/opt/modulefiles:ro
+      - ../../..:/src:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      slurm: { ipv4_address: 10.78.0.13 }
+    depends_on:
+      exec1: { condition: service_healthy }
+      exec2: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/hpc-testbed/configured && sinfo >/dev/null"]
+      interval: 1s
+      timeout: 10s
+      retries: 120
+      start_period: 30s
+      start_interval: 1s
+
+networks:
+  slurm:
+    ipam:
+      config:
+        - subnet: 10.78.0.0/24
+
+volumes:
+  home: {}
+  work: {}
+  munge: {}
+  state: {}
+  db: {}

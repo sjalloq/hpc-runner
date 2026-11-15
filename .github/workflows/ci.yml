@@ -100,20 +100,20 @@ jobs:
         run: pip install -e .
 
       - name: Start the ${{ matrix.flavour }} stack
-        run: hpc-testbed --flavour ${{ matrix.flavour }} up
+        run: hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} up
 
       - name: Integration tests (${{ matrix.flavour }}, Python ${{ matrix.python }})
         run: >
-          hpc-testbed --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }}
+          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }}
           --junit testbed/junit-${{ matrix.python }}-default.xml
 
       - name: Restart the stack with slow accounting
         run: |
-          hpc-testbed --flavour ${{ matrix.flavour }} down
-          hpc-testbed --flavour ${{ matrix.flavour }} up --slow-accounting
+          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} down
+          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} up --slow-accounting
 
       - name: Slow-accounting tests (${{ matrix.flavour }}, Python ${{ matrix.python }})
-        run: hpc-testbed --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }} --slow-accounting
+        run: hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }} --slow-accounting
 
       - name: Upload JUnit reports
         if: always()
@@ -127,7 +127,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p testbed-logs
-          hpc-testbed --flavour ${{ matrix.flavour }} logs > testbed-logs/compose.log 2>&1 || true
+          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} logs > testbed-logs/compose.log 2>&1 || true
           for c in master exec1 exec2 login; do
             docker cp "$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
           done
@@ -142,4 +142,4 @@ jobs:
 
       - name: Tear down the stack
         if: always()
-        run: hpc-testbed down
+        run: hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} down

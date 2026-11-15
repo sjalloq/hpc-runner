@@ -14,7 +14,7 @@ from hpc_runner.core.result import ArrayJobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
-pytestmark = pytest.mark.family("sge")
+pytestmark = pytest.mark.scheduler("sge")
 
 #: Prints its task id, then fails only as task 3.
 TASK3_FAILS = 'echo "task $SGE_TASK_ID"; [ "$SGE_TASK_ID" != 3 ]'

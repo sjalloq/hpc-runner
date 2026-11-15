@@ -1,8 +1,8 @@
-"""The integration suite's family and flavour selection (tests/integration/conftest.py).
+"""The integration suite's scheduler and flavour selection (tests/integration/conftest.py).
 
-Pure functions only: nothing here needs a testbed. The family comes from the
-flavour's directory and picks the cluster class; ``family``/``flavour``
-marks and the slow-accounting variant decide what is deselected (D-T48).
+Pure functions only: nothing here needs a testbed. ``--scheduler`` picks the
+cluster class and ``--flavour`` a release of it; ``scheduler``/``flavour``
+marks and the slow-accounting variant decide what is deselected.
 """
 
 from __future__ import annotations
@@ -11,67 +11,83 @@ from pathlib import Path
 
 import pytest
 
+from hpc_runner._testbed import DEFAULT_FLAVOURS
 from tests.integration.cluster import ACCOUNTING_FILES, CLUSTERS, SGECluster
-from tests.integration.conftest import deselect_reason, family_of, known_flavours
+from tests.integration.conftest import deselect_reason, known_flavours, select_stack
 
-FLAVOURS = {"soge": "sge", "ocs": "sge", "debian": "slurm"}
+KNOWN = {"sge": ["ocs", "soge"], "slurm": ["22.05", "24.11"]}
 
 
 def _reason(**overrides: object) -> str | None:
     args: dict = {
+        "schedulers": set(),
         "flavours": set(),
-        "families": set(),
         "slow_marked": False,
+        "active_scheduler": "sge",
         "active_flavour": "soge",
-        "active_family": "sge",
         "slow": False,
     }
     args.update(overrides)
     return deselect_reason(**args)
 
 
-def test_known_flavours_maps_each_flavour_to_its_directory(tmp_path: Path) -> None:
-    for family, flavour in (("sge", "soge"), ("slurm", "debian")):
-        (tmp_path / family / flavour).mkdir(parents=True)
-        (tmp_path / family / flavour / "compose.yml").write_text("services: {}\n")
+def test_known_flavours_lists_each_schedulers_directories(tmp_path: Path) -> None:
+    for scheduler, flavour in (("sge", "soge"), ("sge", "ocs"), ("slurm", "24.11")):
+        (tmp_path / scheduler / flavour).mkdir(parents=True)
+        (tmp_path / scheduler / flavour / "compose.yml").write_text("services: {}\n")
     (tmp_path / "common").mkdir()  # no compose.yml: not a flavour
-    assert known_flavours(tmp_path) == {"soge": "sge", "debian": "slurm"}
+    assert known_flavours(tmp_path) == {"sge": ["ocs", "soge"], "slurm": ["24.11"]}
 
 
-def test_the_repository_testbed_has_a_class_for_every_family() -> None:
-    assert set(known_flavours().values()) <= set(CLUSTERS)
+def test_the_repository_testbed_has_a_class_and_a_default_for_every_scheduler() -> None:
+    known = known_flavours()
+    assert set(known) <= set(CLUSTERS)
     assert CLUSTERS["sge"] is SGECluster
+    for scheduler, flavours in known.items():
+        assert DEFAULT_FLAVOURS[scheduler] in flavours
 
 
-def test_family_of_a_known_flavour() -> None:
-    assert family_of("ocs", FLAVOURS) == "sge"
+def test_scheduler_and_flavour_are_taken_as_given() -> None:
+    assert select_stack("sge", "ocs", KNOWN) == ("sge", "ocs")
 
 
-def test_family_of_an_unknown_flavour_lists_the_known_ones() -> None:
-    with pytest.raises(pytest.UsageError, match="known: debian, ocs, soge"):
-        family_of("nope", FLAVOURS)
+def test_no_flavour_means_the_schedulers_default() -> None:
+    assert select_stack("sge", None, KNOWN) == ("sge", "soge")
+    assert select_stack("slurm", None, KNOWN) == ("slurm", "24.11")
 
 
-def test_family_without_a_cluster_class_is_a_usage_error() -> None:
-    with pytest.raises(pytest.UsageError, match="family 'slurm', which has no cluster class"):
-        family_of("debian", FLAVOURS)
+def test_an_unknown_scheduler_lists_the_known_ones() -> None:
+    with pytest.raises(pytest.UsageError, match="known: sge, slurm"):
+        select_stack("nope", None, KNOWN)
 
 
-def test_unmarked_test_runs_on_every_family() -> None:
+def test_an_unknown_flavour_lists_that_schedulers_flavours() -> None:
+    with pytest.raises(pytest.UsageError, match="not a sge flavour; known: ocs, soge"):
+        select_stack("sge", "24.11", KNOWN)
+
+
+def test_scheduler_without_a_cluster_class_is_a_usage_error() -> None:
+    with pytest.raises(pytest.UsageError, match="scheduler 'lsf' has no cluster class"):
+        select_stack("lsf", "ce", {**KNOWN, "lsf": ["ce"]})
+
+
+def test_unmarked_test_runs_on_every_scheduler() -> None:
     assert _reason() is None
-    assert _reason(active_flavour="debian", active_family="slurm") is None
+    assert _reason(active_scheduler="slurm", active_flavour="24.11") is None
 
 
-def test_family_mark_deselects_other_families() -> None:
-    assert _reason(families={"sge"}) is None
-    assert _reason(families={"sge"}, active_flavour="debian", active_family="slurm") == (
-        "family slurm not in ['sge']"
+def test_scheduler_mark_deselects_other_schedulers() -> None:
+    assert _reason(schedulers={"sge"}) is None
+    assert _reason(schedulers={"sge"}, active_scheduler="slurm", active_flavour="24.11") == (
+        "scheduler slurm not in ['sge']"
     )
 
 
-def test_flavour_mark_deselects_other_flavours() -> None:
-    assert _reason(flavours={"soge"}) is None
-    assert _reason(flavours={"soge"}, active_flavour="ocs") == "flavour ocs not in ['soge']"
+def test_flavour_mark_names_scheduler_and_flavour() -> None:
+    assert _reason(flavours={"sge/soge"}) is None
+    assert _reason(flavours={"sge/soge"}, active_flavour="ocs") == (
+        "flavour sge/ocs not in ['sge/soge']"
+    )
 
 
 @pytest.mark.parametrize(
@@ -91,5 +107,4 @@ def test_sge_cluster_dumps_qstat_for_a_failed_wait() -> None:
 
 
 def test_every_sge_flavour_names_its_accounting_file() -> None:
-    sge = {flavour for flavour, family in known_flavours().items() if family == "sge"}
-    assert sge == set(ACCOUNTING_FILES)
+    assert set(known_flavours()["sge"]) == set(ACCOUNTING_FILES)

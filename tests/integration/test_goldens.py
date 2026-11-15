@@ -18,7 +18,7 @@ import pytest
 
 from tests.integration.cluster import SRC_ROOT, Cluster
 
-pytestmark = pytest.mark.family("sge")
+pytestmark = pytest.mark.scheduler("sge")
 
 GOLDEN_DIR = SRC_ROOT / "tests" / "unit" / "golden"
 VERIFIED = "verification: found suitable queue(s)"

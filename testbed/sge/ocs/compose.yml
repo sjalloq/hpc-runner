@@ -1,6 +1,6 @@
 # SGE testbed, `ocs` flavour (Open Cluster Scheduler 9.1.7 on Debian trixie). Run through
 # the hpc-testbed driver (src/hpc_runner/_testbed.py), which passes
-# `-p hpc-testbed-ocs`. Compose features are
+# `-p hpc-testbed-sge-ocs`. Compose features are
 # limited to those in Compose 2.38 (the CI runners' version).
 #
 # Name resolution: a user-defined network with static IPs plus extra_hosts on

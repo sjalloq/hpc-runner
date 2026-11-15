@@ -14,7 +14,7 @@ from hpc_runner.core.result import HPC_EXIT_DEP_FAILED, ArrayJobResult, JobResul
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
-pytestmark = pytest.mark.family("sge")
+pytestmark = pytest.mark.scheduler("sge")
 
 #: A three-task array whose task 2 fails.
 ARRAY_TASK2_FAILS = '[ "$SGE_TASK_ID" != 2 ]'

@@ -17,7 +17,7 @@ from hpc_runner.schedulers import _subprocess
 from tests.fakes import SEAM
 from tests.integration.cluster import Cluster
 
-pytestmark = pytest.mark.family("sge")
+pytestmark = pytest.mark.scheduler("sge")
 
 #: ``qconf -sconf`` line of the slow-accounting stack (``hpc-testbed up --slow-accounting``).
 SLOW_FLUSH = "flush_time=00:00:15"

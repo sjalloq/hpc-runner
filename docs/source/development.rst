@@ -147,7 +147,7 @@ in the suite is checked with ``bash -n``. After an intended template change:
    pytest tests/unit/test_golden.py --update-golden
 
 ``tests/unit/fixtures/sge/<flavour>/`` holds real scheduler output captured
-from the testbed by ``hpc-testbed --flavour <name> capture``
+from the testbed by ``hpc-testbed --scheduler sge --flavour <name> capture``
 (``tests/integration/capture.py``; the scenarios and ids are in that
 directory's ``manifest.json``), one directory per SGE flavour (``soge``,
 ``ocs``). The ``mock_sge_commands`` fixture (``tests/conftest.py``) answers
@@ -172,22 +172,24 @@ qmaster, two execution hosts and a login container, all in ``testbed/``.
 
 .. code-block:: bash
 
-   hpc-testbed up              # build the image and start the cluster (~20 s)
-   hpc-testbed pytest          # run the suite inside the login container
-   hpc-testbed shell           # a shell there, for qstat/qacct by hand
-   hpc-testbed down            # remove containers, network and volumes
-   hpc-testbed pytest --up     # up, pytest, down in one command
+   hpc-testbed --scheduler sge up            # build the image and start the cluster (~20 s)
+   hpc-testbed --scheduler sge pytest        # run the suite inside the login container
+   hpc-testbed --scheduler sge shell         # a shell there, for qstat/qacct by hand
+   hpc-testbed --scheduler sge down          # remove containers, network and volumes
+   hpc-testbed --scheduler sge pytest --up   # up, pytest, down in one command
 
-``hpc-testbed pytest -- -k submit`` passes options through and ``--py 3.11``
-picks the Python the suite runs under. One directory per scheduler
-implementation lives under ``testbed/<family>/<flavour>/`` (``sge/soge`` is
-Debian trixie gridengine 8.1.9, ``sge/ocs`` is Open Cluster Scheduler);
-``--flavour`` selects one, and the flavour's directory names its family.
+``hpc-testbed --scheduler sge pytest -- -k submit`` passes options through and
+``--py 3.11`` picks the Python the suite runs under. One directory per
+scheduler release lives under ``testbed/<scheduler>/<flavour>/`` (``sge/soge``
+is Debian trixie gridengine 8.1.9, ``sge/ocs`` is Open Cluster Scheduler).
+``--scheduler`` is required and names the scheduler; ``--flavour`` names the
+release and defaults per scheduler (``soge``, Slurm ``24.11``, PBS
+``openpbs``). A flavour never selects a scheduler.
 The suite runs inside the ``login`` container through the ``cluster``
 fixture (``tests/integration/cluster.py``); it skips when no scheduler is
 reachable and ``--require-cluster`` fails instead. Tests that assert on one
-scheduler's own output carry a ``family`` marker; contract tests run on
-every family. CI runs the suite on every flavour for every push.
+scheduler's own output carry a ``scheduler`` marker; contract tests run on
+every scheduler. CI runs the suite on every flavour for every push.
 ``testbed/README.md`` describes the stack and the fixture;
 ``docs/dev/testbed/`` has the design, the plan and the review, which logs
 every divergence and bug as a ``D-T`` item. Tests that pin a known bug are

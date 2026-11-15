@@ -1,7 +1,7 @@
 """``hpc-testbed``: drive the Docker Compose scheduler testbed.
 
 A developer tool, not part of the product: it needs a checkout of the
-repository (it looks for ``testbed/<family>/<flavour>/compose.yml`` above the
+repository (it looks for ``testbed/<scheduler>/<flavour>/compose.yml`` above the
 current directory) and the ``docker`` CLI with the Compose plugin. It replaces
 the former ``testbed/Makefile`` with the same six operations plus ``capture``
 (regenerate the unit fixtures from the live stack): every subcommand is one
@@ -23,16 +23,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_FLAVOUR = "soge"
+#: ``{scheduler: flavour}`` used when ``--flavour`` is not given (the
+#: integration conftest reads this too). A scheduler not listed here has no
+#: default: ``--flavour`` is then required.
+DEFAULT_FLAVOURS = {"sge": "soge", "slurm": "24.11", "pbs": "openpbs"}
 DEFAULT_PY = "3.12"
 #: Accounting flush interval of the master (D-T6): the default stack flushes
 #: every second; ``--slow-accounting`` uses SGE's stock 15 s.
 ACCOUNTING_FLUSH_FAST = "00:00:01"
 ACCOUNTING_FLUSH_SLOW = "00:00:15"
-#: Families whose stack has the slow-accounting variant (the integration
+#: Schedulers whose stack has the slow-accounting variant (the integration
 #: conftest reads this too); ``--slow-accounting`` elsewhere is a usage error.
-SLOW_ACCOUNTING_FAMILIES = frozenset({"sge"})
-#: ``{family: module}`` run by ``capture``; a family without one cannot capture yet.
+SLOW_ACCOUNTING_SCHEDULERS = frozenset({"sge"})
+#: ``{scheduler: module}`` run by ``capture``; a scheduler without one cannot capture yet.
 CAPTURE_MODULES = {"sge": "tests.integration.capture"}
 #: In-container paths fixed by the image (testbed/sge/soge/Dockerfile).
 VENV_ROOT = "/opt/venv"
@@ -47,19 +50,20 @@ class TestbedError(Exception):
 
 @dataclass(frozen=True)
 class Stack:
-    """One flavour's compose stack: where its file is and how to address it."""
+    """One scheduler flavour's compose stack: where its file is and how to address it."""
 
     root: Path
-    family: str
+    scheduler: str
     flavour: str
 
     @property
     def compose_file(self) -> Path:
-        return self.root / "testbed" / self.family / self.flavour / "compose.yml"
+        return self.root / "testbed" / self.scheduler / self.flavour / "compose.yml"
 
     @property
     def project(self) -> str:
-        return f"hpc-testbed-{self.flavour}"
+        # Compose refuses a "." in a project name (flavour "24.11").
+        return f"hpc-testbed-{self.scheduler}-{self.flavour.replace('.', '-')}"
 
     @property
     def junit_dir(self) -> Path:
@@ -81,15 +85,33 @@ def find_root(start: Path) -> Path:
     )
 
 
-def find_stack(root: Path, flavour: str) -> Stack:
-    """Locate the flavour's compose file under ``testbed/<family>/<flavour>/``."""
-    matches = sorted((root / "testbed").glob(f"*/{flavour}/compose.yml"))
-    if not matches:
-        known = sorted(p.parent.name for p in (root / "testbed").glob("*/*/compose.yml"))
-        raise TestbedError(f"unknown flavour {flavour!r}; known flavours: {', '.join(known)}")
-    if len(matches) > 1:
-        raise TestbedError(f"flavour {flavour!r} exists in more than one family: {matches}")
-    return Stack(root=root, family=matches[0].parent.parent.name, flavour=flavour)
+def known_flavours(testbed_dir: Path) -> dict[str, list[str]]:
+    """``{scheduler: [flavours]}`` for every ``<scheduler>/<flavour>/compose.yml``."""
+    found: dict[str, list[str]] = {}
+    for compose in sorted(testbed_dir.glob("*/*/compose.yml")):
+        found.setdefault(compose.parent.parent.name, []).append(compose.parent.name)
+    return found
+
+
+def find_stack(root: Path, scheduler: str, flavour: str | None = None) -> Stack:
+    """The stack ``testbed/<scheduler>/<flavour>/``; no *flavour* means the scheduler's default."""
+    known = known_flavours(root / "testbed")
+    if scheduler not in known:
+        raise TestbedError(
+            f"unknown scheduler {scheduler!r}; known schedulers: {', '.join(sorted(known))}"
+        )
+    flavours = ", ".join(known[scheduler])
+    if flavour is None:
+        flavour = DEFAULT_FLAVOURS.get(scheduler)
+        if flavour is None:
+            raise TestbedError(
+                f"scheduler {scheduler!r} has no default flavour; give --flavour ({flavours})"
+            )
+    if flavour not in known[scheduler]:
+        raise TestbedError(
+            f"unknown {scheduler} flavour {flavour!r}; known {scheduler} flavours: {flavours}"
+        )
+    return Stack(root=root, scheduler=scheduler, flavour=flavour)
 
 
 def venv_bin(py: str) -> str:
@@ -164,17 +186,14 @@ def cmd_clean(stack: Stack) -> None:
     run(stack.compose("exec", "-T", "login", f"{TESTBED_DIR}/clean.sh"))
 
 
-def pytest_argv(
-    stack: Stack, *, py: str, flavour: str, slow_accounting: bool, extra: Sequence[str]
-) -> list[str]:
+def pytest_argv(stack: Stack, *, py: str, slow_accounting: bool, extra: Sequence[str]) -> list[str]:
     """The ``docker compose exec`` command that runs the suite inside ``login``.
 
     ``-m integration`` overrides pyproject's ``-m 'not integration'`` addopts
     and ``--require-cluster`` makes an unreachable scheduler a failure: inside
     the testbed a missing precondition is a broken testbed, never a skip.
     ``--slow-accounting`` selects the tests marked ``slow_accounting`` instead
-    of the default set. The family is not passed: the suite derives it from
-    the flavour's directory, as :func:`find_stack` does.
+    of the default set. The suite is told the scheduler and the flavour.
     """
     return stack.compose(
         "exec",
@@ -189,8 +208,10 @@ def pytest_argv(
         "-m",
         "integration",
         "--require-cluster",
+        "--scheduler",
+        stack.scheduler,
         "--flavour",
-        flavour,
+        stack.flavour,
         f"--junitxml={WORK_DIR}/junit-{py}.xml",
         *(["--slow-accounting"] if slow_accounting else []),
         *extra,
@@ -201,9 +222,7 @@ def cmd_pytest(
     stack: Stack, *, py: str, junit: Path, slow_accounting: bool, extra: Sequence[str]
 ) -> int:
     """Run ``tests/integration`` inside ``login``; copy the JUnit XML to *junit*."""
-    argv = pytest_argv(
-        stack, py=py, flavour=stack.flavour, slow_accounting=slow_accounting, extra=extra
-    )
+    argv = pytest_argv(stack, py=py, slow_accounting=slow_accounting, extra=extra)
     status = run(argv, check=False)
     junit.parent.mkdir(parents=True, exist_ok=True)
     run(stack.compose("cp", f"login:{WORK_DIR}/junit-{py}.xml", str(junit)), check=False)
@@ -217,13 +236,13 @@ CAPTURE_DIR = f"{WORK_DIR}/capture"
 def cmd_capture(stack: Stack, *, py: str) -> None:
     """Regenerate the unit-test fixtures from the live stack.
 
-    Runs the family's capture module (``tests/integration/capture.py`` for
+    Runs the scheduler's capture module (``tests/integration/capture.py`` for
     SGE) inside ``login`` (it submits the scenario jobs, kills a node and
-    stops the master) and copies its output to ``tests/unit/fixtures/<family>/<flavour>/``.
+    stops the master) and copies its output to ``tests/unit/fixtures/<scheduler>/<flavour>/``.
     """
-    module = CAPTURE_MODULES.get(stack.family)
+    module = CAPTURE_MODULES.get(stack.scheduler)
     if module is None:
-        raise TestbedError(f"no capture scenarios for the {stack.family} family yet")
+        raise TestbedError(f"no capture scenarios for {stack.scheduler} yet")
     run(
         stack.compose(
             "exec",
@@ -240,7 +259,7 @@ def cmd_capture(stack: Stack, *, py: str) -> None:
             stack.flavour,
         )
     )
-    dest = stack.root / FIXTURES_DIR / stack.family / stack.flavour
+    dest = stack.root / FIXTURES_DIR / stack.scheduler / stack.flavour
     dest.mkdir(parents=True, exist_ok=True)
     run(stack.compose("cp", f"login:{CAPTURE_DIR}/.", str(dest)))
 
@@ -258,10 +277,16 @@ def build_parser() -> argparse.ArgumentParser:
             "subcommand prints the docker compose commands it runs."
         ),
     )
+    defaults = ", ".join(f"{s}: {f}" for s, f in DEFAULT_FLAVOURS.items())
+    parser.add_argument(
+        "--scheduler",
+        required=True,
+        help="the scheduler whose stack to drive: a directory under testbed/ (sge, slurm, pbs)",
+    )
     parser.add_argument(
         "--flavour",
-        default=DEFAULT_FLAVOUR,
-        help=f"scheduler implementation under testbed/<family>/ (default {DEFAULT_FLAVOUR})",
+        help=f"which release of that scheduler: a directory under testbed/<scheduler>/ "
+        f"(defaults: {defaults})",
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
@@ -284,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture = sub.add_parser(
         "capture",
-        help="regenerate tests/unit/fixtures/<family>/ from the live stack",
+        help="regenerate tests/unit/fixtures/<scheduler>/<flavour>/ from the live stack",
     )
     _add_py(capture)
 
@@ -293,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="run tests/integration inside login; arguments after -- go to pytest",
         epilog=(
             "The JUnit report is written to testbed/junit-<py>.xml unless --junit is given. "
-            "Example: hpc-testbed pytest --py 3.11 -- -k submit -x"
+            "Example: hpc-testbed --scheduler sge pytest --py 3.11 -- -k submit -x"
         ),
     )
     _add_py(test)
@@ -330,7 +355,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         root = find_root(Path.cwd())
-        stack = find_stack(root, args.flavour)
+        stack = find_stack(root, args.scheduler, args.flavour)
         return dispatch(stack, args)
     except TestbedError as exc:
         print(f"hpc-testbed: {exc}", file=sys.stderr)
@@ -338,10 +363,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def dispatch(stack: Stack, args: argparse.Namespace) -> int:
-    if getattr(args, "slow_accounting", False) and stack.family not in SLOW_ACCOUNTING_FAMILIES:
+    if getattr(args, "slow_accounting", False) and stack.scheduler not in (
+        SLOW_ACCOUNTING_SCHEDULERS
+    ):
         raise TestbedError(
-            f"--slow-accounting is a variant of the {', '.join(sorted(SLOW_ACCOUNTING_FAMILIES))} "
-            f"stack; flavour {stack.flavour!r} is {stack.family}"
+            "--slow-accounting is a variant of the "
+            f"{', '.join(sorted(SLOW_ACCOUNTING_SCHEDULERS))} stack, not of {stack.scheduler}"
         )
     if args.command == "up":
         cmd_up(

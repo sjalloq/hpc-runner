@@ -4,12 +4,11 @@ Runs inside the testbed's ``login`` container as user ``tester``: scheduler
 CLIs are on PATH, ``sudo -u alice`` works passwordless, and node control goes
 through ``sudo docker stop|start|kill <container>`` (docs/dev/testbed/TESTBED_REVIEW.md D-T9).
 
-One class per scheduler family (``testbed/<family>/``), registered in
-:data:`CLUSTERS`; the family is the directory the flavour lives in, so the
-fixture picks the class from ``--flavour`` alone (D-T48). What every family
-shares (users, ``run``, ``wait_for``, node control, the ``ready.sh``/
+One class per scheduler (``testbed/<scheduler>/``), registered in
+:data:`CLUSTERS`; the fixture picks the class from ``--scheduler``. What every
+scheduler shares (users, ``run``, ``wait_for``, node control, the ``ready.sh``/
 ``clean.sh`` contract, hpc-runner objects) is :class:`TestbedCluster`; a
-family class names its probe command and says how to dump a job's state.
+scheduler's class names its probe command and says how to dump a job's state.
 """
 
 from __future__ import annotations
@@ -118,14 +117,14 @@ class Cluster(Protocol):
 
 @dataclass
 class TestbedCluster:
-    """What every family's testbed shares; subclasses set :attr:`name` and the hooks."""
+    """What every scheduler's testbed shares; subclasses set :attr:`name` and the hooks."""
 
     flavour: str
     workdir: Path
-    #: The family: the ``testbed/<name>/`` directory and ``get_scheduler`` name.
+    #: The scheduler: the ``testbed/<name>/`` directory and ``get_scheduler`` name.
     name: str = ""
     users: tuple[str, ...] = USERS
-    #: A CLI that is on PATH in ``login`` exactly when this family's stack is.
+    #: A CLI that is on PATH in ``login`` exactly when this scheduler's stack is.
     probe_command: ClassVar[str] = ""
     _config: HPCConfig | None = field(default=None, init=False, repr=False)
     _scheduler: BaseScheduler | None = field(default=None, init=False, repr=False)
@@ -308,8 +307,34 @@ class SGECluster(TestbedCluster):
         self.run(["sudo", "truncate", "-s", "0", str(ACCOUNTING_FILES[self.flavour])])
 
 
-#: ``{family: cluster class}``; a new family (``testbed/slurm/``) adds its class here.
-CLUSTERS: dict[str, type[TestbedCluster]] = {"sge": SGECluster}
+@dataclass
+class SlurmCluster(TestbedCluster):
+    """A Slurm testbed of one *flavour* (``24.11``, ...), driven from ``login``."""
+
+    name: str = "slurm"
+    probe_command: ClassVar[str] = "sinfo"
+
+    def dump_commands(self, job_id: str) -> list[list[str]]:
+        return [["sinfo", "-N", "-l"], ["scontrol", "show", "job", job_id]]
+
+
+@dataclass
+class PBSCluster(TestbedCluster):
+    """A PBS testbed of one *flavour* (``openpbs``), driven from ``login``."""
+
+    name: str = "pbs"
+    probe_command: ClassVar[str] = "pbsnodes"
+
+    def dump_commands(self, job_id: str) -> list[list[str]]:
+        return [["pbsnodes", "-a"], ["qstat", "-x", "-f", job_id]]
+
+
+#: ``{scheduler: cluster class}``; a new scheduler adds its class here.
+CLUSTERS: dict[str, type[TestbedCluster]] = {
+    "sge": SGECluster,
+    "slurm": SlurmCluster,
+    "pbs": PBSCluster,
+}
 
 
 def _names(states: set[JobStatus]) -> str:

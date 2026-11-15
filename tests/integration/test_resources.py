@@ -18,7 +18,7 @@ from hpc_runner.core.spec import JobSpec
 from hpc_runner.schedulers import get_scheduler
 from tests.integration.cluster import Cluster
 
-pytestmark = pytest.mark.family("sge")
+pytestmark = pytest.mark.scheduler("sge")
 
 #: ``short.q`` has ``h_rt 00:01:00``; the kill arrives about 60 s after start.
 H_RT_KILL_TIMEOUT = 150.0

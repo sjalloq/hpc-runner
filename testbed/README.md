@@ -7,8 +7,8 @@ image is built locally each time (Docker's layer cache makes a rebuild free).
 
 The stack is driven by `hpc-testbed` (`src/hpc_runner/_testbed.py`, installed
 with the package; stdlib only, wraps `docker compose` and prints every command
-it runs). It needs a checkout: it finds `testbed/<family>/<flavour>/compose.yml`
-above the current directory and uses `-p hpc-testbed-<flavour>`.
+it runs). It needs a checkout: it finds `testbed/<scheduler>/<flavour>/compose.yml`
+above the current directory and uses `-p hpc-testbed-<scheduler>-<flavour>`.
 
 ```
 testbed/
@@ -17,6 +17,15 @@ testbed/
   sge/soge/           Debian trixie gridengine 8.1.9 (Son of Grid Engine lineage)
   sge/ocs/            Open Cluster Scheduler 9.1.7 (Univa lineage), upstream tarballs
   sge/common/         ready.sh and clean.sh, shared by the SGE flavours
+  slurm/24.11/        Slurm 24.11 (Debian trixie slurm-wlm 24.11.5): master (slurmctld,
+                      slurmdbd), db (MariaDB), exec1, exec2, login. No hpc-runner backend
+                      or integration tests yet; used to run and record Slurm behaviour
+                      (docs/dev/slurm/PLAN.md, docs/dev/slurm/runs/)
+  slurm/22.05/        Slurm 22.05 (Debian bookworm slurm-wlm 22.05.8), same shape
+  slurm/common/       entrypoint.sh, conf/, ready.sh and clean.sh, shared by the Slurm flavours
+  pbs/openpbs/        OpenPBS 23.06.06 built from source on Rocky Linux 8: master (server,
+                      scheduler, comm), exec1, exec2, login. Research use only so far
+  pbs/common/         ready.sh and clean.sh
     Dockerfile        one image for every role; role from SGE_ROLE at run time
     compose.yml       master, exec1, exec2, login on a static-IP network
     entrypoint.sh     master: init_cluster + qconf config; exec: sge_execd; login: venvs + sleep
@@ -29,6 +38,23 @@ testbed/
 
 ## Running by hand
 
+Every command names its stack first:
+
+```bash
+hpc-testbed --scheduler sge ...                    # SGE, default flavour soge
+hpc-testbed --scheduler sge --flavour ocs ...      # SGE, Open Cluster Scheduler
+hpc-testbed --scheduler slurm ...                  # Slurm, default flavour 24.11
+hpc-testbed --scheduler slurm --flavour 22.05 ...  # Slurm 22.05
+hpc-testbed --scheduler pbs ...                    # PBS, default flavour openpbs
+```
+
+- `--scheduler` is required: a directory under `testbed/`.
+- `--flavour` is a directory under `testbed/<scheduler>/`; without it the
+  scheduler's default is used (`DEFAULT_FLAVOURS` in `src/hpc_runner/_testbed.py`).
+- A flavour never selects a scheduler: `--scheduler sge --flavour 24.11` is an error.
+
+The commands, shown here without those options:
+
 ```bash
 hpc-testbed up                    # build, start, wait for ready.sh (--ready-timeout 90, --no-build)
 hpc-testbed shell                 # bash in login as tester, /opt/venv/3.12/bin on PATH (--py 3.11 to change)
@@ -38,10 +64,9 @@ hpc-testbed pytest --up [--keep]  # up, pytest, down (--keep leaves the stack ru
 hpc-testbed logs [master ...]     # container logs, all or named services
 hpc-testbed clean                 # delete every job, wait for an empty queue
 hpc-testbed down                  # containers, network and volumes removed
-hpc-testbed capture               # regenerate tests/unit/fixtures/<family>/<flavour>/ (~3 min)
+hpc-testbed capture               # regenerate tests/unit/fixtures/<scheduler>/<flavour>/ (~3 min)
 hpc-testbed up --slow-accounting  # master with a 15 s accounting flush, for ...
 hpc-testbed pytest --slow-accounting   # ... the tests marked slow_accounting (deselected otherwise)
-hpc-testbed --flavour <name> ...  # another flavour under testbed/<family>/ (default soge)
 ```
 
 `hpc-testbed pytest` always passes `-m integration --require-cluster`: inside
@@ -50,11 +75,12 @@ The same rule holds inside the tests: nothing skips on a missing
 precondition (no Docker socket, wrong accounting flush); it fails and says
 which `hpc-testbed` command fixes it. Variants are selected, not detected:
 `--slow-accounting` selects exactly the tests marked `slow_accounting`, which
-are deselected otherwise, and exist only for the families that have them
-(SGE). `--flavour` and `@pytest.mark.flavour(...)` must name a directory
-under `testbed/<family>/`, and `@pytest.mark.family(...)` a family
-directory; anything else fails collection. There is no family option: the
-flavour's directory is the family, and it picks the fixture class.
+are deselected otherwise, and exist only for the schedulers that have them
+(SGE). The suite takes the same two options, `--scheduler` and `--flavour`,
+and `hpc-testbed pytest` passes both. `@pytest.mark.scheduler("sge")` names
+a directory under `testbed/` and `@pytest.mark.flavour("sge/ocs")` a
+`<scheduler>/<flavour>` pair; anything else fails collection. The scheduler
+picks the fixture class.
 
 Inside `login` the suite's environment is already set:
 `HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml` (which
@@ -99,8 +125,8 @@ The `integration` job in `.github/workflows/ci.yml` runs these stacks on
 registry (the image is built in the job). One matrix cell per flavour and
 Python: `soge` at 3.12 on pull requests and at 3.10, 3.11 and 3.12 on pushes
 to `main`; `ocs` at 3.12 always (its differences are in what the scheduler
-writes, not in the Python reading it). A cell is, with `--flavour <name>` on
-every command:
+writes, not in the Python reading it). A cell is, with `--scheduler sge --flavour <name>`
+on every command:
 
 1. `pip install -e .` for the driver, `hpc-testbed up`, then `hpc-testbed
    pytest --py <ver> --junit testbed/junit-<ver>-default.xml` (a missing
@@ -117,31 +143,29 @@ runs last whatever happened.
 
 ## Adding a scheduler or a flavour
 
-A *flavour* is one vendor implementation of a scheduler family:
-`testbed/<family>/<flavour>/` with the same four services (`master`, `exec1`,
+A *flavour* is one release or vendor implementation of a scheduler:
+`testbed/<scheduler>/<flavour>/` with the same four services (`master`, `exec1`,
 `exec2`, `login`), the same `ready.sh`/`clean.sh` contract (exit 0 when ready;
 delete all jobs and wait), the same users and volumes, and its own cell
 configuration and `hpc-runner-testbed.toml`. The fixture classes
 (`tests/integration/cluster.py`) and the tests are shared across flavours of
-one family; `--flavour <name>` selects the stack that is up and
-`@pytest.mark.flavour(...)` deselects what a flavour cannot do, which is what
+one scheduler; `--scheduler <name> --flavour <name>` selects the stack that is up and
+`@pytest.mark.flavour("<scheduler>/<flavour>")` deselects what a flavour cannot do, which is what
 fills `testbed/sge/README.md`.
 
-A new family (Slurm) is `testbed/slurm/<flavour>/` plus:
+A new scheduler is `testbed/<scheduler>/<flavour>/` plus:
 
 - a `TestbedCluster` subclass in `tests/integration/cluster.py` (`name`,
   `probe_command`, `dump_commands`, `accounting_truncate`) registered in
-  `CLUSTERS`; the fixture picks it from the flavour's directory;
-- `pytestmark = pytest.mark.family("slurm")` on tests that drive its own
+  `CLUSTERS`; the fixture picks it from `--scheduler`;
+- its default flavour in `DEFAULT_FLAVOURS` (`src/hpc_runner/_testbed.py`);
+- `pytestmark = pytest.mark.scheduler("slurm")` on tests that drive its own
   CLI. Every module that calls `qstat`/`qacct`/`qmod` or relies on SGE
-  syntax is marked `family("sge")`; unmarked tests (`test_smoke.py`) run
-  on every family;
-- optionally a capture module in `CAPTURE_MODULES` and the family in
-  `SLOW_ACCOUNTING_FAMILIES` (`src/hpc_runner/_testbed.py`); without them
-  `hpc-testbed capture` and `--slow-accounting` refuse that family.
-
-`hpc-testbed --flavour <name>` finds the compose file under any family and
-passes only the flavour.
+  syntax is marked `scheduler("sge")`; unmarked tests (`test_smoke.py`) run
+  on every scheduler;
+- optionally a capture module in `CAPTURE_MODULES` and the scheduler in
+  `SLOW_ACCOUNTING_SCHEDULERS` (`src/hpc_runner/_testbed.py`); without them
+  `hpc-testbed capture` and `--slow-accounting` refuse that scheduler.
 
 ## Phase 0 spike results (2026-10-29, gridengine 8.1.9+dfsg-13.1 on trixie)
 

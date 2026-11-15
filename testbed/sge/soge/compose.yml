@@ -1,6 +1,6 @@
 # SGE testbed, `soge` flavour (Debian trixie gridengine 8.1.9). Run through
 # the hpc-testbed driver (src/hpc_runner/_testbed.py), which passes
-# `-p hpc-testbed-soge`. Compose features are
+# `-p hpc-testbed-sge-soge`. Compose features are
 # limited to those in Compose 2.38 (the CI runners' version).
 #
 # Name resolution: a user-defined network with static IPs plus extra_hosts on
