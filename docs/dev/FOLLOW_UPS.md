@@ -21,7 +21,7 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is steps 6, 7 and 11 of `slurm/PLAN.md`, "Order of
+For Slurm that work is steps 5, 6 and 10 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -55,15 +55,15 @@ work". For PBS nothing is planned.
   (`cluster.py`), though `testbed/README.md` lists it as part of a new
   scheduler's class.
 - `--slow-accounting` exists for SGE only
-  (`SLOW_ACCOUNTING_SCHEDULERS`, `_testbed.py:37`). Whether Slurm needs
-  one is an open question in `slurm/PLAN.md`; PBS is not decided.
+  (`SLOW_ACCOUNTING_SCHEDULERS`, `_testbed.py:37`). Slurm needs none
+  (`slurm/PLAN.md`, "Status and exit codes"); PBS is not measured.
 
 ### Captures and fixtures
 
 - `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
   `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 7 and 8).
+  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 6 and 7).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
   and nothing else.

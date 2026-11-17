@@ -621,9 +621,9 @@ All closed or moved on 2026-11-17. Decisions are in `PLAN.md`, not here.
 - Unknown GRES, feature and licence names are rejected at submit: run on
   the 24.11 testbed (`runs/slurm-24.11-2026-11-14-exp1.out`).
 - LSF items in section 7: LSF is dropped. PBS items: `../FOLLOW_UPS.md`.
-- Still open, in `PLAN.md`, "Open questions": a GPU type or licence
-  server as part of a name (R9, R10); `--mem-per-cpu` counting allocated
-  CPUs (R4).
+- A GPU type or licence server (R9, R10) is not part of the maps; it
+  goes in `scheduler_args`. `--mem-per-cpu` counting allocated CPUs (R4) is in `PLAN.md`,
+  "Later, not planned".
 
 ## Appendix A. LSF and PBS: the earlier research (2026-11-04)
 
