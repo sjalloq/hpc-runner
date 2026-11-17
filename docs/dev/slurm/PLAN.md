@@ -392,6 +392,13 @@ Nothing in it is scheduler-specific.
 - However the jobs are selected, it prints a table of them and asks
   "Proceed?" once (decided 2026-11-15). `--force` skips the question.
 - Exits 1 if any job could not be cancelled. Answering "no" exits 0.
+- Built 2026-11-17 (`cli/cancel.py`; `hpc kill` deleted). As built:
+  - Job ids and `-N`/`--all` cannot be combined; `--pending` and
+    `--running` apply only with `-N` or `--all`.
+  - An id the scheduler does not list as active is shown in the table as
+    "not active" and still tried; the scheduler's refusal makes the exit
+    code 1.
+  - A filter that matches nothing prints so and exits 0.
 
 ## Testbed
 
@@ -456,16 +463,15 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-Steps 1 and 2 change SGE behaviour and need no Slurm code.
+Step 1 changes SGE behaviour and needs no Slurm code.
 
-1. `hpc cancel` replaces `hpc kill`.
-2. The three maps replace `resources`.
+1. The three maps replace `resources`.
    - `licenses`, `devices`, `features` in config; `--license`,
      `--device`, `--feature` on the command line.
    - Remove `resources`, `-R/--resource`, `Resource`, `ResourceSet`.
    - Count rule, last one wins, command line over config.
    - Interactive SGE jobs carry all three.
-3. Make the tests ready for a second scheduler. The inventory is in
+2. Make the tests ready for a second scheduler. The inventory is in
    `../FOLLOW_UPS.md`, "Tests and testbed".
    - Integration tests that promise the same thing on every scheduler:
      move the SGE words behind the cluster class.
@@ -475,7 +481,7 @@ Steps 1 and 2 change SGE behaviour and need no Slurm code.
    - Fixture helpers named for SGE (`SGEFixtures`, `make_sge_responder`,
      `sge_fixtures`, `mock_sge_commands`): tests that are not about SGE
      stop depending on them.
-4. Slurm testbed support, both flavours.
+3. Slurm testbed support, both flavours.
    - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
      files.
    - The Slurm cluster class: every method the SGE one has, or a written
@@ -484,26 +490,26 @@ Steps 1 and 2 change SGE behaviour and need no Slurm code.
    - `testbed/slurm/README.md` with the table of test against flavour.
    - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
      (account enforcement) on 22.05.
-5. Slurm captures and fixtures: the list in "Testbed". Set a short
+4. Slurm captures and fixtures: the list in "Testbed". Set a short
    `SlurmdTimeout` for `node_fail`.
-6. Rendering.
+5. Rendering.
    - The scheduler class, registered in `schedulers/__init__.py`;
      `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
    - Arguments, batch template, golden scripts.
    - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
      `recorder.note_script`.
    - Interactive: `srun`, the `--pty` rule, `--export`.
-7. Parsing, against the fixtures.
+6. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
     - Cancel.
-8. Integration suite on both Slurm versions; CI cells for `24.11` and
+7. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
       right status and code.
-9. User docs, and a manual checklist on a real cluster.
+8. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.

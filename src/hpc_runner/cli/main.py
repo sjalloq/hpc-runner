@@ -11,7 +11,6 @@ from rich.console import Console
 from hpc_runner.cli._context import Context, pass_context
 from hpc_runner.cli.cancel import cancel
 from hpc_runner.cli.config import config_cmd
-from hpc_runner.cli.kill import kill
 from hpc_runner.cli.monitor import monitor
 from hpc_runner.cli.run import run
 from hpc_runner.cli.status import status
@@ -115,7 +114,6 @@ def cli(
 cli.add_command(run)
 cli.add_command(status)
 cli.add_command(cancel)
-cli.add_command(kill)
 cli.add_command(config_cmd, name="config")
 cli.add_command(monitor)
 

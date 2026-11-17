@@ -89,6 +89,26 @@ def test_status_shows_the_schedulers_failure_reason(cluster: Cluster) -> None:
     assert "137" in table and "100: assumedly after job" in table
 
 
+def test_cancel_by_filter_by_id_and_a_job_that_is_gone(cluster: Cluster) -> None:
+    """`hpc cancel` removes jobs chosen by name and by id; an id the scheduler
+    no longer has exits 1."""
+    hold = ("-S", "-a 203001010000")  # pending until cancelled
+    by_name = [_run_batch(cluster, "--name", "clican_a", *hold, "true") for _ in range(2)]
+    by_id = _run_batch(cluster, "--name", "clikeep", *hold, "true")
+    for job_id in (*by_name, by_id):
+        assert cluster.wait_for(job_id, JobStatus.PENDING, timeout=5) is JobStatus.PENDING
+
+    out = _hpc(cluster, "cancel", "--force", "-N", "clican_.*", "--pending")
+    assert "Cancelled 2 job(s)" in out, out
+    active = {j["job_id"] for j in _hpc_json(cluster, "status")}
+    assert by_id in active and not active & set(by_name)
+
+    assert "Cancelled 1 job(s)" in _hpc(cluster, "cancel", "--force", by_id)
+    gone = cluster.run([str(cluster.hpc_cli), "cancel", "--force", by_id], check=False, timeout=90)
+    assert gone.returncode == 1, gone.stdout + gone.stderr
+    assert "not active" in gone.stdout and f"Failed to cancel job {by_id}" in gone.stdout
+
+
 def test_run_exits_with_the_jobs_exit_code(cluster: Cluster) -> None:
     """`hpc run` of a command that exits 3 leaves 3 in `$?`: interactive, and --batch --wait."""
     run = [str(cluster.hpc_cli), "run", "--directory", str(cluster.workdir)]

@@ -165,11 +165,14 @@ Options:
 Other commands
 --------------
 
-- ``hpc cancel JOB_ID [--force]``: cancel a job (``--force`` skips the
-  confirmation)
-- ``hpc kill [-N PATTERN] [--all] [--pending] [--running] [--force]``: cancel
+- ``hpc cancel JOB_ID... [--force]``: cancel the named jobs
+- ``hpc cancel -N PATTERN | --all [--pending] [--running] [--force]``: cancel
   your active jobs whose name matches the regex ``PATTERN`` (or all of them
   with ``--all``), optionally only pending or only running ones
+
+  Either way the jobs are listed and confirmed once (``--force`` skips the
+  question). It exits 1 if any job could not be cancelled; answering "no"
+  exits 0.
 - ``hpc monitor [--refresh SECONDS]``: launch the TUI job monitor
 - ``hpc config show [--raw]``: print the active configuration (merged, or the
   raw file contents)
