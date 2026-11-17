@@ -42,6 +42,18 @@ Run a command on the cluster. By default the job runs interactively (SGE:
 finish. ``--batch`` submits and returns immediately. Array jobs are always
 batch.
 
+``hpc run`` exits as the command did, so ``$?`` is what it would be had you
+run the command by hand:
+
+- An interactive run, and ``--batch --wait``, exit with the job's exit code
+  (``128 + N`` for a job killed by signal ``N``).
+- A job that did not complete and has no exit code of its own exits 1:
+  cancelled while pending, skipped because a dependency was not satisfied,
+  or one the scheduler can no longer report on.
+- An array with ``--wait`` exits 0 only if every task completed, otherwise 1.
+- ``--batch`` without ``--wait`` exits 0 once the job is submitted.
+- An error of ``hpc`` itself exits 1; a usage error exits 2.
+
 Options:
 
 - ``-N, --name TEXT``

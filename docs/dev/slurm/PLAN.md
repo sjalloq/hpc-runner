@@ -139,12 +139,40 @@ Decided 2026-11-15. `hpc run` must look like running the tool by hand:
 the tool's exit code is in `$?`.
 
 - Interactive runs and `--batch --wait` exit with the job's exit code, on
-  every scheduler. Today both print the failure and exit 0
-  (`cli/run.py:189-194`, `209-221`).
+  every scheduler.
 - `--batch` without `--wait` exits 0 once the job is submitted.
 - A job that failed with no exit code (cancelled while pending, skipped,
   unknown) exits 1.
 - An array with `--wait` exits 0 only if every task completed, otherwise 1.
+- Built 2026-11-17 for SGE and local (`_exit_as_job` in `cli/run.py`;
+  `TestExitCode` in `tests/unit/test_cli/test_run.py`;
+  `test_run_exits_with_the_jobs_exit_code` in
+  `tests/integration/test_cli.py`, passed on `soge`, not run on `ocs`).
+  Nothing in it is scheduler-specific.
+- The rule for anything not named above (user, 2026-11-17): if the
+  scheduler reports, in whatever way, that the job did not finish,
+  `hpc run` exits non-zero and says so. It never exits silently.
+- Two cases built on that rule, both run on `soge` 2026-11-17:
+  - A job that did not complete but has exit code 0 on record exits 1.
+    A node killed under a `--batch --wait` job: `failed 19`,
+    `exit_status 0`, status FAILED, `hpc run` exits 1 (run
+    `sge-soge-2026-11-17-exp9`, case C).
+  - A launcher (`qrsh`, `srun`) killed by signal N exits `128 + N`.
+    `qrsh` killed with SIGKILL: `hpc run` exits 137 (run
+    `sge-soge-2026-11-17-exp10`).
+- Measured in the same runs, SGE `soge` only:
+  - Ctrl-C typed at the terminal of an interactive `hpc run`: prints
+    "Aborted.", exits 1, and the job leaves `qstat` (run
+    `sge-soge-2026-11-17-exp11`). Bare `qrsh` exits 0 there.
+  - `qrsh` alone sent SIGTERM, SIGINT or SIGHUP (not from a terminal)
+    exits 0 itself, and `hpc run` then exits 0 too. Not something a user
+    does; nothing is built for it.
+  - An interactive job deleted with `qdel`: `qrsh` and `hpc run` exit 137.
+  - A command that kills itself with SIGTERM: `hpc run` exits 143.
+- A skipped job exits 1 on every scheduler (user, 2026-11-17). The 113
+  on record on SGE is internal to hpc-runner and is never the exit code
+  of `hpc run`. Run on `soge`: `exit_status 113` in `qacct`, status
+  SKIPPED, `hpc run` exits 1 (run `sge-soge-2026-11-17-exp9`, case A).
 
 ## Status and exit codes
 
@@ -410,14 +438,9 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-Steps 1 to 4 change SGE behaviour and need no Slurm code.
+Steps 1 to 3 change SGE behaviour and need no Slurm code.
 
-1. `hpc run` exits with the job's exit code.
-   - Interactive, `--batch --wait` and arrays, as in "`hpc run` passes
-     the exit code up".
-   - Check on the SGE testbed with one `hpc run` of a command that exits
-     3. The integration test today goes through the API, not the CLI.
-2. Options.
+1. Options.
    - Remove `nodes`, `tasks`, `priority`, `use_cwd`, `shell` from config,
      command line and Python API. SGE always sends `-cwd` and
      `-S /bin/bash`.
@@ -425,14 +448,14 @@ Steps 1 to 4 change SGE behaviour and need no Slurm code.
    - Add the test table of scheduler against option.
    - Change the default output file for arrays, and where the task id
      goes in a user-set pattern.
-3. `hpc cancel` replaces `hpc kill`.
-4. The three maps replace `resources`.
+2. `hpc cancel` replaces `hpc kill`.
+3. The three maps replace `resources`.
    - `licenses`, `devices`, `features` in config; `--license`,
      `--device`, `--feature` on the command line.
    - Remove `resources`, `-R/--resource`, `Resource`, `ResourceSet`.
    - Count rule, last one wins, command line over config.
    - Interactive SGE jobs carry all three.
-5. Make the tests ready for a second scheduler. The inventory is in
+4. Make the tests ready for a second scheduler. The inventory is in
    `../FOLLOW_UPS.md`, "Tests and testbed".
    - Integration tests that promise the same thing on every scheduler:
      move the SGE words behind the cluster class.
@@ -442,7 +465,7 @@ Steps 1 to 4 change SGE behaviour and need no Slurm code.
    - Fixture helpers named for SGE (`SGEFixtures`, `make_sge_responder`,
      `sge_fixtures`, `mock_sge_commands`): tests that are not about SGE
      stop depending on them.
-6. Slurm testbed support, both flavours.
+5. Slurm testbed support, both flavours.
    - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
      files.
    - The Slurm cluster class: every method the SGE one has, or a written
@@ -451,26 +474,26 @@ Steps 1 to 4 change SGE behaviour and need no Slurm code.
    - `testbed/slurm/README.md` with the table of test against flavour.
    - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
      (account enforcement) on 22.05.
-7. Slurm captures and fixtures: the list in "Testbed". Set a short
+6. Slurm captures and fixtures: the list in "Testbed". Set a short
    `SlurmdTimeout` for `node_fail`.
-8. Rendering.
+7. Rendering.
    - The scheduler class, registered in `schedulers/__init__.py`;
      `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
    - Arguments, batch template, golden scripts.
    - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
      `recorder.note_script`.
    - Interactive: `srun`, the `--pty` rule, `--export`.
-9. Parsing, against the fixtures.
+8. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
     - Cancel.
-10. Integration suite on both Slurm versions; CI cells for `24.11` and
+9. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
       right status and code.
-11. User docs, and a manual checklist on a real cluster.
+10. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.

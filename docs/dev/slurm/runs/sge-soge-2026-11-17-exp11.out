@@ -1,0 +1,19 @@
+command: /opt/venv/3.12/bin/hpc run sleep 300
+running job: 2
+typed Ctrl-C
+exit code: 1
+--- terminal output ---
+^C
+[31mAborted.[0m
+
+--- qstat 5 s later ---
+(empty)
+=================== bare qrsh
+command: /usr/lib/gridengine/qrsh -now no sleep 300
+running job: 3
+typed Ctrl-C
+exit code: 0
+--- terminal output ---
+^C
+--- qstat 5 s later ---
+(empty)

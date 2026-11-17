@@ -1,0 +1,46 @@
+== bare qrsh, qrsh killed with SIGTERM ==
+job 8 running
+qrsh rc=0
+== hpc run, qrsh killed with SIGTERM ==
+job 9 running
+Job completed successfully
+hpc rc=0
+== bare qrsh, qrsh killed with SIGKILL ==
+job 10 running
+bash: line 1: 30808 Killed                  qrsh -now no sleep 300
+qrsh rc=137
+== hpc run, qrsh killed with SIGKILL ==
+job 11 running
+Job failed with exit code: 137
+hpc rc=137
+== bare qrsh, qrsh killed with SIGINT ==
+job 12 running
+qrsh rc=0
+== hpc run, qrsh killed with SIGINT ==
+job 13 running
+Job completed successfully
+hpc rc=0
+== bare qrsh, qrsh killed with SIGHUP ==
+job 14 running
+qrsh rc=0
+== hpc run, qrsh killed with SIGHUP ==
+job 15 running
+Job completed successfully
+hpc rc=0
+== bare qrsh, job deleted with qdel ==
+job 16 running
+tester has registered the job 16 for deletion
+qrsh rc=137
+== hpc run, job deleted with qdel ==
+job 17 running
+tester has registered the job 17 for deletion
+Job failed with exit code: 137
+hpc rc=137
+== hpc run, the command kills itself with SIGTERM ==
+Terminated
+Job failed with exit code: 143
+hpc rc=143
+== bare qrsh, the command kills itself with SIGTERM ==
+-TERM: 1: kill: Usage: kill [-s sigspec | -signum | -sigspec] [pid | job]... or
+kill -l [exitstatus]
+qrsh rc=2

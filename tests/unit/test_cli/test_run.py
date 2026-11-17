@@ -7,13 +7,8 @@ from click.testing import CliRunner
 
 from hpc_runner.cli.main import cli
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.core.result import JobResult
-
-
-@pytest.fixture
-def fast_wait(monkeypatch):
-    """``--wait`` polls every 50 ms instead of 5 s."""
-    monkeypatch.setattr(JobResult, "wait", partialmethod(JobResult.wait, poll_interval=0.05))
+from hpc_runner.core.result import ArrayJobResult, ArrayJobStatus, JobResult, JobStatus
+from tests.fakes import make_sge_responder, patch_seam
 
 
 @pytest.fixture(autouse=True)
@@ -588,3 +583,96 @@ class TestEnvResourceWaitOptions:
         result = runner.invoke(cli, ["run", "--local", "echo", "hi"])
         assert result.exit_code != 0
         assert "No such option" in result.output
+
+
+class TestExitCode:
+    """``hpc run`` exits as the job did: ``$?`` is the command's exit code."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    @pytest.fixture
+    def quick_wait(self, monkeypatch):
+        """``--wait`` polls at once and gives up on UNKNOWN at once."""
+        monkeypatch.setattr(
+            JobResult, "wait", partialmethod(JobResult.wait, poll_interval=0.01, unknown_after=0.0)
+        )
+
+    @pytest.mark.parametrize("code", [0, 3])
+    def test_interactive_exits_with_the_commands_code(self, runner, temp_dir, code):
+        with runner.isolated_filesystem(temp_dir=temp_dir):
+            result = runner.invoke(cli, ["run", "sh", "-c", f"exit {code}"])
+        assert result.exit_code == code, result.output
+
+    @pytest.mark.parametrize("code", [0, 3])
+    def test_batch_wait_exits_with_the_commands_code(self, runner, temp_dir, quick_wait, code):
+        with runner.isolated_filesystem(temp_dir=temp_dir):
+            result = runner.invoke(cli, ["run", "--batch", "--wait", "sh", "-c", f"exit {code}"])
+        assert result.exit_code == code, result.output
+
+    def test_batch_without_wait_exits_0_once_submitted(self, runner, temp_dir):
+        with runner.isolated_filesystem(temp_dir=temp_dir):
+            result = runner.invoke(cli, ["run", "--batch", "sh", "-c", "exit 3"])
+        assert result.exit_code == 0, result.output
+
+    def test_interactive_launcher_killed_by_a_signal_is_128_plus_n(self, runner, sge_dirs):
+        """subprocess reports qrsh killed by SIGTERM as -15; a shell says 143."""
+
+        def respond(argv):
+            assert argv[0] == "qrsh", argv
+            return -15, "", ""
+
+        with patch_seam(respond):
+            result = runner.invoke(cli, ["run", "sleep", "300"])
+        assert result.exit_code == 143, result.output
+
+    @pytest.mark.parametrize(
+        ("scenario", "code"),
+        [
+            ("ok", 0),  # COMPLETED
+            ("exit1", 1),  # FAILED, the command's own code
+            ("signal", 137),  # FAILED, killed by SIGKILL
+            ("timeout", 137),  # KILLED at the time limit
+            ("skipped", 1),  # SKIPPED: 113 on record is hpc-runner's own, never shown
+            ("lost_node", 1),  # FAILED with exit code 0 on record: never 0
+            ("deleted_pending", 1),  # UNKNOWN: no record, so no code
+        ],
+    )
+    def test_batch_wait_over_captured_jobs(
+        self, runner, sge_dirs, sge_fixtures, quick_wait, scenario, code
+    ):
+        """qsub answers with a captured finished job's id; qstat no longer lists it."""
+        captured = make_sge_responder(sge_fixtures)
+        job_id = sge_fixtures.job(scenario)
+
+        def respond(argv):
+            if argv[0] == "qsub":
+                text = sge_fixtures.text("qsub.txt")
+                return 0, text.replace(sge_fixtures.submitted_id, job_id), ""
+            if argv[0] == "qstat" and "-j" not in argv:
+                return 0, sge_fixtures.text("qstat_empty.xml"), ""
+            return captured(argv)
+
+        with patch_seam(respond):
+            result = runner.invoke(cli, ["run", "--batch", "--wait", "true"])
+        assert f"Submitted job {job_id}" in result.output
+        assert result.exit_code == code, result.output
+
+    @pytest.mark.parametrize(
+        ("tasks", "code"),
+        [
+            ({1: JobStatus.COMPLETED, 2: JobStatus.COMPLETED}, 0),
+            ({1: JobStatus.COMPLETED, 2: JobStatus.FAILED}, 1),
+            ({1: JobStatus.COMPLETED, 2: JobStatus.UNKNOWN}, 1),
+        ],
+    )
+    def test_array_wait_exits_0_only_if_every_task_completed(
+        self, runner, sge_dirs, mock_sge_commands, monkeypatch, tasks, code
+    ):
+        statuses = ArrayJobStatus(tasks)
+        monkeypatch.setattr(ArrayJobResult, "wait", lambda self: statuses.overall)
+        monkeypatch.setattr(ArrayJobResult, "task_statuses", lambda self: statuses)
+        result = runner.invoke(cli, ["run", "--array", "1-2", "--wait", "true"])
+        assert "Submitted array job" in result.output
+        assert result.exit_code == code, result.output

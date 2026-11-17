@@ -4,13 +4,14 @@ import shlex
 from typing import TYPE_CHECKING
 
 import rich_click as click
+from click.exceptions import Exit
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 
 from hpc_runner.cli._context import Context, pass_context
-from hpc_runner.core.result import ArrayJobResult
+from hpc_runner.core.result import ArrayJobResult, JobStatus
 
 if TYPE_CHECKING:
     from hpc_runner.core.dependency import Dependency
@@ -111,6 +112,9 @@ def run(
     streams to this terminal and hpc waits for it to finish. Use --batch
     to submit and return immediately.
 
+    An interactive run, and --batch --wait, exit with the command's exit
+    code. An array with --wait exits 0 only if every task completed.
+
     COMMAND is the command to execute, including any flags it needs. The
     first word that is not an hpc option starts it, so its own flags are
     never interpreted:
@@ -187,10 +191,12 @@ def run(
     result = scheduler.submit(job, keep_script=keep_script, verbose=ctx.verbose)
 
     if job.interactive:
-        if result.exit_code == 0:
+        code = _shell_code(result.exit_code)
+        if code == 0:
             console.print("[green]Job completed successfully[/green]")
         else:
-            console.print(f"[red]Job failed with exit code: {result.exit_code}[/red]")
+            console.print(f"[red]Job failed with exit code: {code}[/red]")
+        _exit_as_job(result.status, code)
         return
 
     if isinstance(result, ArrayJobResult):
@@ -216,9 +222,41 @@ def run(
                 f"Array job completed with status: [bold]{final_status.name}[/bold] "
                 f"({len(tasks.tasks) - not_ok} ok, {not_ok} not ok)"
             )
+            # An array has no one exit code: 0 when every task completed, else 1.
+            _exit_as_job(final_status, None)
         else:
             final_status = result.wait()
             console.print(f"Job completed with status: [bold]{final_status.name}[/bold]")
+            _exit_as_job(final_status, result.returncode if final_status.is_terminal else None)
+
+
+def _shell_code(returncode: int | None) -> int | None:
+    """*returncode* as a shell reports it: death by signal N is ``128 + N``.
+
+    ``subprocess`` gives ``-N`` for a launcher (qrsh, srun) killed by a signal.
+    """
+    if returncode is not None and returncode < 0:
+        return 128 - returncode
+    return returncode
+
+
+def _exit_as_job(status: JobStatus, exit_code: int | None) -> None:
+    """Make ``hpc run`` exit as the job did, so ``$?`` is the command's.
+
+    Returns for a COMPLETED job (exit 0). Any other status exits with the
+    job's exit code, or 1 when it has none or the code is 0: a job
+    cancelled while pending, or one the scheduler cannot report on. A
+    SKIPPED job exits 1 on every scheduler: its command never ran, and the
+    code on record (``HPC_EXIT_DEP_FAILED`` on SGE) is hpc-runner's own.
+
+    Raises:
+        click.exceptions.Exit: The job did not complete; carries the exit code.
+    """
+    if status is JobStatus.COMPLETED:
+        return
+    if status is JobStatus.SKIPPED:
+        raise Exit(1)
+    raise Exit(exit_code or 1)
 
 
 def _parse_pairs(values: tuple[str, ...], option: str, form: str) -> list[tuple[str, str]]:

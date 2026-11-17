@@ -89,6 +89,20 @@ def test_status_shows_the_schedulers_failure_reason(cluster: Cluster) -> None:
     assert "137" in table and "100: assumedly after job" in table
 
 
+def test_run_exits_with_the_jobs_exit_code(cluster: Cluster) -> None:
+    """`hpc run` of a command that exits 3 leaves 3 in `$?`: interactive, and --batch --wait."""
+    run = [str(cluster.hpc_cli), "run", "--directory", str(cluster.workdir)]
+    interactive = cluster.run([*run, "sh", "-c", "exit 3"], check=False, timeout=120)
+    assert interactive.returncode == 3, interactive.stdout + interactive.stderr
+    waited = cluster.run(
+        [*run, "--batch", "--wait", "sh", "-c", "exit 3"], check=False, timeout=120
+    )
+    assert waited.returncode == 3, waited.stdout + waited.stderr
+    assert "status: FAILED" in waited.stdout
+    submitted = cluster.run([*run, "--batch", "sh", "-c", "exit 3"], check=False, timeout=120)
+    assert submitted.returncode == 0, submitted.stdout + submitted.stderr
+
+
 def test_tool_alias_and_config_resolve(cluster: Cluster) -> None:
     """[tools.sort] commands = ["sort", "uniq"]: `uniq` gets the entry's queue, live."""
     table = _hpc(cluster, "config", "resolve", "uniq", "/etc/hostname")

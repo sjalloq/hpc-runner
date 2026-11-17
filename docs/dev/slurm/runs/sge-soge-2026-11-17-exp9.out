@@ -1,0 +1,44 @@
+== A. skipped: dependent of a job that exited 1 ==
+parent 2
+Submitted job 3
+Waiting for job completion...
+Job completed with status: SKIPPED
+hpc rc=1
+jobnumber    3
+failed       0
+exit_status  113
+== B1. interactive: the command exits 3 ==
+Job failed with exit code: 3
+hpc rc=3
+== B2. interactive: qrsh itself killed with SIGTERM ==
+never ran: e9term
+job  running
+4040 /usr/lib/gridengine/qrsh -now no -cwd -V /work/cache/scripts/hpc_interactive_583ce7c1.sh
+Job completed successfully
+hpc rc=0
+== B3. interactive: the job deleted with qdel while running ==
+never ran: e9qdel
+job  running
+SGE 8.1.9
+usage: qdel [options] job_task_list
+   [-f]                                     force action
+   [-help]                                  print this help
+   [-u user_list]                           delete all jobs of users specified in list
+   job_task_list                            delete all jobs given in list
+
+job_task_list           job_tasks[,job_tasks,...]
+job_tasks               [job_id['.'task_id_range]|job_name|pattern][' -t 'task_id_range]
+task_id_range           task_id['-'task_id[':'step]]
+user_list               user[,user,...]
+ERROR! no option argument
+Job completed successfully
+hpc rc=0
+== C. batch --wait: the node killed under the job ==
+Submitted job 7
+Waiting for job completion...
+job 7 running
+Job completed with status: FAILED
+hpc rc=1
+jobnumber    7
+failed       19  : before writing exit_status
+exit_status  0
