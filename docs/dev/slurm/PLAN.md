@@ -31,8 +31,6 @@ them to the underlying scheduler's arguments.
   - Every supported scheduler either maps it or rejects it.
   - The mapping is backed by vendor docs or a testbed capture.
   - It is optional, so existing configs keep working.
-- Renaming or redefining an option: avoided, but done when the design is
-  wrong. The old name then gives an error saying what to use.
 - Names a site chooses (SGE parallel environment, memory complex) live in
   `[schedulers.<name>]`. A new scheduler adds its own section and touches no
   other.
@@ -286,7 +284,7 @@ Decided 2026-11-15.
   a Slurm batch shell is not a login shell. Neither matters: the job script
   sources the Modules init file itself
   (`templates/_environment.sh.j2:14-23`).
-- `DISPLAY` travels with the environment. In strict mode a site adds it to
+- `DISPLAY` travels with the environment. With `inherit_env = false` a site adds it to
   `env_passthrough`. `srun --x11` is not used.
 
 ## Interactive jobs
@@ -332,7 +330,6 @@ Nothing in it is scheduler-specific.
 
 ## Config: `[schedulers.slurm]`
 
-
 - `memory_per = "job" | "cpu"`, default `"job"`.
 - `kill_invalid_dependents = true | false`, default `true`.
 
@@ -367,7 +364,7 @@ Nothing in it is scheduler-specific.
 - No cgroups: `proctrack/linuxproc`, `task/none`. Not `privileged`, but the
   24.11 exec containers have `cap_add: SYS_ADMIN`: without it slurmd exits
   at the first `--export=NONE` job (testbed run). 22.05 does not need it.
-  Follow-up: confirm this is acceptable.
+  Whether that is acceptable is an open question below.
 - exec1 has a feature (`fast`) and a GPU
   count; both nodes have temp disk; there are two licences (`lic`).
 - Accounting always on. Munge key generated per stack.
@@ -402,40 +399,105 @@ pending_resources, bad_partition, bad_account, dependent_ok.
 
 ## Order of work
 
-Research is closed on real schedulers before anything is specified or
-built on it.
+This list is all the remaining work for the Slurm backend. Work is taken
+from it one step at a time. A step is deleted when it is done.
 
-1. SGE: run the unverified SGE claims on the existing testbed. Done
-   2026-11-14, results in `SGE_SLURM_DIFFERENCES.md`, "Testbed runs".
-2. Slurm testbeds `24.11` and `22.05`: built, claims run on both (same
-   place).
-3. PBS testbed: built (`testbed/pbs/openpbs/`, OpenPBS 23.06.06 from
-   source on Rocky Linux 8). PBS claims run 2026-11-15; results in
-   `RESOURCES_COMPARISON.md`, section 7.
-4. LSF: dropped for now. IBM's Community Edition cannot be downloaded
-   without a registered company. Its claims stay marked unverified.
-5. Fact files updated from the runs. The remaining unverified items were
-   accepted by the user on 2026-11-15 as not affecting the build (listed
-   at the end of each fact file). Research is closed. Next: review this
-   plan against the fact files.
-6. Answer the open questions (done 2026-11-16).
-7. `hpc run` exits with the job's exit code (SGE first; it is a fix to
-   shipped behaviour).
-8. Options: remove `nodes`/`tasks`/`priority`/`use_cwd`/`shell`, add the rejection error,
-   add the test table.
-9. Fold `hpc kill` into `hpc cancel`.
-10. Replace `resources` with the three maps.
-11. Fix a wrong note in `restructure/DECISIONS.md` (D3): Slurm has no
-    `--export=NONE,NAME=value`.
-12. Slurm captures and fixtures.
-13. Rendering: arguments, templates, golden scripts.
-14. Parsing, against the fixtures.
-15. Integration suite on both Slurm versions, CI cells.
-16. User docs; manual checklist on a real cluster.
+Done before this list: the research, run on real schedulers (SGE, Slurm
+24.11 and 22.05, OpenPBS; LSF dropped, no download without a registered
+company), the three testbeds, and the answers to the first round of
+questions. Results are in the two fact files and `runs/`.
+
+Steps 1 to 4 change shipped behaviour on SGE and need no Slurm code.
+
+1. `hpc run` exits with the job's exit code.
+   - Interactive, `--batch --wait` and arrays, as in "`hpc run` passes
+     the exit code up".
+   - Check on the SGE testbed with one `hpc run` of a command that exits
+     3. The integration test today goes through the API, not the CLI.
+2. Options.
+   - Remove `nodes`, `tasks`, `priority`, `use_cwd`, `shell` from config,
+     command line and Python API. SGE always sends `-cwd` and
+     `-S /bin/bash`.
+   - Add the error for an option a scheduler cannot honour.
+   - Add the test table of scheduler against option.
+   - Change the default output file for arrays, and where the task id
+     goes in a user-set pattern.
+3. `hpc cancel` replaces `hpc kill`.
+4. The three maps replace `resources`.
+   - `licenses`, `devices`, `features` in config; `--license`,
+     `--device`, `--feature` on the command line.
+   - Remove `resources`, `-R/--resource`, `Resource`, `ResourceSet`.
+   - Count rule, last one wins, command line over config.
+   - Interactive SGE jobs carry all three.
+5. Release steps 1 to 4. When, and as what version, is an open question
+   below.
+6. Make the tests ready for a second scheduler. The inventory is in
+   `../FOLLOW_UPS.md`, "Tests and testbed".
+   - Integration tests that promise the same thing on every scheduler:
+     move the SGE words behind the cluster class.
+   - Tests that must differ per scheduler: one per scheduler.
+   - A test kept for SGE only needs the user's decision and a written
+     reason.
+   - Fixture helpers named for SGE (`SGEFixtures`, `make_sge_responder`,
+     `sge_fixtures`, `mock_sge_commands`): tests that are not about SGE
+     stop depending on them.
+7. Slurm testbed support, both flavours.
+   - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
+     files.
+   - The Slurm cluster class: every method the SGE one has, or a written
+     reason (`accounting_truncate`).
+   - A Slurm capture module, registered in `CAPTURE_MODULES`.
+   - `testbed/slurm/README.md` with the table of test against flavour.
+   - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
+     (account enforcement) on 22.05.
+8. Slurm captures and fixtures: the list in "Testbed". Set a short
+   `SlurmdTimeout` for `node_fail`.
+9. Rendering.
+   - The scheduler class, registered in `schedulers/__init__.py`;
+     `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
+   - Arguments, batch template, golden scripts.
+   - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
+     `recorder.note_script`.
+   - Interactive: `srun`, the `--pty` rule, `--export`.
+10. Parsing, against the fixtures.
+    - Status and exit code from `sacct`; the SKIPPED rule.
+    - Live listing from `squeue`.
+    - Job details from `scontrol show job`, then `sacct`.
+    - Cancel.
+11. Integration suite on both Slurm versions; CI cells for `24.11` and
+    `22.05`.
+    - Includes: for each kind of finished job with more than one `sacct`
+      row (timeout, cancelled while running), hpc-runner reports the
+      right status and code.
+12. User docs, and a manual checklist on a real cluster.
+    - The Slurm cpu and task model.
+    - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
+      and `LOGNAME` empty.
+    - `${hpc.tmpdir}` is plain `$TMPDIR`; scratch space is the user's job.
+    - `SBATCH_*` variables are not to be combined with hpc-runner.
+    - A table of Slurm job states against readers, as
+      `test-review/LIFECYCLE_MATRIX.md` is for SGE.
 
 ## Open questions
 
-None. The last was answered on 2026-11-16.
+Each needs the user's answer. None blocks steps 1 to 4.
+
+1. **Release of steps 1 to 4.** They break shipped SGE behaviour (exit
+   codes, removed options, `hpc kill`, array output names). Released on
+   their own before any Slurm code, or with the Slurm backend? As what
+   version?
+2. **`SYS_ADMIN` on the 24.11 exec containers.** Needed or slurmd exits
+   at the first `--export=NONE` job (testbed run). Acceptable?
+3. **Names with a type or a server.** Slurm takes a GPU type
+   (`--gres=gpu:a100:2`) and a licence server (`-L name@db`) as part of
+   the name. Allowed in `devices` and `licenses`, or left to
+   `scheduler_args`? (`RESOURCES_COMPARISON.md`, R9 and R10.)
+4. **`memory_per = "cpu"`.** Slurm multiplies `--mem-per-cpu` by the CPUs
+   it allocates, which can be more than `cpu`
+   (`RESOURCES_COMPARISON.md`, R4). A note in the docs, a guard, or
+   nothing?
+5. **Slow accounting.** The SGE testbed has a `--slow-accounting`
+   variant. Does Slurm need one?
 
 ## Later, not planned
 

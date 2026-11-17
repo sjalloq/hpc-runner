@@ -1240,8 +1240,8 @@ Accepted by the user on 2026-11-15: every item in this list is closed as
 it stands. None changes how hpc-runner is built: each is a corner case,
 is out of scope by a line in `PLAN.md`, or depends on the site. The one
 that touches the design (a job found in neither the controller nor
-slurmdbd) is covered by the open question in `PLAN.md` on a job missing
-from `sacct`. Ctrl-C in an interactive job: killing the client ends the
+slurmdbd) is covered in `PLAN.md`, "Status and exit codes": a missing
+job is UNKNOWN and the wait loop waits through it. Ctrl-C in an interactive job: killing the client ends the
 job on both schedulers (runs F4 and S13, "Testbed runs"), which is all
 that is needed.
 

@@ -168,7 +168,7 @@ license variables and `SSH_AUTH_SOCK` are things a job legitimately needs.
 - (a) Keep `-V` default; document the caveat. Easiest, least safe.
 - (b) **Default off, allowlist.** `inherit_env = false`, plus
   `env_passthrough = ["DISPLAY", "LM_LICENSE_FILE", ...]` rendered as explicit
-  `-v NAME=value` (SGE) / `--export=NONE,NAME=value` (Slurm). The job gets a
+  `-v NAME=value` (SGE) / `--export=NAME=value` (Slurm). The job gets a
   clean login-shell environment plus named variables.
 - (c) Default on, denylist (`unset_vars`, which exists). Fights entropy.
 - (d) Per type/tool choice with a site default; no global answer.

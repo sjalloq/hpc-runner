@@ -1,7 +1,9 @@
 # Follow-ups
 
 Things known to be missing, unverified or undecided that belong to no
-current plan. Slurm build work is in `slurm/PLAN.md`, not here.
+current plan. Slurm build work is in `slurm/PLAN.md`, not here: where an
+item below has a Slurm half, the plan's step is named and this file is
+only the inventory.
 
 - Each item says what is open, where it was seen, and what closes it.
 - An item is deleted when it is done or when it moves into a plan.
@@ -19,6 +21,8 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
+For Slurm that work is steps 6, 7 and 11 of `slurm/PLAN.md`, "Order of
+work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
 
@@ -51,16 +55,15 @@ be closed today. It is the list of what a backend must bring with it.
   (`cluster.py`), though `testbed/README.md` lists it as part of a new
   scheduler's class.
 - `--slow-accounting` exists for SGE only
-  (`SLOW_ACCOUNTING_SCHEDULERS`, `_testbed.py:37`). Not decided whether
-  Slurm or PBS has an equivalent lag worth a variant.
+  (`SLOW_ACCOUNTING_SCHEDULERS`, `_testbed.py:37`). Whether Slurm needs
+  one is an open question in `slurm/PLAN.md`; PBS is not decided.
 
 ### Captures and fixtures
 
 - `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
   `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Captures to take" and "Order of
-    work" item 12).
+  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 7 and 8).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
   and nothing else.
@@ -97,7 +100,7 @@ be closed today. It is the list of what a backend must bring with it.
 - The three clusters are not configured alike, so a test cannot be
   replicated as it stands:
   - Time-limited queue: SGE `short.q` 1 minute (`cell/q-short.conf`),
-    Slurm `short` 10 minutes (`slurm.conf:35`), OpenPBS none
+    Slurm `short` 10 minutes (`slurm.conf:37`), OpenPBS none
     (no `create queue` in its `entrypoint.sh`).
   - Resources to request: Slurm and PBS have a licence `lic`, a GPU on
     exec1 and a feature `fast`; PBS also `scratch`. SGE has `gpu` and
@@ -112,36 +115,10 @@ be closed today. It is the list of what a backend must bring with it.
 - PBS has one flavour (OpenPBS). OpenPBS against PBS Professional is not
   examined.
 
-## Slurm: to check when the backend exists
-
-- Finished job status when `sacct` gives more than one row. A timed-out
-  job has:
-
-  ```
-  71        TIMEOUT    0:0      the job's own row
-  71.batch  CANCELLED  0:15     the batch step: killed with signal 15
-  ```
-
-  The rule is decided (`slurm/PLAN.md`, "Status and exit codes": status
-  from the job's own row, exit code from the `.batch` row when the job row
-  says `0:0` and the status is not COMPLETED). Open: check on the testbed
-  that hpc-runner reports the right status and code for each such job.
-- Not run on Slurm 22.05 (`slurm/runs/`, 24.11 only): exp7 (which
-  cancellations are plain `CANCELLED` in `sacct`; the SKIPPED rule rests
-  on it) and exp8 (account enforcement, the `bad_account` rejection).
-
 ## Trace
 
 - A record does not say which scheduler release produced the output.
   Raised 2026-11-15, not decided.
-
-## CLI
-
-- Unconfirmed: an interactive `hpc run` exited 0 when the job exited 3.
-  Seen 2026-11-15 with stub `qrsh` scripts, not on a testbed.
-  `test_submit.py::test_interactive` passes on `soge` and runs
-  `exit 3` through the API, not the CLI. Closes with one `hpc run` on the
-  SGE testbed.
 
 ## PBS
 

@@ -1,10 +1,10 @@
 # Resource requests for one-shot jobs: SGE, Slurm, LSF, PBS
 
-A fact base for the licence, device and feature maps and the open questions on them (`PLAN.md`), researched on
+A fact base for the licence, device and feature maps (`PLAN.md`), researched on
 2026-11-09 from primary sources by one sub-agent (**UNVERIFIED**: no source
 records who did the research; the saved files' dates match) and re-checked
-on 2026-11-13. It makes no decisions; open choices are questions in
-section 8.
+on 2026-11-13. It makes no decisions; section 8 says where each question
+it raised was answered.
 
 ## 1. Sources and conventions
 
@@ -605,44 +605,25 @@ server), all added to the scheduler's `resources:` line. Output:
   while `-v NAME` did (the caller's environment held exported bash
   functions; cause not traced).
 
-## 8. Questions for the main session
+## 8. Questions this research raised
 
-Item numbers are unchanged. Items 1 and 8 are no longer questions: the
-2026-11-13 re-check settled them and each now states the fact.
+All closed or moved on 2026-11-17. Decisions are in `PLAN.md`, not here.
 
-1. Fact, not a question: bsub -gpu reads "By default, the number is per
-   host", with `/task` as the alternative.
-2. Q2: `scratch=20G`, `tmpfs=8G`, `h_vmem=50M` are sizes and
-   `hostname=exec1` is a host name; Slurm has an option for three of them
-   (`--tmp`, `--mem`, `-w`). Are they carried by the three maps with
-   non-integer values, by new keys, or by `scheduler_args`?
-3. R8: scratch is built in on Slurm and LSF and site-defined on SGE and
-   PBS. Is it a fourth kind beside licence, device and feature, a device
-   with a size value, or out of scope?
-4. R13: is a specific-host request part of the model (two integration
-   tests use one), or a raw argument?
-5. R12: `PLAN.md` renders an SGE feature as `-l feat=1`; complex(5) documents
-   `TRUE`/`FALSE`; the SoGE 8.1.9 parser gives `1` the same value as `TRUE`
-   (read from source, not run). Which is rendered, and is a capture of
-   `-l <bool>=1` wanted first?
-6. R9: Slurm offers `--gres=gpu:N` (per node) and `--gpus=N` (per job).
-   `PLAN.md` names `--gres`. Is that the intended one for multi-node jobs?
-7. R9, R10: a GPU type (`gpu:a100:2`, `gmodel=`) and a licence server
-   (`name@db`) are part of the value. In scope for the maps?
-8. Fact, not a question: Slurm rejects an unknown GRES name (both tags), an
-   unknown feature name (25.11) and an unknown licence name at job creation
-   (R15; read from source, not run). No testbed capture of the three was
-   taken.
-9. R5: is a capture of a job exceeding `--mem` under `ConstrainRAMSpace`
-   wanted before Slurm status mapping is fixed?
-10. R4: `--mem-per-cpu` counts allocated CPUs, which can exceed `cpu`. Does
-    the plan's `memory_per = "cpu"` division need a note or a guard?
-11. R1: CL 23.11 restores srun's use of `SLURM_CPUS_PER_TASK`. Is the
-    plan's export of `SRUN_CPUS_PER_TASK` kept for all versions?
-12. R3, R7, R14: exclusive nodes, CPU-time limits and soft requests are not
-    modelled today. In scope, or left to `scheduler_args`?
-13. Do the LSF and PBS items still open in section 7 (1, 2, 3, 5, 6, 8, 9,
-    10) need closing now, or are they parked?
+- Sizes, host names, scratch, exclusive nodes, CPU-time limits, soft
+  requests (R3, R7, R8, R13, R14): no option; they go in
+  `scheduler_args` (`PLAN.md`, "Licences, devices, features").
+- An SGE feature is rendered `-l feat=1`: run on the SGE testbed (R12).
+- `--gres` against `--gpus` (R9): a job is one process on one node, so
+  the two ask for the same thing; the plan uses `--gres`.
+- A capture of a real out-of-memory kill (R5): cannot be made on the
+  testbed (`PLAN.md`, "Testbed" and "Later, not planned").
+- `SRUN_CPUS_PER_TASK` (R1): exported on every version.
+- Unknown GRES, feature and licence names are rejected at submit: run on
+  the 24.11 testbed (`runs/slurm-24.11-2026-11-14-exp1.out`).
+- LSF items in section 7: LSF is dropped. PBS items: `../FOLLOW_UPS.md`.
+- Still open, in `PLAN.md`, "Open questions": a GPU type or licence
+  server as part of a name (R9, R10); `--mem-per-cpu` counting allocated
+  CPUs (R4).
 
 ## Appendix A. LSF and PBS: the earlier research (2026-11-04)
 

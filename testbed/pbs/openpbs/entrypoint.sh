@@ -1,6 +1,6 @@
 #!/bin/bash
 # Entrypoint for the master, exec and login containers of the OpenPBS stack;
-# PBS_ROLE selects the role. docs/dev/slurm/PLAN.md, "Order of work".
+# PBS_ROLE selects the role. testbed/README.md.
 set -euo pipefail
 
 exec > >(tee -a /var/log/testbed.log) 2>&1
