@@ -22,6 +22,10 @@ them to the underlying scheduler's arguments.
   Nothing is silently ignored.
 - A job is one process on one node. `nodes` and `tasks` are removed. An MPI
   job uses `-S '-N 2 -n 32'`.
+- `priority` is removed (decided 2026-11-15). The number is each
+  scheduler's own scale, so it does not mean the same thing everywhere. A
+  site sets it per scheduler:
+  `scheduler_args = { sge = ["-p", "-500"], slurm = ["--nice=500"] }`.
 - Adding an option:
   - Its meaning is one sentence that names no scheduler.
   - Every supported scheduler either maps it or rejects it.
@@ -34,6 +38,15 @@ them to the underlying scheduler's arguments.
   other.
 - One test table: scheduler against option, each cell "maps" or "rejects".
   A new option or scheduler fails the suite until the table is complete.
+
+## Removed options
+
+- A removed option is simply gone, from config, command line and Python
+  API (user, 2026-11-15). No message names what it used to be or what
+  replaces it: a config that still sets one gets the ordinary
+  unknown-key error, the command line gets click's unknown-option error.
+- Removed in this plan: `nodes`, `tasks`, `priority`, `use_cwd`, `shell`,
+  `resources` (`-R/--resource`).
 
 ## Scope
 
@@ -51,19 +64,18 @@ them to the underlying scheduler's arguments.
 
 | Option | Slurm |
 |---|---|
-| `cpu = N` | `--cpus-per-task=N --ntasks=1` |
+| `cpu = N` | `--cpus-per-task=N --ntasks=1`; always sent, N is 1 when `cpu` is unset |
 | `mem` | `--mem=<MB>` (never 0: Slurm reads 0 as "all of the node") |
 | `mem` with `memory_per = "cpu"` | `--mem-per-cpu=<mem / cpu, rounded up>` |
 | `time` | `--time=D-HH:MM:SS` |
 | `queue` | `--partition` |
 | `project` | `--account` |
-| `priority = P` | `--nice=-P` (Slurm's scale runs the other way) |
 | `inherit_env = true` | `--export=ALL` |
 | `inherit_env = false` | `--export=NONE` |
 | `inherit_env = false` + `env_passthrough` | `--export=NAME=val,...`; a value containing `,` is an error |
 | dependencies | `--dependency=afterok:1:2,afterany:3` |
 | array | task ids are `<base>_<index>` |
-| output file | `%x.%j.out`; arrays `%x.%A_%a.out` (see open questions) |
+| output file | `%x.%j.out`; arrays `%x.%A.%a.out` |
 | `stderr` | `--error`, only when set (Slurm merges by default) |
 | cancel | `scancel <id>` |
 
@@ -96,7 +108,21 @@ features = ["bigmem"]
 | PBS | `-l lic=1` | `-l select=1:ngpus=2` | `-l select=1:feat=True` |
 
 - CLI: `--license NAME=N`, `--device NAME=N`, `--feature NAME`.
-- A config still using `resources` gets an error naming the three maps.
+- A count is a whole number, 1 or more; anything else is an error before
+  submission (decided 2026-11-15).
+- The same name twice on a command line: the last one wins, as `-R` does
+  today (decided 2026-11-15). A name on the command line replaces the same
+  name from config.
+- `resources`, `-R/--resource` and the Python `Resource`/`ResourceSet`
+  are removed outright.
+- A request that is none of the three (scratch space, a host name, a
+  memory limit by site name) has no option: it goes in `scheduler_args`,
+  per scheduler (user, 2026-11-16).
+- Interactive jobs carry all three on every scheduler (decided
+  2026-11-15): no difference between schedulers, or between batch and
+  interactive. Today SGE drops them for interactive jobs
+  (`sge/scheduler.py:576-590` never reads `job.resources`); fixed in the
+  three-maps step, whose test table covers both job kinds.
 - SGE accepts `-l feat=1` for a boolean and reads it as `TRUE` (run on the
   SGE testbed).
 - OpenPBS 23.06 has no built-in `ngpus`; the site creates it (testbed
@@ -104,6 +130,19 @@ features = ["bigmem"]
 - What a device count is per: node (Slurm), chunk (PBS), host by default
   (LSF), slot or job depending on site setup (SGE). All the same number for
   one process on one node.
+
+## `hpc run` passes the exit code up
+
+Decided 2026-11-15. `hpc run` must look like running the tool by hand:
+the tool's exit code is in `$?`.
+
+- Interactive runs and `--batch --wait` exit with the job's exit code, on
+  every scheduler. Today both print the failure and exit 0
+  (`cli/run.py:189-194`, `209-221`).
+- `--batch` without `--wait` exits 0 once the job is submitted.
+- A job that failed with no exit code (cancelled while pending, skipped,
+  unknown) exits 1.
+- An array with `--wait` exits 0 only if every task completed, otherwise 1.
 
 ## Status and exit codes
 
@@ -114,18 +153,25 @@ features = ["bigmem"]
 - `squeue` is used only for the live listing (`hpc status`, `hpc monitor`).
   Pipe-delimited text, explicit field list, job name last.
 - No JSON output: its shape changes between Slurm releases.
-- Exit code from `ExitCode N:S`: `N` if `S` is 0, otherwise `128 + S`.
-  `DerivedExitCode` is not used.
+- The exit code is what a shell would have reported for the command, on
+  every scheduler. From Slurm's `ExitCode N:S`: `N` if `S` is 0, otherwise
+  `128 + S`. `DerivedExitCode` is not used.
+- Status comes from the job's own row. The exit code comes from that row
+  too, except when it says `0:0` and the status is not COMPLETED: then the
+  `.batch` row is used (decided 2026-11-15). A timed-out job reports 143.
+- A job in which nothing ever ran (cancelled while pending, skipped) has
+  no exit code. The exit code is never 0 unless the status is COMPLETED.
+- So `sacct` is read without `-X`: the job row and the `.batch` row.
 
 | Slurm state | hpc-runner status |
 |---|---|
 | PD, RQ, RH, RF, RD | PENDING |
-| PD or CA with reason `DependencyNeverSatisfied` | SKIPPED |
+| `CANCELLED` with no `by <uid>` | SKIPPED |
 | R, CF, CG, SI, SO, RS | RUNNING |
 | S, ST | SUSPENDED |
 | CD | COMPLETED |
 | F, NF, BF, SE | FAILED |
-| CA, PR, RV | CANCELLED |
+| `CANCELLED by <uid>`, PR, RV | CANCELLED |
 | TO, DL | TIMEOUT |
 | OOM | KILLED (`hpc status` shows `OUT_OF_MEMORY` in the details) |
 | anything else | UNKNOWN |
@@ -135,6 +181,9 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - A new job is not in `sacct` at once: within 0.1 s on 24.11, up to 1 s on
   22.05, where the first row can also be a stub (name `allocation`, no
   partition) for 0.2 s. State and exit code in the stub are right.
+  A missing job is UNKNOWN; the wait loop already keeps waiting through
+  60 s of UNKNOWN on every scheduler (`core/result.py:173-203`), so
+  nothing new is needed.
 - At job end the controller and `sacct` agree within 50 ms (24.11).
 - The `DependencyNeverSatisfied` reason is not in `sacct`: Reason is `None`
   on 24.11 and `Dependency` on 22.05, for both the pending and the
@@ -144,11 +193,24 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - A job cancelled by a user is `CANCELLED by <uid>` in `sacct`; one
   cancelled by `--kill-on-invalid-dep` is plain `CANCELLED` (both
   versions).
+- Every `scancel` leaves `CANCELLED by <uid>` on the job's own row: by
+  the owner or by root, pending or running, single job or array (run
+  exp7, 24.11 only). The only plain `CANCELLED` found is the dependent
+  killed by `--kill-on-invalid-dep`, whether its parent failed or was
+  cancelled. The `.batch` row is always plain `CANCELLED`, so the test is
+  made on the job's own row.
 - The job's own row has `ExitCode 0:0` for TIMEOUT and for a cancelled
-  running job; only the `.batch` row shows the signal (`0:15`). The rule
-  above would report exit code 0 for both. See open questions.
+  running job; only the `.batch` row shows the signal (`0:15`).
 - A pending array is one `sacct` row, `64_[1-4%2]`; each task gets its own
   row once it starts. The base job id belongs to the last task.
+
+## Job details
+
+- From `scontrol show job <id>` while the controller knows the job, from
+  `sacct` after that, without the output file path (decided 2026-11-15).
+- `scontrol` gives the output path filled in on both versions. `sacct`
+  has no `StdOut` field before 24.11 (man pages) and on 24.11 gives the
+  pattern unfilled (`/work/d-%j.out`, testbed run).
 
 ## Dependencies
 
@@ -158,10 +220,62 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - `aftercorr` and `singleton` go through `-S`.
 - `kill_invalid_dependents = true` (default) adds
   `--kill-on-invalid-dep=yes`, so a job whose parent failed is cancelled
-  instead of pending forever. Either way it shows as SKIPPED.
+  instead of pending forever. `sacct` shows that as `CANCELLED` with no
+  `by <uid>`, which is SKIPPED (decided 2026-11-16). With the key false
+  the job stays PENDING: `sacct` cannot tell it from any other pending
+  job, and no second command is run to find out.
 - Interactive jobs refuse dependencies, as on SGE.
 - Submitting a dependent after its parent has left the controller's memory
   is not supported.
+
+## Working directory
+
+- `use_cwd` is removed on every scheduler (decided 2026-11-15). A job
+  always runs in `workdir`: SGE always gets `-cwd`, Slurm always gets
+  `--chdir=<workdir>`.
+
+## Shell
+
+- `shell` is removed on every scheduler (decided 2026-11-15). The job
+  script is written in bash and always runs under it: SGE always gets
+  `-S /bin/bash`, the Slurm script starts `#!/bin/bash`.
+
+## Whitespace in option values
+
+- Refused on Slurm as on SGE, with the same message (decided 2026-11-15).
+  Slurm accepts a double-quoted value (testbed run, job name only), but a
+  job accepted on one scheduler must be accepted on the other.
+
+## Default output file for arrays
+
+- Changes on every scheduler to `${hpc.job_name}.${hpc.job_id}.${hpc.task_id}.out`
+  (`sim.123.4.out`; decided 2026-11-15). It was `sim.123.out.4`. This
+  renames files for existing SGE users.
+- A user-set pattern without `${hpc.task_id}` gets it before the last
+  extension (`run.log` gives `run.4.log`); a name with no extension gets
+  it appended. It was appended always (`run.log.4`).
+
+## `${hpc.*}` variables
+
+Decided 2026-11-15.
+
+| Variable | In the script | In an output path |
+|---|---|---|
+| `${hpc.cpus}` | `$SLURM_CPUS_PER_TASK` | none |
+| `${hpc.job_id}` | `${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}` | `%A` for an array, `%j` otherwise |
+| `${hpc.task_id}` | `$SLURM_ARRAY_TASK_ID` | `%a` |
+| `${hpc.job_name}` | `$SLURM_JOB_NAME` | `%x` |
+| `${hpc.tmpdir}` | `$TMPDIR` | none |
+| `${hpc.host}` | `$HOSTNAME` | `%N` (not run on the testbed) |
+
+- `${hpc.job_id}` is the number submit printed, the same for every task of
+  an array, as on SGE. Slurm gives each task its own `SLURM_JOB_ID`
+  (testbed run, both versions: `64_1|65`, `64_2|66`, `64_3|67`, `64_4|64`).
+- `$SLURM_CPUS_PER_TASK` is set only when `--cpus-per-task` is given, so
+  Slurm is always sent it. SGE is unchanged.
+- `${hpc.tmpdir}` is whatever `$TMPDIR` holds. hpc-runner makes no
+  directory: on Slurm it is shared between jobs and not cleaned unless the
+  site arranges it. Scratch space is the user's job. The user docs say so.
 
 ## Environment
 
@@ -181,9 +295,40 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - The script is written to `~/.cache/hpc-runner/scripts/` (or
   `$HPC_SCRIPT_DIR`) and deletes itself unless `--keep-script`.
 - `--pty` only when stdin and stdout are both terminals.
-- `SLURM_EXIT_ERROR=112` is set for `srun`, so srun's own failures (bad
-  partition; bad account where the site enforces accounts) exit 112 and are reported as submission errors,
-  not as the command failing.
+- `hpc run` exits with whatever `srun` exits with (decided 2026-11-15).
+  A failure of `srun` itself (bad partition: exit 1, testbed run) is not
+  told apart from the command failing, as with `qrsh` on SGE; srun's
+  message is already on the terminal. `SLURM_EXIT_ERROR` is not used.
+
+- `inherit_env = false` is honoured as asked (decided 2026-11-15):
+  `srun --export=NONE`, or `--export=NAME=val,...` from `env_passthrough`.
+  Unlike `sbatch`, `srun` builds no login environment: `HOME`, `USER`
+  and `LOGNAME` are empty and `PATH` is bash's default (run
+  `slurm-24.11-2026-11-15-exp5`, 24.11 only). A site that wants them
+  names them in `env_passthrough`. The user docs say so.
+
+## Trace
+
+Built 2026-11-15 (`0e874aa`); `docs/dev/trace/DESIGN.md` is the reference.
+Nothing in it is scheduler-specific.
+
+- A trace is a debug record of a handful of commands, read as raw files.
+  `hpc trace compare` and `hpc trace bundle` are removed.
+- One record per `hpc` command line (argv, config files, the whole
+  environment, output, error, exit code) and one per scheduler command,
+  with the job script on the command that submitted it.
+- The whole environment, not a list of prefixes: `SBATCH_*` variables
+  override `#SBATCH` lines (run S18). Nothing is scrubbed; a user edits
+  the JSON before passing it on.
+- Every scheduler command is written. There is no deduplication.
+- `hpc monitor` is never traced; `hpc --trace DIR monitor` is a usage
+  error.
+- Nothing is ever removed: no `max_days`. `[trace]` keys are `enabled`
+  and `dir`.
+- A traced command ends with one line on stderr: `trace: N records
+  written to <dir>`.
+- For Slurm: the scheduler calls `recorder.note_script(path, text)` when
+  it writes a job script, as SGE does. Nothing else is needed.
 
 ## Config: `[schedulers.slurm]`
 
@@ -197,6 +342,9 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - `hpc cancel -N PATTERN | --all [--pending | --running]`
 - `--force` on both.
 - `hpc kill` is removed: it was the same operation under a second name.
+- However the jobs are selected, it prints a table of them and asks
+  "Proceed?" once (decided 2026-11-15). `--force` skips the question.
+- Exits 1 if any job could not be cancelled. Answering "no" exits 0.
 
 ## Testbed
 
@@ -213,6 +361,9 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - Containers: `master` (slurmctld, slurmdbd, munged), `db` (MariaDB),
   `exec1`, `exec2` (slurmd), `login` (clients, pytest). Same shape as the
   SGE testbed.
+- A container is named `<compose project>-<service>`
+  (`hpc-testbed-slurm-24-11-login`) and each stack has its own subnet, so
+  any stacks can be up together (2026-11-16).
 - No cgroups: `proctrack/linuxproc`, `task/none`. Not `privileged`, but the
   24.11 exec containers have `cap_add: SYS_ADMIN`: without it slurmd exits
   at the first `--export=NONE` job (testbed run). 22.05 does not need it.
@@ -220,6 +371,10 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - exec1 has a feature (`fast`) and a GPU
   count; both nodes have temp disk; there are two licences (`lic`).
 - Accounting always on. Munge key generated per stack.
+- A lost node is made with `docker kill`, the same `kill_node` call the
+  SGE tests use (`kill_node` in `tests/integration/cluster.py`). The testbed
+  `slurm.conf` sets no `SlurmdTimeout` today; set a short one when the
+  `node_fail` capture is taken, and check the job ends `NODE_FAIL`.
 - Cannot be produced in this testbed: an out-of-memory kill, memory
   enforcement, `--x11`. Their handling rests on the Slurm source and one
   hand-built record, marked as not captured.
@@ -227,7 +382,13 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 Captures to take: ok, exit1, signal, timeout, cancelled_pending,
 cancelled_running, held, dependent_skipped, dependent_pending, array,
 array_partial, array_throttled, suspended, requeued, node_fail, running,
-pending_resources.
+pending_resources, bad_partition, bad_account, dependent_ok.
+
+- Accounts are enforced (`AccountingStorageEnforce=associations`, decided
+  2026-11-16). Every user is in `proj`; `other` has no user. A job with
+  no account runs under `proj`; `-A nosuch` and `-A other` are rejected by
+  `sbatch` and `srun` with rc 1 and `Invalid account or account/partition
+  combination specified` (run exp8, 24.11 only).
 
 ## Tests
 
@@ -257,97 +418,29 @@ built on it.
    accepted by the user on 2026-11-15 as not affecting the build (listed
    at the end of each fact file). Research is closed. Next: review this
    plan against the fact files.
-6. Answer the open questions.
-7. Options: remove `nodes`/`tasks`, add the rejection error, add the test
-   table.
-8. Fold `hpc kill` into `hpc cancel`.
-9. Replace `resources` with the three maps.
-10. Fix a wrong note in `restructure/DECISIONS.md` (D3): Slurm has no
+6. Answer the open questions (done 2026-11-16).
+7. `hpc run` exits with the job's exit code (SGE first; it is a fix to
+   shipped behaviour).
+8. Options: remove `nodes`/`tasks`/`priority`/`use_cwd`/`shell`, add the rejection error,
+   add the test table.
+9. Fold `hpc kill` into `hpc cancel`.
+10. Replace `resources` with the three maps.
+11. Fix a wrong note in `restructure/DECISIONS.md` (D3): Slurm has no
     `--export=NONE,NAME=value`.
-11. Slurm captures and fixtures.
-12. Rendering: arguments, templates, golden scripts.
-13. Parsing, against the fixtures.
-14. Integration suite on both Slurm versions, CI cells.
-15. User docs; manual checklist on a real cluster.
+12. Slurm captures and fixtures.
+13. Rendering: arguments, templates, golden scripts.
+14. Parsing, against the fixtures.
+15. Integration suite on both Slurm versions, CI cells.
+16. User docs; manual checklist on a real cluster.
 
 ## Open questions
 
-1. **Cancel prompts.** `hpc cancel 1 2`: one confirmation or one per job?
-   On partial failure `kill` exits 1 today and `cancel` exits 0. Which?
-2. **`${hpc.*}` variables.** No Slurm mapping is decided. `${hpc.cpus}`:
-   `$SLURM_CPUS_PER_TASK` is unset without `-c`. In arrays the job id is
-   each task's own id.
-3. **Working directory.** Slurm starts in the caller's directory by
-   default (testbed run); `--chdir=<dir>` changes it (run). What does
-   `use_cwd = false` map to?
-4. **`shell`.** Slurm has no option for it; the script's first line
-   decides. Drop, reject, or write the first line from it?
-5. **Whitespace in argument values.** SGE refuses it. On Slurm an unquoted
-   `#SBATCH --job-name=two words` is rejected and a double-quoted one is
-   accepted (testbed run). Refuse as on SGE, or quote?
-6. **Array output file name.** The plan says `%x.%A_%a.out`; the documented
-   `output_pattern` gives `%x.%A.out.%a`. Which?
-7. **`SLURM_EXIT_ERROR`.** `run_command` cannot set an environment variable
-   for the subprocess. Add the parameter?
-8. **srun error text.** Interactive runs do not capture stderr, so a
-   submission error has no message to carry. What does it say?
-9. **Strict interactive environment.** `srun --export=NONE` gives no login
-   environment (unlike `sbatch`), so the job starts without `PATH` or
-   `HOME`. What do we do?
-10. **Interactive exit code.** `hpc run` interactive prints a failure and
-    exits 0 (`cli/run.py:189-194`). Same on SGE. Fix, and where?
-11. **Job details.** Where do live job details come from?
-    `scontrol show job` was assumed, never decided.
-12. **Testbed node control.** `scontrol update NodeName=... State=`, or
-    `docker kill` as on SGE (which waits for `SlurmdTimeout`)?
-13. **Trace.** `hpc trace` knows only qsub/qstat/qacct, and its scrubbing
-    is SGE-only: a Slurm bundle would leave user, host and job names in.
-    Not planned yet.
-14. **Interactive resources on SGE.** `hpc run -R gpu=1 xterm` drops the
-    request today (`_build_qrsh_command` never reads it). Fix along with
-    the three maps?
-15. **Rules for the three maps.** Proposed, not decided: a count is 1 or
-    more; a repeated name on the command line is an error; two more
-    captures (`bad_partition`, `dependent_ok`).
-16. **Non-numeric resource values.** The maps take whole numbers. In use
-    today: `hostname=exec1` and `h_vmem=50M` (tests only), `scratch=20G`
-    (a golden script), `tmpfs=8G` (a docs example). The real case is
-    scratch disk space; a `scratch` option is proposed, not decided.
-    A scratch size reserves space on LSF, reserves it on SGE and PBS only
-    if the site set that up, and on Slurm only picks a node whose temp disk
-    is big enough. Bare numbers: bytes on SGE, MB on Slurm and LSF. Facts:
-    `RESOURCES_COMPARISON.md` R8.
-17. **Output directory missing.** Slurm 22.05 fails the job (`FAILED 0:53`,
-    run on the testbed); 24.11 creates the directory (run); SGE puts the job in error state (`Eqw`).
-    Create it ourselves, or document? The user docs say SGE discards the
-    output, which the testbed run does not show.
-18. **SKIPPED cannot be told from `sacct` alone.** A dependent whose parent
-    failed is `PENDING` or `CANCELLED` in `sacct` with Reason `None`
-    (testbed run). The reason is in `squeue` (pending form) and
-    `scontrol show job` (cancelled form, while the controller remembers
-    the job). This conflicts with "status comes from `sacct` only".
-    Related: a job just submitted is missing from `sacct` for up to 1 s on
-    22.05, so "not found" right after submit cannot mean "unknown job".
-    One fact that may help: with `kill_invalid_dependents` on, the
-    dependent ends as plain `CANCELLED`, where a user's cancel is
-    `CANCELLED by <uid>`.
-19. **Wrong account.** The table says `project` maps to `--account`; a
-    wrong account is only rejected where the site enforces associations.
-    On the testbed `-A nosuch` is accepted. Follow-up: turn enforcement on
-    in the testbed?
-20. **Priority.** The table maps `priority = P` to `--nice=-P`. An
-    ordinary user cannot raise priority on Slurm: `--nice=-10` is rejected
-    at submit, "Invalid --nice value" (run on 24.11); `--nice=10` is
-    accepted. SGE is the same in kind: users may only lower (`submit(1)`,
-    not run). So a positive `priority` fails for ordinary users on Slurm.
-    Keep the mapping and let it fail, or something else?
-21. **Exit code of a timed-out or cancelled job.** `sacct` gives the job
-    row `0:0` for both, so "N if S is 0" reports 0. What should `hpc`
-    report: nothing, or the `.batch` row's signal (143)?
+None. The last was answered on 2026-11-16.
 
 ## Later, not planned
 
-- LSF. No way to get a cluster to test on.
+Slurm only. Anything about another scheduler, the testbed or the test
+setup is in `../FOLLOW_UPS.md`.
 
 - JSON output from `sacct`/`squeue`, once 23.11 is the oldest version.
 - A config key for whether `srun` steps in a user's script start clean.
@@ -359,9 +452,6 @@ built on it.
 - A site catalogue giving one resource a different name per scheduler.
 - Tests for every stdin/stdout combination of the `--pty` rule, plus a
   manual checklist on a real cluster.
-- PBS items not run: host exclusion, soft requests, `place=scatter`, why
-  `qsub -V` did not carry a variable, OpenPBS against PBS Professional.
-  For when a PBS backend is planned.
 
 ## Build notes
 
@@ -374,8 +464,11 @@ built on it.
   A scheduler needs `HPC_VARS`. A new Sphinx page needs a toctree entry.
 - `scheduler_args` are split tokens; `sbatch` reads several options per
   directive line.
-- Repeated `-L` and repeated `--gres` overwrite each other; several of a
-  kind are joined into one option.
+- A repeated `-L` or `--gres` replaces the earlier one: `-L lic:1 -L
+  lic:2` asks for `lic:2`, `--gres=gpu:1 --gres=gpu:0` for `gpu:0` (run
+  `slurm-24.11-2026-11-15-exp6`; only one licence and one device name
+  exist on the testbed, so two different names were not run). Several of
+  a kind are joined into one option.
 - `__init__.py` exports `Resource`/`ResourceSet`. `job_info.py` and the two
   TUI files do not read `Job.resources`.
 - An interactive dry run has no directives, and `--dry-run` does not print
@@ -385,7 +478,7 @@ built on it.
 - `sacct -P -n -j <id>` prints the default columns; always pass
   `--format`. `sacct` prints long state names; the table above uses the
   two-letter codes.
-- `hpc-testbed pytest -k` needs `--`; `trace compare` needs a directory.
+- `hpc-testbed pytest -k` needs `--`.
 - `nproc` proves nothing under `task/none`.
 - A request larger than any node is rejected at submit, so it cannot give a
   pending-for-resources capture.

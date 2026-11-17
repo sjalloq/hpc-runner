@@ -215,8 +215,9 @@ class BaseScheduler(ABC):
     def make_output_dirs(self, job: Job) -> None:
         """Create the directory of each output path on the submit host.
 
-        Called by ``submit()`` before submission: SGE silently discards
-        output whose directory does not exist. ``resolve()`` rejects
+        Called by ``submit()`` before submission: with the directory
+        missing, SGE puts the job in the error state and Slurm 22.05 fails
+        it (docs/dev/slurm/runs, E8 and S8). ``resolve()`` rejects
         ``${hpc.*}`` in the directory part, so it is always known here.
         """
         if job.interactive:

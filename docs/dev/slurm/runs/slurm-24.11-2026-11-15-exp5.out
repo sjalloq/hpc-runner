@@ -1,0 +1,13 @@
+caller: HOME=[/home/tester] USER=[tester] LOGNAME=[tester]
+--- NONE, command by name
+srun: error: exec1: task 0: Exited with exit code 2
+slurmstepd-exec1: error: execve(): bash: No such file or directory
+--- NONE
+HOME=[] USER=[] LOGNAME=[] MARK=[unset] PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:. nvars=4
+--- HOME,USER,LOGNAME
+HOME=[/home/tester] USER=[tester] LOGNAME=[tester] MARK=[unset] PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:. nvars=7
+--- HOME,USER,LOGNAME,MARK=x
+HOME=[/home/tester] USER=[tester] LOGNAME=[tester] MARK=[x] PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:. nvars=8
+--- HOME,USER,LOGNAME,PATH
+HOME=[/home/tester] USER=[tester] LOGNAME=[tester] MARK=[unset] PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games nvars=8
+rc=0

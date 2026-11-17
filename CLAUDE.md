@@ -75,6 +75,11 @@ hpc run --dry-run echo hello                      # preview a script; HPC_SCHEDU
 - `docs/dev/README.md` is the index: every piece of work, its status, the
   one file to read and the next action. Read it first; update it whenever a
   status or next action changes.
+- `docs/dev/FOLLOW_UPS.md`: every known gap that belongs to no plan
+  (something built for one scheduler and not the others, a check not run,
+  a question not decided). Read it with the index. When work leaves
+  something unported, unrun or undecided, add it there in the same change;
+  delete the item when it is closed.
 - `docs/dev/<topic>/`: one folder per piece of work, holding its plan or
   decision file and any reference the code cites. Plans are terse bullet
   points in plain words: no new numbered decision labels, no terms the file

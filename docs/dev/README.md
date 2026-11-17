@@ -9,8 +9,11 @@ update it whenever a status or a next action changes. User documentation is
 
 1. Review `slurm/PLAN.md` against the two fact files (research closed
    2026-11-15; testbeds for SGE, Slurm and PBS exist; LSF dropped).
-2. Answer the open questions in `slurm/PLAN.md`, one at a time.
-3. Continue down "Order of work".
+2. Continue down "Order of work" (open questions all answered,
+   2026-11-16).
+
+Anything missing, unverified or undecided that belongs to no plan is in
+`FOLLOW_UPS.md`. Add to it whenever work is left unported or unrun.
 
 ## Work
 
@@ -18,9 +21,9 @@ update it whenever a status or a next action changes. User documentation is
 |---|---|---|---|
 | Slurm backend | Research closed; plan under review; nothing built | `slurm/PLAN.md` | The actions above |
 | Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
-| SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | A third flavour, `daimh/sge`, not started |
+| SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | See `FOLLOW_UPS.md` ("Testbed stacks") |
 | Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |
-| Scheduler trace | Recorder extended, `hpc trace` commands removed (2026-11-15); integration tests not yet run on the testbed | `trace/DESIGN.md` | Run `tests/integration/test_trace.py` on the SGE testbed |
+| Scheduler trace | Done: recorder extended, `hpc trace` commands removed (2026-11-15); integration tests pass on `soge` (2026-11-16) | `trace/DESIGN.md` | None |
 | `hpc run` argument parsing | Closed by D-T43 | `cli/RUN_ARG_PARSING.md` | Nothing |
 | `hpc monitor` TUI | Built; a rework is intended and not planned | `tui/TEXTUAL_STYLING_COOKBOOK.md` | No plan exists |
 
@@ -28,6 +31,7 @@ update it whenever a status or a next action changes. User documentation is
 
 | File | What it is |
 |---|---|
+| `FOLLOW_UPS.md` | Known gaps with no plan: tests and testbed setup that exist for one scheduler only, things not run, things not decided |
 | `restructure/DECISIONS.md` | Decision log D1..D19: config layering, environment, units, errors, scheduler choice, statuses |
 | `testbed/TESTBED_REVIEW.md` | Decision log D-T1..D-T50 and bug list BUG-T1.., for the testbed and the integration suite |
 | `testbed/TESTBED_PLAN.md` | The plan the testbed was built from. Kept only because code comments cite its sections; where it and `TESTBED_REVIEW.md` differ, the review is right |

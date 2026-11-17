@@ -1,0 +1,24 @@
+slurm-wlm 24.11.5
+AccountingStorageEnforce = associations
+=== W1 sbatch: no account, own account, unknown account, account the user is not in
+[sbatch -o /dev/null --wrap true] rc=0 Submitted batch job 2
+[sbatch -o /dev/null -A proj --wrap true] rc=0 Submitted batch job 3
+[sbatch -o /dev/null -A nosuch --wrap true] rc=1 sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified
+[sbatch -o /dev/null -A other --wrap true] rc=1 sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified
+=== W2 srun: the same four
+[srun hostname] rc=0 srun: job 4 queued and waiting for resources
+srun: job 4 has been allocated resources
+exec2
+[srun -A proj hostname] rc=0 exec1
+[srun -A nosuch hostname] rc=1 srun: error: Unable to allocate resources: Invalid account or account/partition combination specified
+[srun -A other hostname] rc=1 srun: error: Unable to allocate resources: Invalid account or account/partition combination specified
+=== W3 what sacct recorded
+2|proj|COMPLETED|0:0
+2.batch|proj|COMPLETED|0:0
+3|proj|COMPLETED|0:0
+3.batch|proj|COMPLETED|0:0
+4|proj|COMPLETED|0:0
+4.0|proj|COMPLETED|0:0
+5|proj|COMPLETED|0:0
+5.0|proj|COMPLETED|0:0
+=== done

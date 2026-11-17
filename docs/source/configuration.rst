@@ -498,7 +498,8 @@ and ``JobResult.stdout_path`` / ``read_stdout()`` work on every scheduler.
   starts: ``${hpc.job_name}``, ``${hpc.job_id}``, ``${hpc.task_id}`` and
   ``${hpc.host}``, and only in the final path component: the directory is
   created before submission, so ``logs/${hpc.job_id}/x.out`` is an error
-  (SGE discards output to a missing directory). ``${hpc.cpus}`` and
+  (SGE puts a job whose output directory is missing in the error
+  state). ``${hpc.cpus}`` and
   ``${hpc.tmpdir}`` are an error anywhere in an output path. On SGE the
   pattern becomes ``<workdir>/$JOB_NAME.$JOB_ID.out`` and SGE fills it in.
 - **Arrays:** a pattern without ``${hpc.task_id}`` gets ``.${hpc.task_id}``

@@ -1,0 +1,9 @@
+LicenseName=lic
+    Total=2 Used=0 Free=2 Reserved=0 Remote=no
+exec1 gpu:1
+exec2 (null)
+[-L lic:1 -L lic:2] -> Licenses=lic:2
+[-L lic:2 -L lic:1] -> Licenses=lic:1
+[-L lic:1,lic:1] -> Licenses=lic:1,lic:1
+[--gres=gpu:1 --gres=gpu:0] -> Licenses=(null) TresPerNode=gres/gpu:0
+[--gres=gpu:0 --gres=gpu:1] -> Licenses=(null) TresPerNode=gres/gpu:1
