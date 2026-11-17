@@ -347,7 +347,7 @@ class Capture:
         deleting = self.qsub("deleting", "-l", "hostname=exec2", "-q", "all.q", "sleep", "600")
         self.wait_state(deleting, {"r"})
         # A paused execd cannot confirm the kill, so qstat holds the job in dr.
-        self.cluster.run(["sudo", "docker", "pause", "exec2"])
+        self.cluster.pause_node("exec2")
         try:
             self.capture("qdel_deleting.txt", ["qdel", deleting], "qdel stdout when execd is away")
             self.wait_state(deleting, {"dr"})
@@ -358,7 +358,7 @@ class Capture:
             )
             self.qstat_j("deleting")
         finally:
-            self.cluster.run(["sudo", "docker", "unpause", "exec2"])
+            self.cluster.unpause_node("exec2")
         self.wait_gone(deleting)
 
         self.cluster.run(["qdel", requeued, susp])
@@ -403,7 +403,7 @@ class Capture:
         )
         try:
             self.wait_state(threshold, {"T"})
-            self.cluster.run(["sudo", "docker", "pause", "exec2"])
+            self.cluster.pause_node("exec2")
             try:
                 self.cluster.run(["qrls", transfer])
                 self.wait_state(transfer, {"t"})
@@ -424,7 +424,7 @@ class Capture:
                 )
                 self.qstat_j("threshold", "requeue_pending", "deleting_transfer")
             finally:
-                self.cluster.run(["sudo", "docker", "unpause", "exec2"])
+                self.cluster.unpause_node("exec2")
         finally:
             self.cluster.run(
                 ["qconf", "-purge", "queue", "suspend_thresholds", "short.q@exec1"], user="root"

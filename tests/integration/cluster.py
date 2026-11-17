@@ -2,7 +2,8 @@
 
 Runs inside the testbed's ``login`` container as user ``tester``: scheduler
 CLIs are on PATH, ``sudo -u alice`` works passwordless, and node control goes
-through ``sudo docker stop|start|kill <container>`` (docs/dev/testbed/TESTBED_REVIEW.md D-T9).
+through ``sudo docker stop|start|kill <container>`` (docs/dev/testbed/TESTBED_REVIEW.md D-T9);
+a container is named ``<compose project>-<service>``, see :meth:`TestbedCluster.container`.
 
 One class per scheduler (``testbed/<scheduler>/``), registered in
 :data:`CLUSTERS`; the fixture picks the class from ``--scheduler``. What every
@@ -94,6 +95,10 @@ class Cluster(Protocol):
     def kill_node(self, name: str) -> None: ...
 
     def start_node(self, name: str) -> None: ...
+
+    def pause_node(self, name: str) -> None: ...
+
+    def unpause_node(self, name: str) -> None: ...
 
     def stop_master(self) -> None: ...
 
@@ -208,17 +213,31 @@ class TestbedCluster:
         proc = self.run(["sudo", "docker", "info"], check=False)
         return proc.returncode == 0
 
+    def container(self, service: str) -> str:
+        """The Docker container of *service* (``exec1``): ``<compose project>-<service>``.
+
+        The project is in ``HPC_TESTBED_PROJECT``, set on ``login`` by every
+        stack's compose file; the prefix is what lets two stacks be up at once.
+        """
+        return f"{os.environ['HPC_TESTBED_PROJECT']}-{service}"
+
     def kill_node(self, name: str) -> None:
-        self.run(["sudo", "docker", "kill", name])
+        self.run(["sudo", "docker", "kill", self.container(name)])
 
     def start_node(self, name: str) -> None:
-        self.run(["sudo", "docker", "start", name])
+        self.run(["sudo", "docker", "start", self.container(name)])
+
+    def pause_node(self, name: str) -> None:
+        self.run(["sudo", "docker", "pause", self.container(name)])
+
+    def unpause_node(self, name: str) -> None:
+        self.run(["sudo", "docker", "unpause", self.container(name)])
 
     def stop_master(self) -> None:
-        self.run(["sudo", "docker", "stop", "master"])
+        self.run(["sudo", "docker", "stop", self.container("master")])
 
     def start_master(self) -> None:
-        self.run(["sudo", "docker", "start", "master"])
+        self.run(["sudo", "docker", "start", self.container("master")])
 
     def accounting_truncate(self) -> None:
         raise NotImplementedError

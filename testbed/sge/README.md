@@ -14,8 +14,8 @@ are shared; `--scheduler sge --flavour <name>` selects the stack that is up.
 Candidate for a later flavour: `daimh/sge` (maintained SoGE fork, built from
 source).
 
-Only one flavour's stack can run at a time: both use the container names
-`master`, `exec1`, `exec2` and `login`.
+Both flavours' stacks can be up together: containers carry the compose
+project as a prefix (`hpc-testbed-sge-ocs-master`) and the subnets differ.
 
 ## Support matrix
 

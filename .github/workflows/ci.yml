@@ -129,7 +129,7 @@ jobs:
           mkdir -p testbed-logs
           hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} logs > testbed-logs/compose.log 2>&1 || true
           for c in master exec1 exec2 login; do
-            docker cp "$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
+            docker cp "hpc-testbed-sge-${{ matrix.flavour }}-$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
           done
 
       - name: Upload cluster logs

@@ -1,16 +1,17 @@
 # Slurm testbed, 22.05 flavour (Debian bookworm slurm-wlm 22.05.8). Run through
 # the hpc-testbed driver, which passes `-p hpc-testbed-slurm-22-05`. Same shape as
 # the SGE stacks (testbed/sge/soge/compose.yml) plus a database for slurmdbd.
-# Container names are the SGE ones, so the two schedulers cannot be up at once.
+# Containers are named <project>-<service> and each stack has its own subnet,
+# so any stacks can be up together.
 
 x-image: &image hpc-testbed-slurm-22.05:local
 
 x-hosts: &hosts
-  - "master:10.78.0.10"
-  - "exec1:10.78.0.11"
-  - "exec2:10.78.0.12"
-  - "login:10.78.0.13"
-  - "db:10.78.0.14"
+  - "master:10.81.0.10"
+  - "exec1:10.81.0.11"
+  - "exec2:10.81.0.12"
+  - "login:10.81.0.13"
+  - "db:10.81.0.14"
 
 x-volumes: &volumes
   - home:/home
@@ -27,7 +28,7 @@ services:
   db:
     image: mariadb:11.8
     hostname: db
-    container_name: db
+    container_name: ${COMPOSE_PROJECT_NAME}-db
     environment:
       MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: slurm_acct_db
@@ -38,7 +39,7 @@ services:
     volumes:
       - db:/var/lib/mysql
     networks:
-      slurm: { ipv4_address: 10.78.0.14 }
+      slurm: { ipv4_address: 10.81.0.14 }
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 2s
@@ -52,7 +53,7 @@ services:
       context: ../../..
       dockerfile: testbed/slurm/22.05/Dockerfile
     hostname: master
-    container_name: master
+    container_name: ${COMPOSE_PROJECT_NAME}-master
     environment: { SLURM_ROLE: master }
     volumes:
       - home:/home
@@ -61,7 +62,7 @@ services:
       - state:/var/spool/slurmctld
       - ../../../tests/modulefiles:/opt/modulefiles:ro
     networks:
-      slurm: { ipv4_address: 10.78.0.10 }
+      slurm: { ipv4_address: 10.81.0.10 }
     depends_on:
       db: { condition: service_healthy }
     stop_grace_period: 30s
@@ -76,10 +77,10 @@ services:
   exec1:
     <<: *node
     hostname: exec1
-    container_name: exec1
+    container_name: ${COMPOSE_PROJECT_NAME}-exec1
     environment: { SLURM_ROLE: exec }
     networks:
-      slurm: { ipv4_address: 10.78.0.11 }
+      slurm: { ipv4_address: 10.81.0.11 }
     depends_on:
       master: { condition: service_healthy }
     healthcheck:
@@ -93,10 +94,10 @@ services:
   exec2:
     <<: *node
     hostname: exec2
-    container_name: exec2
+    container_name: ${COMPOSE_PROJECT_NAME}-exec2
     environment: { SLURM_ROLE: exec }
     networks:
-      slurm: { ipv4_address: 10.78.0.12 }
+      slurm: { ipv4_address: 10.81.0.12 }
     depends_on:
       master: { condition: service_healthy }
     healthcheck:
@@ -110,12 +111,14 @@ services:
   login:
     <<: *node
     hostname: login
-    container_name: login
+    container_name: ${COMPOSE_PROJECT_NAME}-login
     init: true
     environment:
       SLURM_ROLE: login
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit
+      # Container names are <project>-<service>; node control needs the prefix.
+      HPC_TESTBED_PROJECT: ${COMPOSE_PROJECT_NAME}
     volumes:
       - home:/home
       - work:/work
@@ -124,7 +127,7 @@ services:
       - ../../..:/src:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      slurm: { ipv4_address: 10.78.0.13 }
+      slurm: { ipv4_address: 10.81.0.13 }
     depends_on:
       exec1: { condition: service_healthy }
       exec2: { condition: service_healthy }
@@ -140,7 +143,7 @@ networks:
   slurm:
     ipam:
       config:
-        - subnet: 10.78.0.0/24
+        - subnet: 10.81.0.0/24
 
 volumes:
   home: {}

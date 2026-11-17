@@ -1,7 +1,8 @@
 # PBS testbed, openpbs flavour (OpenPBS v23.06.06 built from source on Rocky
 # Linux 8). Run through the hpc-testbed driver, which passes
-# `-p hpc-testbed-pbs-openpbs`. Same shape as the SGE and Slurm stacks. Container
-# names are shared with them, so only one scheduler can be up at a time.
+# `-p hpc-testbed-pbs-openpbs`. Same shape as the SGE and Slurm stacks.
+# Containers are named <project>-<service> and each stack has its own subnet,
+# so any stacks can be up together.
 
 x-image: &image hpc-testbed-pbs-openpbs:local
 
@@ -26,7 +27,7 @@ services:
       context: ../../..
       dockerfile: testbed/pbs/openpbs/Dockerfile
     hostname: master
-    container_name: master
+    container_name: ${COMPOSE_PROJECT_NAME}-master
     environment: { PBS_ROLE: master }
     networks:
       pbs: { ipv4_address: 10.79.0.10 }
@@ -42,7 +43,7 @@ services:
   exec1:
     <<: *node
     hostname: exec1
-    container_name: exec1
+    container_name: ${COMPOSE_PROJECT_NAME}-exec1
     environment: { PBS_ROLE: exec }
     networks:
       pbs: { ipv4_address: 10.79.0.11 }
@@ -59,7 +60,7 @@ services:
   exec2:
     <<: *node
     hostname: exec2
-    container_name: exec2
+    container_name: ${COMPOSE_PROJECT_NAME}-exec2
     environment: { PBS_ROLE: exec }
     networks:
       pbs: { ipv4_address: 10.79.0.12 }
@@ -76,12 +77,14 @@ services:
   login:
     <<: *node
     hostname: login
-    container_name: login
+    container_name: ${COMPOSE_PROJECT_NAME}-login
     init: true
     environment:
       PBS_ROLE: login
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit
+      # Container names are <project>-<service>; node control needs the prefix.
+      HPC_TESTBED_PROJECT: ${COMPOSE_PROJECT_NAME}
     volumes:
       - home:/home
       - work:/work

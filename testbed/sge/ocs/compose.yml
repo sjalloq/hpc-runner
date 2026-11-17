@@ -2,6 +2,8 @@
 # the hpc-testbed driver (src/hpc_runner/_testbed.py), which passes
 # `-p hpc-testbed-sge-ocs`. Compose features are
 # limited to those in Compose 2.38 (the CI runners' version).
+# Containers are named <project>-<service> and each stack has its own subnet,
+# so any stacks can be up together.
 #
 # Name resolution: a user-defined network with static IPs plus extra_hosts on
 # every service (docs/dev/testbed/TESTBED_REVIEW.md D-T2). Compose's own DNS reverse-resolves a
@@ -11,10 +13,10 @@
 x-image: &image hpc-testbed-ocs:local
 
 x-hosts: &hosts
-  - "master:10.78.0.10"
-  - "exec1:10.78.0.11"
-  - "exec2:10.78.0.12"
-  - "login:10.78.0.13"
+  - "master:10.80.0.10"
+  - "exec1:10.80.0.11"
+  - "exec2:10.80.0.12"
+  - "login:10.80.0.13"
 
 x-node: &node
   image: *image
@@ -32,7 +34,7 @@ services:
       context: ../../..
       dockerfile: testbed/sge/ocs/Dockerfile
     hostname: master
-    container_name: master
+    container_name: ${COMPOSE_PROJECT_NAME}-master
     environment:
       SGE_ROLE: master
       # Only the slow-accounting variant changes this (D-T6): `hpc-testbed up
@@ -44,7 +46,7 @@ services:
       - work:/work
       - ../../../tests/modulefiles:/opt/modulefiles:ro
     networks:
-      sge: { ipv4_address: 10.78.0.10 }
+      sge: { ipv4_address: 10.80.0.10 }
     # qmaster needs ~9 s for a controlled shutdown (D-T5).
     stop_grace_period: 30s
     healthcheck:
@@ -60,10 +62,10 @@ services:
   exec1:
     <<: *node
     hostname: exec1
-    container_name: exec1
+    container_name: ${COMPOSE_PROJECT_NAME}-exec1
     environment: { SGE_ROLE: exec }
     networks:
-      sge: { ipv4_address: 10.78.0.11 }
+      sge: { ipv4_address: 10.80.0.11 }
     depends_on:
       master: { condition: service_healthy }
     healthcheck:
@@ -77,10 +79,10 @@ services:
   exec2:
     <<: *node
     hostname: exec2
-    container_name: exec2
+    container_name: ${COMPOSE_PROJECT_NAME}-exec2
     environment: { SGE_ROLE: exec }
     networks:
-      sge: { ipv4_address: 10.78.0.12 }
+      sge: { ipv4_address: 10.80.0.12 }
     depends_on:
       master: { condition: service_healthy }
     healthcheck:
@@ -94,7 +96,7 @@ services:
   login:
     <<: *node
     hostname: login
-    container_name: login
+    container_name: ${COMPOSE_PROJECT_NAME}-login
     # tini as PID 1 so `sleep infinity` receives SIGTERM on `compose down`.
     init: true
     environment:
@@ -102,6 +104,8 @@ services:
       HPC_RUNNER_CONFIG: /src/testbed/sge/ocs/hpc-runner-testbed.toml
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit
+      # Container names are <project>-<service>; node control needs the prefix.
+      HPC_TESTBED_PROJECT: ${COMPOSE_PROJECT_NAME}
     volumes:
       - home:/home
       - cell:/opt/ocs-cell
@@ -110,7 +114,7 @@ services:
       - ../../..:/src:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      sge: { ipv4_address: 10.78.0.13 }
+      sge: { ipv4_address: 10.80.0.13 }
     depends_on:
       exec1: { condition: service_healthy }
       exec2: { condition: service_healthy }
@@ -127,7 +131,7 @@ networks:
   sge:
     ipam:
       config:
-        - subnet: 10.78.0.0/24
+        - subnet: 10.80.0.0/24
 
 volumes:
   home: {}

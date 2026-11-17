@@ -10,6 +10,11 @@ with the package; stdlib only, wraps `docker compose` and prints every command
 it runs). It needs a checkout: it finds `testbed/<scheduler>/<flavour>/compose.yml`
 above the current directory and uses `-p hpc-testbed-<scheduler>-<flavour>`.
 
+Stacks do not share anything: a container is named `<project>-<service>`
+(`hpc-testbed-sge-soge-login`), and each stack has its own subnet, image,
+network and volumes. Any of them can be up together. Inside a stack the
+hosts are still `master`, `exec1`, `exec2` and `login`.
+
 ```
 testbed/
   common/             users.sh (alice 1001, bob 1002, tester 1003), wait-for.sh (poll with timeout)
@@ -110,10 +115,11 @@ Shared volumes: `/work` (mode 1777: job scripts, output, sentinels),
   `/var/spool/gridengine/execd/<host>/messages`; the entrypoints append to
   `/var/log/testbed.log`.
 - A job's script as execd saw it: `/var/spool/gridengine/execd/<host>/job_scripts/<id>`.
-- Readiness by hand: `docker exec login /opt/testbed/ready.sh` prints which
+- Readiness by hand: `docker exec hpc-testbed-sge-soge-login /opt/testbed/ready.sh` prints which
   of the four checks failed and the evidence.
-- Node control from login (failure tests): `sudo docker stop|start|kill exec1`
-  (the host's Docker socket is mounted; the client is Debian's `docker-cli`).
+- Node control from login (failure tests): `sudo docker stop|start|kill
+  $HPC_TESTBED_PROJECT-exec1` (the host's Docker socket is mounted; the client
+  is Debian's `docker-cli`; `HPC_TESTBED_PROJECT` is the compose project).
 - A bare `qsub` script does not have `module`: a non-interactive bash does
   not source `/etc/profile.d/modules.sh`. hpc-runner's generated scripts
   source it themselves; in a hand-written script add `. /etc/profile.d/modules.sh`.

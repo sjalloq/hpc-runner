@@ -2,6 +2,8 @@
 # the hpc-testbed driver (src/hpc_runner/_testbed.py), which passes
 # `-p hpc-testbed-sge-soge`. Compose features are
 # limited to those in Compose 2.38 (the CI runners' version).
+# Containers are named <project>-<service> and each stack has its own subnet,
+# so any stacks can be up together.
 #
 # Name resolution: a user-defined network with static IPs plus extra_hosts on
 # every service (docs/dev/testbed/TESTBED_REVIEW.md D-T2). Compose's own DNS reverse-resolves a
@@ -32,7 +34,7 @@ services:
       context: ../../..
       dockerfile: testbed/sge/soge/Dockerfile
     hostname: master
-    container_name: master
+    container_name: ${COMPOSE_PROJECT_NAME}-master
     environment:
       SGE_ROLE: master
       # Only the slow-accounting variant changes this (D-T6): `hpc-testbed up
@@ -61,7 +63,7 @@ services:
   exec1:
     <<: *node
     hostname: exec1
-    container_name: exec1
+    container_name: ${COMPOSE_PROJECT_NAME}-exec1
     environment: { SGE_ROLE: exec }
     networks:
       sge: { ipv4_address: 10.77.0.11 }
@@ -78,7 +80,7 @@ services:
   exec2:
     <<: *node
     hostname: exec2
-    container_name: exec2
+    container_name: ${COMPOSE_PROJECT_NAME}-exec2
     environment: { SGE_ROLE: exec }
     networks:
       sge: { ipv4_address: 10.77.0.12 }
@@ -95,7 +97,7 @@ services:
   login:
     <<: *node
     hostname: login
-    container_name: login
+    container_name: ${COMPOSE_PROJECT_NAME}-login
     # tini as PID 1 so `sleep infinity` receives SIGTERM on `compose down`.
     init: true
     environment:
@@ -103,6 +105,8 @@ services:
       HPC_RUNNER_CONFIG: /src/testbed/sge/soge/hpc-runner-testbed.toml
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit
+      # Container names are <project>-<service>; node control needs the prefix.
+      HPC_TESTBED_PROJECT: ${COMPOSE_PROJECT_NAME}
     volumes:
       - home:/home
       - cell:/var/lib/gridengine

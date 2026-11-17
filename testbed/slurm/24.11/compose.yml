@@ -1,7 +1,8 @@
 # Slurm testbed, 24.11 flavour (Debian trixie slurm-wlm 24.11.5). Run through
 # the hpc-testbed driver, which passes `-p hpc-testbed-slurm-24-11`. Same shape as
 # the SGE stacks (testbed/sge/soge/compose.yml) plus a database for slurmdbd.
-# Container names are the SGE ones, so the two schedulers cannot be up at once.
+# Containers are named <project>-<service> and each stack has its own subnet,
+# so any stacks can be up together.
 
 x-image: &image hpc-testbed-slurm-24.11:local
 
@@ -27,7 +28,7 @@ services:
   db:
     image: mariadb:11.8
     hostname: db
-    container_name: db
+    container_name: ${COMPOSE_PROJECT_NAME}-db
     environment:
       MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: slurm_acct_db
@@ -52,7 +53,7 @@ services:
       context: ../../..
       dockerfile: testbed/slurm/24.11/Dockerfile
     hostname: master
-    container_name: master
+    container_name: ${COMPOSE_PROJECT_NAME}-master
     environment: { SLURM_ROLE: master }
     volumes:
       - home:/home
@@ -76,7 +77,7 @@ services:
   exec1:
     <<: *node
     hostname: exec1
-    container_name: exec1
+    container_name: ${COMPOSE_PROJECT_NAME}-exec1
     environment: { SLURM_ROLE: exec }
     # slurmd builds the login environment for --export=NONE in new PID and
     # mount namespaces; without this capability clone() fails and slurmd
@@ -97,7 +98,7 @@ services:
   exec2:
     <<: *node
     hostname: exec2
-    container_name: exec2
+    container_name: ${COMPOSE_PROJECT_NAME}-exec2
     environment: { SLURM_ROLE: exec }
     # slurmd builds the login environment for --export=NONE in new PID and
     # mount namespaces; without this capability clone() fails and slurmd
@@ -118,12 +119,14 @@ services:
   login:
     <<: *node
     hostname: login
-    container_name: login
+    container_name: ${COMPOSE_PROJECT_NAME}-login
     init: true
     environment:
       SLURM_ROLE: login
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit
+      # Container names are <project>-<service>; node control needs the prefix.
+      HPC_TESTBED_PROJECT: ${COMPOSE_PROJECT_NAME}
     volumes:
       - home:/home
       - work:/work
