@@ -31,8 +31,6 @@ from hpc_runner.core.units import Duration, Memory
 # Package defaults for fields that are never left unset.
 _PACKAGE_DEFAULTS: dict[str, Any] = {
     "inherit_env": True,
-    "shell": "/bin/bash",
-    "use_cwd": True,
     "interactive": False,
     # D9: hpc-runner always names the output file; never the scheduler default.
     "stdout": "${hpc.job_name}.${hpc.job_id}.out",
@@ -54,16 +52,11 @@ _SCALARS: tuple[str, ...] = (
     "mem",
     "time",
     "queue",
-    "priority",
     "project",
-    "nodes",
-    "tasks",
     "stdout",
     "stderr",
     "inherit_env",
     "workdir",
-    "shell",
-    "use_cwd",
     "interactive",
 )
 

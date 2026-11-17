@@ -5,7 +5,6 @@
 #$ -cwd
 #$ -N alice_make
 #$ -q batch.q
-#$ -p -10
 #$ -P chip
 #$ -o /work/$JOB_NAME.$JOB_ID.out
 #$ -j y

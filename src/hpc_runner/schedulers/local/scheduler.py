@@ -24,7 +24,15 @@ from hpc_runner.core.exceptions import (
 from hpc_runner.core.host import current_user as _current_user
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobResult, JobStatus, status_from_exit_code
-from hpc_runner.schedulers.base import BaseScheduler, Stream, refuse_interactive_dependencies
+from hpc_runner.schedulers.base import (
+    MAPS,
+    REJECTS,
+    BaseScheduler,
+    NotApplicable,
+    Stream,
+    Support,
+    refuse_interactive_dependencies,
+)
 from hpc_runner.templates import ShellWord, render_template
 
 if TYPE_CHECKING:
@@ -41,6 +49,12 @@ def _check_supported(job: Job) -> None:
         raise NotSupportedError("the local scheduler does not support job dependencies")
 
 
+# The job is a child process of this one: nothing is reserved, queued or
+# charged, so the options that ask a scheduler for that have no meaning.
+_NO_SCHEDULER = NotApplicable("the job runs here at once; there is no scheduler to ask")
+_TO_THE_TERMINAL = NotApplicable("an interactive job's output is the terminal; no file is named")
+
+
 class LocalScheduler(BaseScheduler):
     """Execute jobs locally (for development/testing)."""
 
@@ -48,6 +62,28 @@ class LocalScheduler(BaseScheduler):
 
     #: The local scheduler has no site settings; the section may exist, empty.
     CONFIG_KEYS: ClassVar[Mapping[str, type]] = {}
+
+    BATCH_OPTIONS: ClassVar[Mapping[str, Support]] = {
+        "name": MAPS,
+        "cpu": _NO_SCHEDULER,
+        "mem": _NO_SCHEDULER,
+        "time": _NO_SCHEDULER,
+        "queue": _NO_SCHEDULER,
+        "project": _NO_SCHEDULER,
+        "stdout": MAPS,
+        "stderr": MAPS,
+        "inherit_env": MAPS,
+        "env_passthrough": MAPS,
+        "workdir": MAPS,
+        "array": REJECTS,
+        "dependencies": REJECTS,
+    }
+    INTERACTIVE_OPTIONS: ClassVar[Mapping[str, Support]] = {
+        **BATCH_OPTIONS,
+        "name": _TO_THE_TERMINAL,
+        "stdout": _TO_THE_TERMINAL,
+        "stderr": _TO_THE_TERMINAL,
+    }
 
     # Shell-side values; cpus, job_id, task_id and job_name are literals
     # known before the script runs (see hpc_vars).
@@ -88,6 +124,7 @@ class LocalScheduler(BaseScheduler):
                 the local scheduler can honour neither.
         """
         _check_supported(job)
+        self.check_options(job)
 
         self._job_counter += 1
         stamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -141,6 +178,7 @@ class LocalScheduler(BaseScheduler):
         submit, so the preview shows ``<job_id>`` in its place.
         """
         _check_supported(job)
+        self.check_options(job)
         return self._render(job, None, verbose=verbose)
 
     def _redirect(self, job: Job, stream: Stream, job_id: str | None) -> ShellWord | None:

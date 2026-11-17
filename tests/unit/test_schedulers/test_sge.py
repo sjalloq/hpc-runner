@@ -1034,7 +1034,6 @@ class TestSGESubmissionContract:
             interactive=True,
             name="gui",
             queue="interactive.q",
-            priority=-5,
             project="proj1",
             stdout="out.log",
             cpu=2,
@@ -1051,7 +1050,8 @@ class TestSGESubmissionContract:
         # qrsh rejects -N/-o/-e/-j/-S; those are skipped
         for flag in ("-N", "-o", "-e", "-j", "-S"):
             assert flag not in argv
-        for pair in (["-q", "interactive.q"], ["-p", "-5"], ["-P", "proj1"], ["-pe", "smp", "2"]):
+        assert argv[3] == "-cwd"  # always: the job runs in its workdir
+        for pair in (["-q", "interactive.q"], ["-P", "proj1"], ["-pe", "smp", "2"]):
             idx = argv.index(pair[0])
             assert argv[idx : idx + len(pair)] == pair
         assert argv[-3:-1] == ["-l", "display=1"]
@@ -1124,11 +1124,6 @@ class TestSGEOutputPaths:
         assert "#$ -j y" in directives
         assert not any(d.startswith("#$ -e") for d in directives)
 
-    def test_array_appends_task_id(self, scheduler):
-        directives = _directives(scheduler.preview(make_job(array="1-4", stderr="e.log")))
-        assert "#$ -o /work/$JOB_NAME.$JOB_ID.out.$TASK_ID" in directives
-        assert "#$ -e /work/e.log.$TASK_ID" in directives
-
     def test_array_pattern_with_task_id_kept(self, scheduler):
         job = make_job(array="1-4", stdout="t/${hpc.job_id}.${hpc.task_id}")
         assert "#$ -o /work/t/$JOB_ID.$TASK_ID" in _directives(scheduler.preview(job))
@@ -1141,10 +1136,13 @@ class TestSGEOutputPaths:
         assert "#$ -e /work/$JOB_NAME.err" in directives
         assert "#$ -j y" not in directives
 
-    @pytest.mark.parametrize("use_cwd", [True, False])
-    def test_absolute_regardless_of_use_cwd(self, scheduler, use_cwd):
-        job = make_job(use_cwd=use_cwd, workdir="/proj/run", stdout="o/${hpc.job_id}.out")
+    def test_relative_pattern_is_joined_onto_workdir(self, scheduler):
+        job = make_job(workdir="/proj/run", stdout="o/${hpc.job_id}.out")
         assert "#$ -o /proj/run/o/$JOB_ID.out" in _directives(scheduler.preview(job))
+
+    def test_every_job_runs_in_workdir_under_bash(self, scheduler):
+        """``-S /bin/bash`` and ``-cwd`` are not options: every batch job gets both."""
+        assert _directives(scheduler.preview(make_job()))[:2] == ["#$ -S /bin/bash", "#$ -cwd"]
 
     def test_absolute_pattern_kept(self, scheduler):
         job = make_job(stdout="/logs/${hpc.job_id}.out")
@@ -1173,8 +1171,31 @@ class TestSGEOutputPaths:
         job = make_job(name="a", array="1-4", workdir=str(tmp_path))
         with patch_seam(lambda argv: QSUB_ARRAY_OK):
             result = scheduler.submit(job)
-        assert result.task_stdout_path(3) == tmp_path / "a.4242.out.3"
+        assert result.task_stdout_path(3) == tmp_path / "a.4242.3.out"
         assert result.task_stderr_path(3) is None
+
+    @pytest.mark.parametrize(
+        ("pattern", "rendered"),
+        [
+            ("${hpc.job_name}.${hpc.job_id}.out", "$JOB_NAME.$JOB_ID.$TASK_ID.out"),  # the default
+            ("run.log", "run.$TASK_ID.log"),  # before the last extension
+            ("run.tar.gz", "run.tar.$TASK_ID.gz"),
+            ("run", "run.$TASK_ID"),  # no extension: appended
+            (
+                "${hpc.job_name}.${hpc.job_id}",
+                "$JOB_NAME.$JOB_ID.$TASK_ID",
+            ),  # a reference is not one
+            ("logs.d/run", "logs.d/run.$TASK_ID"),  # nor is a directory's dot
+            ("logs/.hidden", "logs/.hidden.$TASK_ID"),
+        ],
+    )
+    def test_array_pattern_gets_the_task_id(self, scheduler, pattern, rendered):
+        directives = _directives(scheduler.preview(make_job(array="1-4", stdout=pattern)))
+        assert f"#$ -o /work/{rendered}" in directives
+
+    def test_array_stderr_gets_the_task_id_too(self, scheduler):
+        job = make_job(array="1-4", stderr="${hpc.job_name}.err")
+        assert "#$ -e /work/$JOB_NAME.$TASK_ID.err" in _directives(scheduler.preview(job))
 
     def test_directory_created_before_qsub(self, scheduler, tmp_path):
         seen = []

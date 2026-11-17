@@ -6,6 +6,7 @@ import re
 import shlex
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import EllipsisType
@@ -35,6 +36,51 @@ _SHELL_VAR = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
 
 RenderContext = Literal["script", "path"]
 Stream = Literal["stdout", "stderr"]
+
+
+# A file name's last extension: a dot, then letters, digits, ``_`` or ``-``
+# to the end, after at least one other character of the name (so ``.log``
+# alone, a ``${hpc.*}`` reference and a directory's dot are not extensions).
+_EXTENSION = re.compile(r"(?<=[^/])\.[A-Za-z0-9_-]+$")
+
+
+def _with_task_id(pattern: str) -> str:
+    """*pattern* with ``${hpc.task_id}`` before its last extension, else appended."""
+    match = _EXTENSION.search(pattern)
+    if match is None:
+        return f"{pattern}.{TASK_ID_PLACEHOLDER}"
+    return f"{pattern[: match.start()]}.{TASK_ID_PLACEHOLDER}{match.group()}"
+
+
+#: The scheduler turns the option into its own arguments.
+MAPS: Literal["maps"] = "maps"
+#: The scheduler cannot honour the option: a job that sets it is refused.
+REJECTS: Literal["rejects"] = "rejects"
+
+
+@dataclass(frozen=True)
+class NotApplicable:
+    """The option has nothing to map to here, and *reason* says why.
+
+    For an option that asks nothing of the scheduler in this case (an
+    output file for a job whose output is the terminal), so there is
+    nothing to honour or to refuse.
+    """
+
+    reason: str
+
+
+#: One cell of a scheduler's option table.
+Support = Literal["maps", "rejects"] | NotApplicable
+
+
+def _is_set(value: Any) -> bool:
+    """Whether a job attribute asks for something (False and 0 do; None and empty do not)."""
+    if value is None:
+        return False
+    if isinstance(value, bool | int):
+        return True
+    return bool(value)
 
 
 def refuse_interactive_dependencies(job: Job) -> None:
@@ -70,6 +116,12 @@ class BaseScheduler(ABC):
     # Subclasses populate this in __init__ with config-driven values
     ARG_RENDERERS: dict[str, SchedulerArg[Any]] = {}
 
+    #: What this scheduler does with each of ``SCHEDULER_OPTIONS`` on a
+    #: batch job and on an interactive one. Every option has a cell in
+    #: both; ``check_options`` refuses a job that sets a rejected one.
+    BATCH_OPTIONS: ClassVar[Mapping[str, Support]] = {}
+    INTERACTIVE_OPTIONS: ClassVar[Mapping[str, Support]] = {}
+
     # Default timeout (seconds) for query and submit commands.
     COMMAND_TIMEOUT: float = 60.0
 
@@ -84,6 +136,29 @@ class BaseScheduler(ABC):
         # The module init script is a top-level key: it describes the nodes,
         # not a scheduler. Shared by every backend's environment block.
         self.module_init_script: str = config.module_init_script
+
+    # =========================================================================
+    # Options this scheduler cannot honour
+    # =========================================================================
+
+    def check_options(self, job: Job) -> None:
+        """Refuse *job* if it sets an option this scheduler rejects.
+
+        Nothing is silently ignored: an option with no mapping here fails
+        the submission, and the scheduler's own flag for it goes in
+        ``scheduler_args``. Called by ``submit()`` and ``preview()``.
+
+        Raises:
+            NotSupportedError: Names the option.
+        """
+        table = self.INTERACTIVE_OPTIONS if job.interactive else self.BATCH_OPTIONS
+        kind = "an interactive" if job.interactive else "a batch"
+        for option, support in table.items():
+            if support == REJECTS and _is_set(getattr(job, option)):
+                raise NotSupportedError(
+                    f"the {self.name} scheduler cannot honour '{option}' on {kind} job; "
+                    "ask for it with the scheduler's own flags in scheduler_args (-S)"
+                )
 
     # =========================================================================
     # ${hpc.*} and the shared environment block
@@ -180,14 +255,16 @@ class BaseScheduler(ABC):
         """*job*'s output pattern for *stream*, as the scheduler renders it.
 
         None for ``stderr`` when it is merged into stdout. An array job's
-        pattern without ``${hpc.task_id}`` gets ``.${hpc.task_id}``
-        appended, so tasks never write the same file.
+        pattern without ``${hpc.task_id}`` gets it, so tasks never write
+        the same file: before the file name's last extension
+        (``run.log`` becomes ``run.${hpc.task_id}.log``, the default
+        ``name.123.4.out``), or appended when the name has none.
         """
         pattern = job.stdout if stream == "stdout" else job.stderr
         if pattern is None:
             return None
         if job.array is not None and TASK_ID_PLACEHOLDER not in pattern:
-            pattern += f".{TASK_ID_PLACEHOLDER}"
+            pattern = _with_task_id(pattern)
         return pattern
 
     def output_paths(self, job: Job, job_id: str) -> tuple[Path | None, Path | None]:
@@ -264,7 +341,7 @@ class BaseScheduler(ABC):
         Walks ``RENDER_ORDER``, skipping unset (None) attributes, and uses
         ARG_RENDERERS to convert each to the scheduler's directive format.
         A renderer returns None for a value it does not render (e.g. False
-        for ``use_cwd``/``inherit_env``, an explicit opt-out).
+        for ``inherit_env``, an explicit opt-out).
 
         Returns:
             List of directive strings (e.g., ['#$ -N jobname', '#$ -pe smp 4'])

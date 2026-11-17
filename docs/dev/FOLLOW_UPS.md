@@ -21,7 +21,7 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is steps 4, 5 and 9 of `slurm/PLAN.md`, "Order of
+For Slurm that work is steps 3, 4 and 8 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -63,7 +63,7 @@ work". For PBS nothing is planned.
 - `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
   `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 5 and 6).
+  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 4 and 5).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
   and nothing else.
@@ -111,9 +111,9 @@ work". For PBS nothing is planned.
 - Not run since the container renaming of 2026-11-16: the PBS stack (not
   started at all), the `ocs` integration suite, the CI workflow's
   log-copy step.
-- `test_run_exits_with_the_jobs_exit_code` (`tests/integration/test_cli.py`,
-  added 2026-11-17) has run on `soge` only. Closes with one run of the
-  `ocs` integration suite.
+- The work of 2026-11-17 (`hpc run` exit code, the five removed options,
+  the array output file name, the option table) has run on `soge` only.
+  Closes with one run of the `ocs` integration suite.
 - A third SGE flavour, `daimh/sge`, is not started.
 - PBS has one flavour (OpenPBS). OpenPBS against PBS Professional is not
   examined.

@@ -61,5 +61,5 @@ class TestRenderOrder:
         assert set(RENDER_ORDER) <= fields
 
     def test_order(self):
-        assert RENDER_ORDER[:4] == ("shell", "use_cwd", "inherit_env", "name")
+        assert RENDER_ORDER[:2] == ("inherit_env", "name")
         assert "project" in RENDER_ORDER

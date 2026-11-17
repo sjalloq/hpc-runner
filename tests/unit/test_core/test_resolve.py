@@ -43,8 +43,6 @@ class TestBasics:
     def test_package_defaults(self):
         job = make_job()
         assert job.inherit_env is True
-        assert job.shell == "/bin/bash"
-        assert job.use_cwd is True
         assert job.interactive is False
         assert job.cpu is None
         assert job.array is None
@@ -207,11 +205,9 @@ class TestConfigLayers:
         assert (job.cpu, job.mem) == (16, Memory.parse("64G"))
 
     def test_config_overrides_package_defaults(self):
-        cfg = _config(defaults={"shell": "/bin/zsh", "inherit_env": False, "use_cwd": False})
+        cfg = _config(defaults={"inherit_env": False})
         job = make_job(config=cfg)
-        assert job.shell == "/bin/zsh"
         assert job.inherit_env is False
-        assert job.use_cwd is False
 
     def test_config_command_key_ignored(self):
         job = make_job("echo real", config=_config(defaults={"command": "nope", "cpu": 2}))
@@ -279,7 +275,7 @@ class TestProvenance:
         assert job.provenance["cpu"] == "tools.python"
         assert job.provenance["mem"] == "defaults"
         assert job.provenance["queue"] == "spec"
-        assert job.provenance["shell"] == "package"
+        assert job.provenance["inherit_env"] == "package"
         assert job.provenance["time"] == "package"
         assert job.provenance["command"] == "spec"
 

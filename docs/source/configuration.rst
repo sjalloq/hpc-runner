@@ -102,22 +102,10 @@ the submit host (:ref:`variable-expansion`).
      - string
      - scalar
      - Queue / partition (SGE ``-q``); expanded.
-   * - ``priority``
-     - integer
-     - scalar
-     - Scheduler priority (SGE ``-p``).
    * - ``project``
      - string
      - scalar
      - Project / account charged (SGE ``-P``); expanded.
-   * - ``nodes``
-     - integer
-     - scalar
-     - Number of nodes for MPI jobs (not used by SGE).
-   * - ``tasks``
-     - integer
-     - scalar
-     - Number of tasks for MPI jobs (not used by SGE); ``--ntasks`` on the CLI.
    * - ``stdout``
      - string
      - scalar
@@ -137,14 +125,6 @@ the submit host (:ref:`variable-expansion`).
      - scalar
      - Working directory, relative to the submit directory; expanded.
        Default: the submit directory.
-   * - ``shell``
-     - string
-     - scalar
-     - Shell the job script runs under (SGE ``-S``). Default ``/bin/bash``.
-   * - ``use_cwd``
-     - boolean
-     - scalar
-     - Run in ``workdir`` (SGE ``-cwd``). Default ``true``.
    * - ``venv``
      - path or ``false``
      - scalar
@@ -465,6 +445,21 @@ merges per :ref:`list-merging`, and each scheduler uses only its own:
 
 On the command line, raw arguments go in ``-S``/``--scheduler-args``
 (``hpc run -S '-l gpu=2' make sim``) and are appended after config's.
+
+An option means the same on every scheduler, and none is silently ignored:
+a scheduler that cannot honour an option a job sets refuses the job, and
+the error names the option. Anything that is one scheduler's own idea goes
+here instead. Job priority is an example (each scheduler has its own
+scale), as is an MPI job's node and task count:
+
+.. code-block:: toml
+
+   [types.low]
+   scheduler_args = { sge = ["-p", "-500"], slurm = ["--nice=500"] }
+
+   [types.mpi]
+   scheduler_args = { slurm = ["-N", "2", "-n", "32"] }
+
 ``[schedulers.<name>]`` holds site facts only (PE name, resource names,
 module init script).
 
@@ -502,9 +497,12 @@ and ``JobResult.stdout_path`` / ``read_stdout()`` work on every scheduler.
   state). ``${hpc.cpus}`` and
   ``${hpc.tmpdir}`` are an error anywhere in an output path. On SGE the
   pattern becomes ``<workdir>/$JOB_NAME.$JOB_ID.out`` and SGE fills it in.
-- **Arrays:** a pattern without ``${hpc.task_id}`` gets ``.${hpc.task_id}``
-  appended, so tasks never write the same file
-  (``name.123.out.4``). The same applies to ``stderr``.
+- **Arrays:** the default is
+  ``${hpc.job_name}.${hpc.job_id}.${hpc.task_id}.out`` (``name.123.4.out``).
+  A pattern of your own without ``${hpc.task_id}`` gets it before the last
+  extension, so tasks never write the same file: ``run.log`` gives
+  ``run.4.log``; a name with no extension gets ``.4`` appended. The same
+  applies to ``stderr``.
 - **Relative paths** are relative to the job's working directory
   (``workdir``, else the directory you submit from). The directory part is
   created on the submit host before submission.
@@ -821,10 +819,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    mem = "4G"
    time = "1:00:00"
    queue = "batch.q"           # SGE default queue
-   priority = 0
    workdir = "."
-   shell = "/bin/bash"
-   use_cwd = true
    inherit_env = true
 
    stdout = "${hpc.job_name}.${hpc.job_id}.out"   # the default

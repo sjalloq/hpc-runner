@@ -8,7 +8,7 @@
 #$ -pe smp 2
 #$ -l h_vmem=4G
 #$ -l h_rt=0:30:00
-#$ -o /work/$JOB_NAME.$JOB_ID.out.$TASK_ID
+#$ -o /work/$JOB_NAME.$JOB_ID.$TASK_ID.out
 #$ -j y
 #$ -t 1-10:2
 #$ -tc 3

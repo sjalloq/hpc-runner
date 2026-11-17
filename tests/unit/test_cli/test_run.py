@@ -169,7 +169,7 @@ class TestRunCommand:
 
     def test_removed_options_rejected(self, runner):
         """--job-type, --job-name, --interactive, --extra-module no longer exist."""
-        for opt in ("--job-type", "--job-name", "--interactive", "--extra-module"):
+        for opt in ("--job-type", "--job-name", "--interactive", "--extra-module", "--nodes"):
             result = runner.invoke(cli, ["run", "--dry-run", opt, "x", "echo"])
             assert result.exit_code != 0, opt
             assert "No such option" in result.output, opt
@@ -177,6 +177,9 @@ class TestRunCommand:
     def test_unknown_flag_is_a_usage_error(self, runner, temp_dir):
         """A flag hpc run does not define is rejected, never forwarded or run."""
         result = runner.invoke(cli, ["run", "--dry-run", "-z", "batch.q", "echo", "hi"])
+        assert result.exit_code != 0
+        assert "No such option" in result.output
+        result = runner.invoke(cli, ["run", "--dry-run", "--ntasks", "4", "echo"])
         assert result.exit_code != 0
         assert "No such option" in result.output
         result = runner.invoke(cli, ["run", "--dry-run", "--cpus", "4", "echo"])

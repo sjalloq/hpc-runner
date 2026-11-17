@@ -28,8 +28,6 @@ console = Console()
 @click.option("-m", "--mem", help="Memory for the whole job (e.g., 16G, 1.5GiB)")
 @click.option("-T", "--time", "time_limit", help="Time limit (e.g., 4:00:00, 4h, 1h30m)")
 @click.option("-q", "--queue", help="Queue/partition name")
-@click.option("-n", "--nodes", type=int, help="Number of nodes (MPI jobs)")
-@click.option("--ntasks", type=int, help="Number of tasks (MPI jobs)")
 @click.option("-d", "--directory", type=click.Path(exists=True), help="Working directory")
 @click.option("-t", "--type", "job_type", help="Job type from config")
 @click.option("-e", "--stderr", help="Separate stderr file pattern (default: merged into stdout)")
@@ -90,8 +88,6 @@ def run(
     mem: str | None,
     time_limit: str | None,
     queue: str | None,
-    nodes: int | None,
-    ntasks: int | None,
     directory: str | None,
     job_type: str | None,
     stderr: str | None,
@@ -169,8 +165,6 @@ def run(
         mem=mem,
         time=time_limit,
         queue=queue,
-        nodes=nodes,
-        tasks=ntasks,
         workdir=directory,
         stderr=stderr,
         stdout=stdout,

@@ -42,16 +42,11 @@ class JobSpec:
     mem: str | Memory | None = None
     time: str | Duration | None = None
     queue: str | None = None
-    priority: int | None = None
     project: str | None = None
-    nodes: int | None = None
-    tasks: int | None = None
     stdout: str | None = None
     stderr: str | None = None
     inherit_env: bool | None = None
     workdir: str | None = None
-    shell: str | None = None
-    use_cwd: bool | None = None
 
     # None = unspecified (capture the submit host's venv), str = that venv,
     # False = no venv.

@@ -13,20 +13,36 @@ from hpc_runner.core.units import Duration, Memory
 
 # Order in which schedulers render the simple per-attribute directives.
 RENDER_ORDER: tuple[str, ...] = (
-    "shell",
-    "use_cwd",
     "inherit_env",
     "name",
     "cpu",
     "mem",
     "time",
     "queue",
-    "priority",
     "project",
-    "nodes",
-    "tasks",
     "stdout",
     "stderr",
+)
+
+
+#: The options a scheduler has to place, as opposed to those the job script
+#: carries the same way everywhere (modules, ``env_*``, venv). Every
+#: scheduler says, for a batch and for an interactive job, whether it maps
+#: or rejects each one (``BaseScheduler.BATCH_OPTIONS``).
+SCHEDULER_OPTIONS: tuple[str, ...] = (
+    "name",
+    "cpu",
+    "mem",
+    "time",
+    "queue",
+    "project",
+    "stdout",
+    "stderr",
+    "inherit_env",
+    "env_passthrough",
+    "workdir",
+    "array",
+    "dependencies",
 )
 
 
@@ -63,18 +79,13 @@ class Job:
     mem: Memory | None  # per job (D10)
     time: Duration | None
     queue: str | None
-    priority: int | None
     project: str | None
-    nodes: int | None
-    tasks: int | None
     # Output path patterns (D9), relative to workdir; may contain ${hpc.*}.
     # stderr None means merged into stdout.
     stdout: str
     stderr: str | None
     inherit_env: bool
     workdir: str  # absolute
-    shell: str
-    use_cwd: bool
     venv: str | None
 
     env_vars: Mapping[str, str]

@@ -94,7 +94,6 @@ def _passthrough_resources_project() -> JobSpec:
         "make sim",
         queue="batch.q",
         project="chip",
-        priority=-10,
         inherit_env=False,
         env_passthrough=["DISPLAY"],
         resources=[{"name": "xcelium_lic", "value": 1}, {"name": "scratch", "value": "20G"}],

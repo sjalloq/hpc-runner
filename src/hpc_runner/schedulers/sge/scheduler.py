@@ -7,10 +7,10 @@ import os
 import re
 import time
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from hpc_runner.core.dependency import DependencyType
 from hpc_runner.core.exceptions import (
@@ -22,7 +22,7 @@ from hpc_runner.core.exceptions import (
     SchedulerUnavailableError,
     SubmissionError,
 )
-from hpc_runner.core.job import RENDER_ORDER
+from hpc_runner.core.job import RENDER_ORDER, SCHEDULER_OPTIONS
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import (
     HPC_EXIT_DEP_FAILED,
@@ -31,13 +31,19 @@ from hpc_runner.core.result import (
     JobStatus,
     reduce_statuses,
 )
-from hpc_runner.schedulers.base import BaseScheduler, refuse_interactive_dependencies
+from hpc_runner.schedulers.base import (
+    MAPS,
+    REJECTS,
+    BaseScheduler,
+    NotApplicable,
+    Support,
+    refuse_interactive_dependencies,
+)
 from hpc_runner.schedulers.sge.args import (
     MEMORY_PER,
     SGEArrayArg,
     SGEArrayConcurrencyArg,
     SGECpuArg,
-    SGECwdArg,
     SGEErrorArg,
     SGEHoldArg,
     SGEInheritEnvArg,
@@ -45,10 +51,8 @@ from hpc_runner.schedulers.sge.args import (
     SGEMemArg,
     SGEMergeOutputArg,
     SGEOutputArg,
-    SGEPriorityArg,
     SGEProjectArg,
     SGEQueueArg,
-    SGEShellArg,
     SGETimeArg,
     sanitise_job_name,
 )
@@ -173,6 +177,9 @@ def _final_records(records: Iterable[dict[str, Any]]) -> dict[tuple[str, str], d
     return final
 
 
+_TO_THE_TERMINAL = NotApplicable("an interactive job's output is the terminal; no file is named")
+
+
 class SGEScheduler(BaseScheduler):
     """Sun Grid Engine scheduler implementation."""
 
@@ -185,6 +192,17 @@ class SGEScheduler(BaseScheduler):
         "memory_per": str,
         "emulate_afterok": bool,
         "sentinel_ttl_days": int,
+    }
+
+    BATCH_OPTIONS: ClassVar[Mapping[str, Support]] = dict.fromkeys(SCHEDULER_OPTIONS, MAPS)
+    INTERACTIVE_OPTIONS: ClassVar[Mapping[str, Support]] = {
+        **BATCH_OPTIONS,
+        # Not sent to qrsh (``interactive_ok=False`` in sge/args.py).
+        "name": NotApplicable("qrsh is not given a job name"),
+        "stdout": _TO_THE_TERMINAL,
+        "stderr": _TO_THE_TERMINAL,
+        "array": REJECTS,  # resolve() already refuses an interactive array
+        "dependencies": REJECTS,
     }
 
     HPC_VARS = {
@@ -241,16 +259,11 @@ class SGEScheduler(BaseScheduler):
 
         # Build the argument renderer registry
         # Maps Job attribute names -> SGE argument renderer instances
-        # Note: 'nodes' and 'tasks' are NOT mapped - they're Slurm/MPI concepts.
-        # If a job has these set, they'll be silently ignored by SGE.
         self.ARG_RENDERERS = {
             # Basic attributes
-            "shell": SGEShellArg(),
-            "use_cwd": SGECwdArg(),
             "inherit_env": SGEInheritEnvArg(),
             "name": SGEJobNameArg(),
             "queue": SGEQueueArg(),
-            "priority": SGEPriorityArg(),
             "project": SGEProjectArg(),
             "stdout": SGEOutputArg(),
             "stderr": SGEErrorArg(),
@@ -279,8 +292,7 @@ class SGEScheduler(BaseScheduler):
         """SGE's view of *attr_name*: sanitised name, ``-o``/``-e`` paths, per-slot mem.
 
         Output paths are rendered absolute (joined onto ``job.workdir``), so
-        they do not depend on ``use_cwd`` and match the recorded
-        ``stdout_path``. SGE expands them: ``${hpc.job_name}`` becomes
+        they match the recorded ``stdout_path``. SGE expands them: ``${hpc.job_name}`` becomes
         ``$JOB_NAME``, ``${hpc.task_id}`` ``$TASK_ID`` (see
         :meth:`~hpc_runner.schedulers.base.BaseScheduler.output_pattern`
         for arrays).
@@ -291,12 +303,23 @@ class SGEScheduler(BaseScheduler):
             pattern = self.output_pattern(job, "stdout" if attr_name == "stdout" else "stderr")
             if pattern is None:
                 return None
-            # Always absolute: use_cwd only decides where the command runs.
             path = str(Path(job.workdir) / pattern)
             return self.render_hpc_vars(path, job=job, context="path")
         if attr_name == "mem" and job.mem is not None:
             return self._mem_arg.for_job(job.mem, job.cpu)
         return super().render_value(job, attr_name)
+
+    def render_directives(self, job: Job) -> list[str]:
+        """The base directives after the two every SGE job gets.
+
+        The job script is bash and runs in ``job.workdir`` (qsub is run
+        there), so ``-S /bin/bash`` and ``-cwd`` are always sent.
+        """
+        return ["#$ -S /bin/bash", "#$ -cwd", *super().render_directives(job)]
+
+    def _render_interactive_args(self, job: Job) -> list[str]:
+        """The base arguments after ``-cwd``; qrsh has no ``-S``."""
+        return ["-cwd", *super()._render_interactive_args(job)]
 
     def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script :meth:`submit` would write for *job*.
@@ -309,6 +332,7 @@ class SGEScheduler(BaseScheduler):
                 :meth:`_check_dependencies`).
         """
         self._check_dependencies(job)
+        self.check_options(job)
         if job.interactive:
             return self._render_interactive(
                 job, _PREVIEW_SCRIPT_PATH, keep_script=True, verbose=verbose
@@ -478,6 +502,7 @@ class SGEScheduler(BaseScheduler):
                 written or submitted.
         """
         self._check_dependencies(job)
+        self.check_options(job)
         if job.interactive:
             return self._submit_interactive(job, keep_script=keep_script, verbose=verbose)
         return self._submit_batch(job, keep_script=keep_script, verbose=verbose)

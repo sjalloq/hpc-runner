@@ -95,7 +95,7 @@ class TestResolve:
         assert ["modules", "xcelium/23", "tools.xrun"] in rows
         assert ["modules", "slang/0.9", "tools.slang"] in rows
         assert ["scheduler_args.sge", "-binding", "defaults"] in rows
-        assert ["shell", "/bin/bash", "package"] in rows
+        assert ["inherit_env", "true", "package"] in rows
 
     def test_tool_from_command(self, runner, tmp_path):
         (tmp_path / "hpc-runner.toml").write_text(GOOD)

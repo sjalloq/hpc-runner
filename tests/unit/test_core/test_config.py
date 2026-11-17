@@ -854,6 +854,16 @@ class TestSchema:
         assert err.line == 3
         assert "[types.sim] modles: unknown key; did you mean 'modules'?" in str(err)
 
+    @pytest.mark.parametrize(
+        "line",
+        ["nodes = 2", "tasks = 32", "priority = 0", "use_cwd = false", 'shell = "/bin/zsh"'],
+    )
+    def test_removed_job_keys_are_ordinary_unknown_keys(self, tmp_path, line):
+        path = _write(tmp_path, f"config_version = 1\n[types.sim]\n{line}\n")
+        (err,) = _errors(path)
+        key = line.split()[0]
+        assert f"[types.sim] {key}: unknown key" in str(err)
+
     def test_all_errors_reported_together(self, tmp_path):
         path = _write(
             tmp_path,

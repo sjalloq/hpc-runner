@@ -92,7 +92,8 @@ Output files and job names
 Every batch job gets an explicit, absolute ``-o``. The default pattern
 ``${hpc.job_name}.${hpc.job_id}.out`` renders as
 ``#$ -o <workdir>/$JOB_NAME.$JOB_ID.out``, which SGE expands; array jobs get
-``.$TASK_ID`` appended unless the pattern already uses ``${hpc.task_id}``.
+``.$TASK_ID`` before the last extension (``$JOB_NAME.$JOB_ID.$TASK_ID.out``)
+unless the pattern already uses ``${hpc.task_id}``.
 Without ``stderr``, ``#$ -j y`` merges stderr into the same file; a
 ``stderr`` pattern renders ``#$ -e`` instead. The directory of each path is
 created before ``qsub`` (SGE silently drops output whose directory is
@@ -100,8 +101,10 @@ missing). See :ref:`output-files`.
 
 A relative pattern is joined onto the job's working directory (``workdir``,
 else the submit directory) before rendering, so ``-o``/``-e`` are always
-absolute: ``use_cwd`` only decides where the command runs, and the recorded
-``stdout_path`` is right either way.
+absolute and the recorded ``stdout_path`` is right.
+
+Every job runs in its working directory under bash: ``-cwd`` and
+``-S /bin/bash`` are always sent.
 
 A ``#$`` line is parsed like a command line and has no quoting, so a value
 with whitespace (a working directory called ``my run``, a queue or resource

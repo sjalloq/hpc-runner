@@ -63,7 +63,3 @@ modules = ["python"]
 [types.gpu]
 queue = "gpu"
 resources = [{name = "gpu", value = 1}]
-
-[types.mpi]
-nodes = 2
-tasks = 32

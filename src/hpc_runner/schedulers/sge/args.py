@@ -2,7 +2,7 @@
 
 Each class knows how to render a single job attribute to SGE syntax,
 both as a script directive (#$ ...) for batch jobs and as command-line
-arguments for qrsh. Renderers for flags qrsh rejects (-S, -o, -e, -j, -N)
+arguments for qrsh. Renderers for flags qrsh rejects (-o, -e, -j, -N)
 are declared ``interactive_ok=False``.
 """
 
@@ -78,13 +78,6 @@ class SGEErrorArg(SGEArg):
         super().__init__("e", doc="Stderr file path", interactive_ok=False)
 
 
-class SGEPriorityArg(SGEArg):
-    """Job priority: -p priority"""
-
-    def __init__(self) -> None:
-        super().__init__("p", doc="Job priority (-1023 to 1024)")
-
-
 class SGEProjectArg(SGEArg):
     """Project: -P project"""
 
@@ -92,29 +85,9 @@ class SGEProjectArg(SGEArg):
         super().__init__("P", doc="Project")
 
 
-class SGEShellArg(SGEArg):
-    """Shell selection: -S /path/to/shell"""
-
-    def __init__(self) -> None:
-        super().__init__("S", doc="Shell path", interactive_ok=False)
-
-
 # =============================================================================
 # Boolean Flag Arguments (no value, just presence)
 # =============================================================================
-
-
-class SGECwdArg(SchedulerArg[bool]):
-    """Use current working directory: -cwd"""
-
-    def __init__(self) -> None:
-        super().__init__("cwd", doc="Execute in current working directory")
-
-    def to_args(self, value: bool | None) -> list[str]:
-        return ["-cwd"] if value else []
-
-    def to_directive(self, value: bool | None) -> str | None:
-        return "#$ -cwd" if value else None
 
 
 class SGEInheritEnvArg(SchedulerArg[bool]):

@@ -71,6 +71,12 @@ Schedulers (``src/hpc_runner/schedulers/``)
   accepts under ``[schedulers.<name>]`` are its ``CONFIG_KEYS``; the schema
   rejects anything else. The base class reads the top-level
   ``module_init_script`` for the shared environment block.
+- Every backend declares ``BATCH_OPTIONS`` and ``INTERACTIVE_OPTIONS``: for
+  each of ``SCHEDULER_OPTIONS`` (``core/job.py``) whether it maps the
+  option, rejects it, or why there is nothing to map. ``check_options(job)``
+  refuses a job that sets a rejected one.
+  ``tests/unit/test_schedulers/test_option_table.py`` walks every cell, so
+  a new option or backend fails the suite until its cells are filled in.
 - ``run_command()`` (``_subprocess.py``) is the seam: the only place a
   scheduler CLI runs. It logs the argv, records a trace when one is active
   and turns failures into ``SchedulerError`` subclasses. Tests patch it
