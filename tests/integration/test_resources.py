@@ -1,31 +1,11 @@
-"""Resource requests as SGE sees them, and the limits it enforces.
-
-See docs/dev/testbed/TESTBED_PLAN.md section 5.
-"""
+"""Resource requests every scheduler has: a named queue."""
 
 from __future__ import annotations
 
-import dataclasses
-import re
-import time
-
-import pytest
-
-from hpc_runner.core.config import load_config
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
-from hpc_runner.schedulers import get_scheduler
 from tests.integration.cluster import Cluster
-
-pytestmark = pytest.mark.scheduler("sge")
-
-#: ``short.q`` has ``h_rt 00:01:00``; the kill arrives about 60 s after start.
-H_RT_KILL_TIMEOUT = 150.0
-#: qmaster flushes accounting within 1 s on the default stack; allow more.
-QACCT_TIMEOUT = 30.0
-#: Allocate 200 MB under a 50 MB ``h_vmem`` limit.
-ALLOC_200M = 'python3 -c "b = bytearray(200 * 1024 * 1024); print(len(b))"'
 
 
 def _submit(cluster: Cluster, spec: JobSpec) -> JobResult:
@@ -37,141 +17,17 @@ def _job_id(result: JobResult) -> str:
     return result.job_id
 
 
-def test_pe_mem_time(cluster: Cluster) -> None:
-    """D10: cpu/mem/time become -pe smp 2, mem_free (per job, as given) and h_rt."""
-    spec = JobSpec("true", name="res", cpu=2, mem="2G", time="10m", scheduler_args=["-h"])
-    job = resolve(spec, cluster.config(), cluster.host())
-    preview = cluster.scheduler().preview(job)
-    assert "#$ -pe smp 2" in preview.splitlines()
-    assert "#$ -l mem_free=2G" in preview.splitlines()
-    assert "#$ -l h_rt=0:10:00" in preview.splitlines()
-
-    job_id = _job_id(cluster.scheduler().submit(job))
-    assert cluster.wait_for(job_id, JobStatus.PENDING, timeout=5) is JobStatus.PENDING
-    info, details = cluster.scheduler().get_job_details(job_id)
-    assert info.job_id == job_id
-    assert details.get("pe_name") == "smp"
-    assert details.get("pe_range") == "2"
-    # SGE canonicalises a TIME request to seconds, so 0:10:00 reads back as 600.
-    assert details.get("resources") == {"mem_free": "2G", "h_rt": "600"}
-    raw = cluster.run(["qstat", "-j", job_id]).stdout
-    assert "mem_free=2G" in raw and "h_rt=600" in raw and "smp" in raw
-
-
-#: How each flavour records an ``h_rt`` kill: soge's qmaster writes
-#: ``failed 37``; OCS's execd writes ``failed 100`` and ``deleted_by execd@``.
-H_RT_KILL_RECORD = {
-    "soge": {"failed": "37"},
-    "ocs": {"failed": "100", "deleted_by": "execd@"},
-}
-
-
-def test_h_rt_kill(cluster: Cluster) -> None:
-    """Past short.q's h_rt the scheduler kills the job: KILLED (the record
-    does not name the limit), exit 137."""
-    job_id = _job_id(_submit(cluster, JobSpec("sleep 120", name="hrt", queue="short.q")))
-    assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
-    status = cluster.wait_for(job_id, {JobStatus.KILLED}, timeout=H_RT_KILL_TIMEOUT)
-    assert status is JobStatus.KILLED
-    record = cluster.run(["qacct", "-j", job_id]).stdout
-    fields = dict(line.split(None, 1) for line in record.splitlines() if " " in line.strip())
-    for name, prefix in H_RT_KILL_RECORD[cluster.flavour].items():
-        assert fields.get(name, "").startswith(prefix), record
-    assert cluster.scheduler().get_exit_code(job_id) == 137
-
-
-def _available_h_vmem(cluster: Cluster, host: str) -> str:
-    """``qc:h_vmem=<value>`` of all.q on *host* (the consumable's remaining capacity)."""
-    out = cluster.run(["qstat", "-F", "h_vmem", "-q", f"all.q@{host}"]).stdout
-    match = re.search(r"qc:h_vmem=(\S+)", out)
-    assert match, out
-    return match.group(1)
-
-
-@pytest.mark.parametrize(
-    ("memory_per", "directive", "left"),
-    [
-        # 2 slots x 1G: the job gets the 2G it asked for; 8G - 2G remain.
-        ("slot", "#$ -l h_vmem=1G", "6.000G"),
-        # Passed through as 2G per slot: SGE books 4G, twice the request.
-        ("job", "#$ -l h_vmem=2G", "4.000G"),
-    ],
-)
-def test_memory_per_consumable(
-    cluster: Cluster, memory_per: str, directive: str, left: str
-) -> None:
-    """D10 / sge.rst: SGE multiplies a per-slot consumable by the slots, so ``memory_per``
-    ``"slot"`` divides ``mem`` by ``cpu`` to request what was asked and ``"job"`` over-books.
-
-    ``h_vmem`` is a consumable here with ``complex_values h_vmem=8G`` on each
-    all.q host (cell/complexes.conf, cell/q-all.conf). The second config layer
-    ``hpc-runner-testbed-consumable.toml`` selects it with ``memory_per = "slot"``.
-    """
-    config = load_config(cluster.config_path.with_name("hpc-runner-testbed-consumable.toml"))
-    assert config.schedulers["sge"]["memory_per"] == "slot"
-    if memory_per == "job":
-        sge = {**config.schedulers["sge"], "memory_per": "job"}
-        config = dataclasses.replace(config, schedulers={**config.schedulers, "sge": sge})
-    scheduler = get_scheduler("sge", config=config)
-
-    spec = JobSpec(
-        "sleep 120",
-        name=f"vmem_{memory_per}",
-        cpu=2,
-        mem="2G",
-        scheduler_args=["-l", "hostname=exec1"],
-    )
-    job = resolve(spec, config, cluster.host())
-    assert directive in scheduler.preview(job).splitlines()
-    assert _available_h_vmem(cluster, "exec1") == "8.000G"
-    result = scheduler.submit(job)
-    job_id = _job_id(result)
-    try:
-        assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
-        assert _available_h_vmem(cluster, "exec1") == left
-    finally:
-        result.cancel()
-
-
-def test_signal_exit_code(cluster: Cluster) -> None:
-    """A signal-killed job (here qdel, same as an h_rt kill) reports exit code 137 (BUG-T5)."""
-    result = _submit(cluster, JobSpec("sleep 60", name="sigexit"))
-    job_id = _job_id(result)
-    assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
-    assert result.cancel()
-    status = cluster.wait_for(job_id, {JobStatus.CANCELLED, JobStatus.FAILED}, timeout=30)
-    assert status in {JobStatus.CANCELLED, JobStatus.FAILED}
-    # CANCELLED comes from qstat's `dr` state, before qacct has the record, so
-    # the exit code is None until then.
-    deadline = time.monotonic() + QACCT_TIMEOUT
-    while (exit_code := cluster.scheduler().get_exit_code(job_id)) is None:
-        assert time.monotonic() < deadline, f"no qacct record for {job_id} after {QACCT_TIMEOUT}s"
-        time.sleep(0.5)
-    assert exit_code == 137
-
-
-def test_h_vmem(cluster: Cluster) -> None:
-    """A 200 MB allocation under ``-l h_vmem=50M`` fails (MemoryError or a kill): FAILED."""
-    spec = JobSpec(ALLOC_200M, name="vmem", scheduler_args=["-l", "h_vmem=50M"])
-    job = resolve(spec, cluster.config(), cluster.host())
-    assert "#$ -l h_vmem=50M" in cluster.scheduler().preview(job).splitlines()
-    result = cluster.scheduler().submit(job)
-    job_id = _job_id(result)
-    assert cluster.wait_for(job_id, JobStatus.FAILED) is JobStatus.FAILED
-    exit_code = cluster.scheduler().get_exit_code(job_id)
-    assert exit_code is not None and exit_code != 0
-    assert (result.read_stdout() or "").strip() != str(200 * 1024 * 1024)
-
-
 def test_queue_selection(cluster: Cluster) -> None:
-    """queue="short.q" runs in short.q on an exec node; list_active_jobs reports queue and node."""
-    job_id = _job_id(_submit(cluster, JobSpec("sleep 30", name="shortq", queue="short.q")))
+    """A job given the second queue runs in it on an exec node; list_active_jobs
+    reports queue and node."""
+    queue = cluster.other_queue
+    job_id = _job_id(_submit(cluster, JobSpec("sleep 30", name="shortq", queue=queue)))
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
     jobs = {j.job_id: j for j in cluster.scheduler().list_active_jobs()}
     assert job_id in jobs, jobs
     info = jobs[job_id]
-    # qstat -xml reports the instance "short.q@execN"; JobInfo splits it into queue and node.
-    assert info.queue == "short.q", info
+    # JobInfo holds the queue and the node apart, however the scheduler joins them.
+    assert info.queue == queue, info
     assert info.node is not None and info.node.startswith("exec"), info
     assert info.status is JobStatus.RUNNING
     assert info.user == "tester"

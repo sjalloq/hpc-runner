@@ -10,6 +10,12 @@ One class per scheduler (``testbed/<scheduler>/``), registered in
 scheduler shares (users, ``run``, ``wait_for``, node control, the ``ready.sh``/
 ``clean.sh`` contract, hpc-runner objects) is :class:`TestbedCluster`; a
 scheduler's class names its probe command and says how to dump a job's state.
+
+A test in ``tests/integration/`` itself runs on every scheduler, so it names
+no scheduler command, flag or queue: it asks the cluster (the section "the
+scheduler's own words" of :class:`Cluster`). :class:`SGECluster` answers each;
+a class that has not been given an answer raises ``NotImplementedError``
+naming the member.
 """
 
 from __future__ import annotations
@@ -47,6 +53,10 @@ READY_SCRIPT = Path("/opt/testbed/ready.sh")
 CLEAN_SCRIPT = Path("/opt/testbed/clean.sh")
 READY_TIMEOUT = 90.0
 READY_POLL = 2.0
+
+#: How long :meth:`TestbedCluster.wait_accounted` waits. The SGE qmaster
+#: flushes accounting within 1 s on the default stack; allow more.
+ACCOUNTING_TIMEOUT = 30.0
 
 #: The user the test process runs as; ``run()`` adds ``sudo -u`` for the others.
 TEST_USER = "tester"
@@ -118,6 +128,75 @@ class Cluster(Protocol):
     def exit_dir(self) -> Path: ...
 
     def host(self) -> Host: ...
+
+    # -- the scheduler's own words, for the tests every scheduler runs --------
+
+    @property
+    def array_task_var(self) -> str:
+        """The environment variable holding an array task's index inside the job."""
+        ...
+
+    def array_task_id(self, job_id: str, index: int) -> str:
+        """The id of task *index* of array job *job_id*, as the scheduler writes it."""
+        ...
+
+    @property
+    def hold_args(self) -> tuple[str, ...]:
+        """Raw submit arguments that keep a job pending until :meth:`release_job`."""
+        ...
+
+    def release_job(self, job_id: str) -> None:
+        """Let a job submitted with :attr:`hold_args` start."""
+        ...
+
+    def suspend_job(self, job_id: str) -> None: ...
+
+    def resume_job(self, job_id: str) -> None: ...
+
+    @property
+    def default_queue(self) -> str:
+        """The queue a job with no queue request runs in."""
+        ...
+
+    @property
+    def other_queue(self) -> str:
+        """A second queue; the testbed config's ``[tools.sort]`` entry names it."""
+        ...
+
+    @property
+    def queue_slots(self) -> dict[str, int]:
+        """Every queue and its slots: filling them all leaves nowhere for a job to start."""
+        ...
+
+    def wait_accounted(
+        self, job_id: str, records: int = 1, timeout: float = ACCOUNTING_TIMEOUT
+    ) -> None:
+        """Wait until the scheduler's accounting has *records* records of *job_id*."""
+        ...
+
+    @property
+    def submit_command(self) -> str:
+        """The command hpc-runner submits a batch job with."""
+        ...
+
+    @property
+    def listing_command(self) -> tuple[str, ...]:
+        """How the argv of hpc-runner's active-jobs query begins."""
+        ...
+
+    @property
+    def accounting_command(self) -> str:
+        """The command hpc-runner reads a finished job with."""
+        ...
+
+    def submit_output(self, job_id: str) -> str:
+        """Text the submit command prints when it accepts batch job *job_id*."""
+        ...
+
+    @property
+    def directive_prefix(self) -> str:
+        """What an option line of a batch script starts with."""
+        ...
 
 
 @dataclass
@@ -311,6 +390,78 @@ class TestbedCluster:
         env.setdefault("HPC_EXIT_DIR", str(WORK_ROOT / "cache" / "exit"))
         return Host(env=env, cwd=self.workdir, user=TEST_USER)
 
+    # -- the scheduler's own words: each scheduler's class answers ------------
+
+    def _unanswered(self, member: str) -> NotImplementedError:
+        return NotImplementedError(f"{type(self).__name__}.{member}")
+
+    @property
+    def array_task_var(self) -> str:
+        raise self._unanswered("array_task_var")
+
+    def array_task_id(self, job_id: str, index: int) -> str:
+        raise self._unanswered("array_task_id")
+
+    @property
+    def hold_args(self) -> tuple[str, ...]:
+        raise self._unanswered("hold_args")
+
+    def release_job(self, job_id: str) -> None:
+        raise self._unanswered("release_job")
+
+    def suspend_job(self, job_id: str) -> None:
+        raise self._unanswered("suspend_job")
+
+    def resume_job(self, job_id: str) -> None:
+        raise self._unanswered("resume_job")
+
+    @property
+    def default_queue(self) -> str:
+        raise self._unanswered("default_queue")
+
+    @property
+    def other_queue(self) -> str:
+        raise self._unanswered("other_queue")
+
+    @property
+    def queue_slots(self) -> dict[str, int]:
+        raise self._unanswered("queue_slots")
+
+    def accounting_records(self, job_id: str) -> int:
+        """How many records the scheduler's accounting has of *job_id* now."""
+        raise self._unanswered("accounting_records")
+
+    def wait_accounted(
+        self, job_id: str, records: int = 1, timeout: float = ACCOUNTING_TIMEOUT
+    ) -> None:
+        """Poll :meth:`accounting_records` until it reaches *records*."""
+        deadline = time.monotonic() + timeout
+        while (seen := self.accounting_records(job_id)) < records:
+            if time.monotonic() >= deadline:
+                raise ClusterError(
+                    f"accounting has {seen} of {records} record(s) of job {job_id} after {timeout}s"
+                )
+            time.sleep(0.5)
+
+    @property
+    def submit_command(self) -> str:
+        raise self._unanswered("submit_command")
+
+    @property
+    def listing_command(self) -> tuple[str, ...]:
+        raise self._unanswered("listing_command")
+
+    @property
+    def accounting_command(self) -> str:
+        raise self._unanswered("accounting_command")
+
+    def submit_output(self, job_id: str) -> str:
+        raise self._unanswered("submit_output")
+
+    @property
+    def directive_prefix(self) -> str:
+        raise self._unanswered("directive_prefix")
+
 
 @dataclass
 class SGECluster(TestbedCluster):
@@ -324,6 +475,67 @@ class SGECluster(TestbedCluster):
 
     def accounting_truncate(self) -> None:
         self.run(["sudo", "truncate", "-s", "0", str(ACCOUNTING_FILES[self.flavour])])
+
+    # The names below match testbed/sge/<flavour>/cell/ (q-all.conf, q-short.conf).
+
+    @property
+    def array_task_var(self) -> str:
+        return "SGE_TASK_ID"
+
+    def array_task_id(self, job_id: str, index: int) -> str:
+        return f"{job_id}.{index}"
+
+    @property
+    def hold_args(self) -> tuple[str, ...]:
+        """A user hold: the job queues ``hqw``."""
+        return ("-h",)
+
+    def release_job(self, job_id: str) -> None:
+        self.run(["qalter", "-h", "U", job_id])
+
+    def suspend_job(self, job_id: str) -> None:
+        self.run(["qmod", "-sj", job_id])
+
+    def resume_job(self, job_id: str) -> None:
+        self.run(["qmod", "-usj", job_id])
+
+    @property
+    def default_queue(self) -> str:
+        return "all.q"
+
+    @property
+    def other_queue(self) -> str:
+        return "short.q"
+
+    @property
+    def queue_slots(self) -> dict[str, int]:
+        """``all.q`` is the only INTERACTIVE queue, but SGE schedules ``qrsh -now no
+        <command>`` like a batch job, so it also runs in ``short.q`` (BATCH only)."""
+        return {"all.q": 4, "short.q": 4}
+
+    def accounting_records(self, job_id: str) -> int:
+        """``qacct -j`` prints one ``jobnumber`` line per record (one per array task
+        and per run of a rescheduled job)."""
+        return self.run(["qacct", "-j", job_id], check=False).stdout.count("jobnumber")
+
+    @property
+    def submit_command(self) -> str:
+        return "qsub"
+
+    @property
+    def listing_command(self) -> tuple[str, ...]:
+        return ("qstat", "-xml")
+
+    @property
+    def accounting_command(self) -> str:
+        return "qacct"
+
+    def submit_output(self, job_id: str) -> str:
+        return f"Your job {job_id}"
+
+    @property
+    def directive_prefix(self) -> str:
+        return "#$"
 
 
 @dataclass

@@ -12,8 +12,6 @@ from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
-pytestmark = pytest.mark.scheduler("sge")
-
 MODULES_PATH = "/opt/modulefiles"
 #: ``tests/modulefiles/dummy_tool/1.0`` sets these; ``dummy_lib/2.5`` sets DUMMY_LIB_*.
 SHOW_MODULES = (
@@ -112,7 +110,7 @@ def test_venv(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_inherit_env_false(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without -V only env_passthrough names reach the job."""
+    """With inherit_env=False only env_passthrough names reach the job."""
     monkeypatch.setenv("DISPLAY", ":9")
     monkeypatch.setenv("HPC_T_MARKER_NOT_PASSED", "1")
     spec = JobSpec(
@@ -121,10 +119,6 @@ def test_inherit_env_false(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) ->
         inherit_env=False,
         env_passthrough=["DISPLAY"],
     )
-    job = resolve(spec, cluster.config(), cluster.host())
-    preview = cluster.scheduler().preview(job)
-    assert "#$ -V" not in preview.splitlines()
-    assert "#$ -v DISPLAY=:9" in preview.splitlines()
     assert _run(cluster, spec) == [":9", "unset"]
 
 
@@ -135,7 +129,6 @@ def _check_cwd(cluster: Cluster, name: str) -> None:
     spec = JobSpec("pwd", name="cwd", workdir=name)
     job = resolve(spec, cluster.config(), cluster.host())
     assert job.workdir == str(sub)
-    assert "#$ -cwd" in cluster.scheduler().preview(job).splitlines()
     result = cluster.scheduler().submit(job)
     assert result.job_id is not None
     assert cluster.wait_for(result.job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
@@ -145,16 +138,17 @@ def _check_cwd(cluster: Cluster, name: str) -> None:
 
 
 def test_cwd(cluster: Cluster) -> None:
-    """-cwd with a workdir under /work: the job runs there and its output lands there."""
+    """A workdir under /work: the job runs there and its output lands there."""
     _check_cwd(cluster, "subdir")
 
 
 def test_cwd_with_space(cluster: Cluster) -> None:
-    """BUG-T1/D-T41: a workdir with a space is refused before qsub, naming the value.
+    """BUG-T1/D-T41: a workdir with a space is refused before anything is submitted,
+    naming the value.
 
-    A ``#$ -o`` line is split on the space by SGE's directive parser and
-    qsub says only "Unknown option"; every option stays in the script, so
-    hpc-runner refuses the value itself.
+    The output path goes in an option line of the script, and a scheduler's
+    parser may split that line on the space; every option stays in the
+    script, so hpc-runner refuses the value itself.
     """
     sub = cluster.workdir / "sub dir"
     sub.mkdir()
@@ -163,4 +157,4 @@ def test_cwd_with_space(cluster: Cluster) -> None:
     with pytest.raises(SubmissionError, match="whitespace") as excinfo:
         cluster.scheduler().submit(job)
     assert "sub dir" in str(excinfo.value)
-    assert cluster.run(["qstat", "-u", "tester"]).stdout.strip() == ""  # nothing was submitted
+    assert cluster.scheduler().list_active_jobs(user="tester") == []  # nothing was submitted

@@ -193,9 +193,14 @@ release and defaults per scheduler (``soge``, Slurm ``24.11``, PBS
 ``openpbs``). A flavour never selects a scheduler.
 The suite runs inside the ``login`` container through the ``cluster``
 fixture (``tests/integration/cluster.py``); it skips when no scheduler is
-reachable and ``--require-cluster`` fails instead. Tests that assert on one
-scheduler's own output carry a ``scheduler`` marker; contract tests run on
-every scheduler. CI runs the suite on every flavour for every push.
+reachable and ``--require-cluster`` fails instead. There are two kinds of
+test, and the folder says which. The modules in ``tests/integration/`` are
+generic: each checks what hpc-runner does by its outcome on the cluster,
+takes every scheduler word (a queue name, how to hold a job) from the
+``cluster`` fixture, and runs on every scheduler. The modules in
+``tests/integration/sge/`` are SGE's own: they check that hpc-runner drives
+SGE correctly and that SGE does what hpc-runner says, and run only with
+``--scheduler sge``. CI runs the suite on every flavour for every push.
 ``testbed/README.md`` describes the stack and the fixture;
 ``docs/dev/testbed/`` has the design, the plan and the review, which logs
 every divergence and bug as a ``D-T`` item. Tests that pin a known bug are

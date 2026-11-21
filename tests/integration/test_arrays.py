@@ -5,30 +5,28 @@ See docs/dev/testbed/TESTBED_PLAN.md section 5.
 
 from __future__ import annotations
 
-import time
-
-import pytest
-
 from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import ArrayJobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
 
-pytestmark = pytest.mark.scheduler("sge")
 
-#: Prints its task id, then fails only as task 3.
-TASK3_FAILS = 'echo "task $SGE_TASK_ID"; [ "$SGE_TASK_ID" != 3 ]'
+def _task3_fails(cluster: Cluster) -> str:
+    """A command that prints its task id, then fails only as task 3."""
+    var = cluster.array_task_var
+    return f'echo "task ${var}"; [ "${var}" != 3 ]'
 
 
 def test_array_1_to_5(cluster: Cluster) -> None:
     """D9: wait() is the array's status, task_statuses() the drill-down, each task
     owns an output file, only task 3 FAILED; the base id answers for the whole."""
-    job = resolve(JobSpec(TASK3_FAILS, name="arr", array="1-5"), cluster.config(), cluster.host())
+    spec = JobSpec(_task3_fails(cluster), name="arr", array="1-5")
+    job = resolve(spec, cluster.config(), cluster.host())
     result = cluster.scheduler().submit(job)
     assert isinstance(result, ArrayJobResult)
     job_id = result.job_id
     assert job_id is not None and job_id.isdigit()
-    assert result.task_ids() == [f"{job_id}.{n}" for n in range(1, 6)]
+    assert result.task_ids() == [cluster.array_task_id(job_id, n) for n in range(1, 6)]
 
     assert result.wait(poll_interval=0.5, timeout=60) is JobStatus.FAILED
     tasks = result.task_statuses()
@@ -42,14 +40,11 @@ def test_array_1_to_5(cluster: Cluster) -> None:
     assert tasks.overall is JobStatus.FAILED and tasks.failed == [3] and tasks.is_terminal
     assert result.returncode == 1
     # The base id, as `hpc status <id>` or scheduler.result(id) asks: the whole
-    # array, whatever order qacct prints the task records in. With no range it
-    # reduces the records qacct has (D19), all five of them since the handle
-    # above saw every task's; poll in case qacct lists them a moment later
-    # (CI 41356547233 and 41530594728 lost this race).
-    deadline = time.monotonic() + 30
-    while cluster.run(["qacct", "-j", job_id], check=False).stdout.count("jobnumber") < 5:
-        assert time.monotonic() < deadline, f"qacct has not got the five records of {job_id}"
-        time.sleep(0.5)
+    # array, whatever order the accounting lists the task records in. With no
+    # range it reduces the records the accounting has (D19), all five of them
+    # since the handle above saw every task's; wait in case they are listed a
+    # moment later (CI 41356547233 and 41530594728 lost this race).
+    cluster.wait_accounted(job_id, records=5)
     assert cluster.scheduler().get_status(job_id) is JobStatus.FAILED
     assert cluster.scheduler().get_exit_code(job_id) == 1
     info, extra = cluster.scheduler().get_job_details(job_id)
@@ -76,12 +71,9 @@ def test_array_1_to_5(cluster: Cluster) -> None:
 
 
 def test_array_concurrency_limit_is_accepted(cluster: Cluster) -> None:
-    """``%MAX`` renders as SGE's ``-tc``; qsub accepts it and every task runs."""
-    spec = JobSpec('echo "task $SGE_TASK_ID"', name="arrtc", array="1-6%2")
+    """An array with a ``%MAX`` concurrency limit is accepted and every task runs."""
+    spec = JobSpec(f'echo "task ${cluster.array_task_var}"', name="arrtc", array="1-6%2")
     job = resolve(spec, cluster.config(), cluster.host())
-    script = cluster.scheduler().preview(job)
-    assert "#$ -t 1-6\n" in script
-    assert "#$ -tc 2\n" in script
     result = cluster.scheduler().submit(job)
     assert isinstance(result, ArrayJobResult)
     assert result.wait(poll_interval=0.5, timeout=90) is JobStatus.COMPLETED

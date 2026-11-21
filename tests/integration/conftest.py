@@ -16,11 +16,17 @@ The stack under test is named, never detected: ``--scheduler`` is a directory
 under ``testbed/`` and picks the cluster class (``cluster.CLUSTERS``);
 ``--flavour`` is a directory under ``testbed/<scheduler>/`` and defaults to
 that scheduler's entry in ``DEFAULT_FLAVOURS``. A flavour never selects a
-scheduler. A test that drives one scheduler's own CLI or syntax says so with
-``@pytest.mark.scheduler("sge")`` (usually as a module ``pytestmark``) and is
-deselected on every other scheduler; an unmarked test must hold on all of
-them. ``@pytest.mark.flavour("sge/ocs")`` narrows a test to the listed
-``<scheduler>/<flavour>`` pairs. A name with no directory fails collection.
+scheduler.
+
+The folder decides where a test runs. A test in ``tests/integration/`` itself
+is generic: it checks what hpc-runner does by its outcome on the cluster,
+takes every scheduler word from the ``cluster`` fixture, and runs on every
+scheduler. A test in ``tests/integration/<scheduler>/`` checks that hpc-runner
+drives that scheduler correctly and that the scheduler does what hpc-runner
+says; it is deselected on every other scheduler.
+``@pytest.mark.flavour("sge/ocs")`` narrows a test to the listed
+``<scheduler>/<flavour>`` pairs. A folder or a flavour that names no
+directory under ``testbed/`` fails collection.
 """
 
 from __future__ import annotations
@@ -78,21 +84,32 @@ def select_stack(
     return scheduler, flavour
 
 
+def scheduler_folder(path: Path, root: Path = HERE) -> str | None:
+    """The scheduler whose folder holds the test file *path*, or None for a generic test.
+
+    ``<root>/sge/test_x.py`` (at any depth below ``sge``) gives ``"sge"``;
+    ``<root>/test_x.py`` gives None.
+    """
+    parts = path.relative_to(root).parts
+    return parts[0] if len(parts) > 1 else None
+
+
 def deselect_reason(
     *,
-    schedulers: set[str],
+    folder: str | None,
     flavours: set[str],
     slow_marked: bool,
     active_scheduler: str,
     active_flavour: str,
     slow: bool,
 ) -> str | None:
-    """Why a test with these marks is not part of this run, or None to run it.
+    """Why a test is not part of this run, or None to run it.
 
-    *flavours* holds ``<scheduler>/<flavour>`` pairs, as the mark is written.
+    *folder* is the test's :func:`scheduler_folder`. *flavours* holds
+    ``<scheduler>/<flavour>`` pairs, as the mark is written.
     """
-    if schedulers and active_scheduler not in schedulers:
-        return f"scheduler {active_scheduler} not in {sorted(schedulers)}"
+    if folder is not None and folder != active_scheduler:
+        return f"a {folder} test, not run on {active_scheduler}"
     active = f"{active_scheduler}/{active_flavour}"
     if flavours and active not in flavours:
         return f"flavour {active} not in {sorted(flavours)}"
@@ -156,21 +173,18 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Mark every item here ``integration``; select the variant; validate the marks.
+    """Mark every item here ``integration``; select by folder, flavour and variant.
 
-    A test the active scheduler or flavour cannot run is *deselected* (it is
-    not a result of this run), as is the slow-accounting variant not asked
-    for. Without ``--scheduler`` (the unit run, where ``-m 'not integration'``
-    drops these items anyway) the marks are still validated and nothing is
-    deselected here.
+    A test in another scheduler's folder, or one the active flavour cannot
+    run, is *deselected* (it is not a result of this run), as is the
+    slow-accounting variant not asked for. Without ``--scheduler`` (the unit
+    run, where ``-m 'not integration'`` drops these items anyway) the folders
+    and marks are still validated and nothing is deselected here.
     """
     active = _active(config)
     slow = config.getoption("--slow-accounting")
     known = known_flavours()
-    known_marks = {
-        "scheduler": set(known),
-        "flavour": {f"{s}/{f}" for s, fs in known.items() for f in fs},
-    }
+    known_pairs = {f"{s}/{f}" for s, fs in known.items() for f in fs}
     kept: list[pytest.Item] = []
     deselected: list[pytest.Item] = []
     for item in items:
@@ -178,21 +192,24 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             kept.append(item)
             continue
         item.add_marker(pytest.mark.integration)
-        marked: dict[str, set[str]] = {}
-        for marker, names_known in known_marks.items():
-            names = {name for mark in item.iter_markers(marker) for name in mark.args}
-            if names - names_known:
-                raise pytest.UsageError(
-                    f"{item.nodeid}: @pytest.mark.{marker} names unknown {marker}(s) "
-                    f"{', '.join(sorted(names - names_known))}; "
-                    f"known: {', '.join(sorted(names_known))}"
-                )
-            marked[marker] = names
+        folder = scheduler_folder(item.path)
+        if folder is not None and folder not in known:
+            raise pytest.UsageError(
+                f"{item.nodeid}: tests/integration/{folder}/ names no testbed scheduler; "
+                f"known: {', '.join(sorted(known))}"
+            )
+        flavours = {name for mark in item.iter_markers("flavour") for name in mark.args}
+        if flavours - known_pairs:
+            raise pytest.UsageError(
+                f"{item.nodeid}: @pytest.mark.flavour names unknown flavour(s) "
+                f"{', '.join(sorted(flavours - known_pairs))}; "
+                f"known: {', '.join(sorted(known_pairs))}"
+            )
         reason = None
         if active is not None:
             reason = deselect_reason(
-                schedulers=marked["scheduler"],
-                flavours=marked["flavour"],
+                folder=folder,
+                flavours=flavours,
                 slow_marked=bool(item.get_closest_marker("slow_accounting")),
                 active_scheduler=active[0],
                 active_flavour=active[1],

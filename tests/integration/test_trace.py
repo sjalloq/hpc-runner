@@ -9,62 +9,40 @@ the script, the scheduler's answers and what ``hpc`` printed
 from __future__ import annotations
 
 import json
-import re
 import time
 from pathlib import Path
 
-import pytest
-
-from tests.integration.cluster import Cluster
-
-pytestmark = pytest.mark.scheduler("sge")
-
-QACCT_TIMEOUT = 30.0
-
-
-def _hpc(cluster: Cluster, *args: str, check: bool = True) -> str:
-    return cluster.run([str(cluster.hpc_cli), *args], timeout=90, check=check).stdout
-
-
-def _records(trace: Path) -> tuple[list[dict], list[dict]]:
-    """``(command-line records, scheduler-command records)`` under *trace*."""
-    records = [json.loads(p.read_text()) for p in sorted(trace.rglob("*.json"))]
-    return (
-        [r for r in records if r.get("kind") == "invocation"],
-        [r for r in records if r.get("kind") != "invocation"],
-    )
+from tests.integration.cluster import ACCOUNTING_TIMEOUT, Cluster
+from tests.integration.helpers import hpc, submitted_id, trace_records
 
 
 def test_flag_records_a_session(cluster: Cluster, workdir: Path) -> None:
     trace = workdir / "trace"
-    out = _hpc(
-        cluster, "--trace", str(trace), "run", "--batch", "--directory", str(workdir), "true"
-    )
-    match = re.search(r"Submitted job (\d+)", out)
-    assert match, out
-    job_id = match.group(1)
-    _hpc(cluster, "--trace", str(trace), "status")
-    _hpc(cluster, "--trace", str(trace), "status", job_id)
+    out = hpc(cluster, "--trace", str(trace), "run", "--batch", "--directory", str(workdir), "true")
+    job_id = submitted_id(out)
+    hpc(cluster, "--trace", str(trace), "status")
+    hpc(cluster, "--trace", str(trace), "status", job_id)
 
-    deadline = time.monotonic() + QACCT_TIMEOUT
-    while True:  # finished and accounted: status <id> then falls back to qacct
-        history = json.loads(_hpc(cluster, "--trace", str(trace), "status", "--history", "--json"))
+    deadline = time.monotonic() + ACCOUNTING_TIMEOUT
+    while True:  # finished and accounted: status <id> then reads the accounting
+        history = json.loads(hpc(cluster, "--trace", str(trace), "status", "--history", "--json"))
         if any(j["job_id"] == job_id for j in history):
             break
         assert time.monotonic() < deadline, history
         time.sleep(1)
-    _hpc(cluster, "--trace", str(trace), "status", job_id)
+    hpc(cluster, "--trace", str(trace), "status", job_id)
 
-    invocations, records = _records(trace)
+    invocations, records = trace_records(trace)
     commands = {r["argv"][0] for r in records}
-    assert {"qsub", "qstat", "qacct"} <= commands, commands
-    submit = next(r for r in records if r["argv"][0] == "qsub")
-    assert submit["returncode"] == 0 and f"Your job {job_id}" in submit["stdout"]
+    expected = {cluster.submit_command, cluster.listing_command[0], cluster.accounting_command}
+    assert expected <= commands, commands
+    submit = next(r for r in records if r["argv"][0] == cluster.submit_command)
+    assert submit["returncode"] == 0 and cluster.submit_output(job_id) in submit["stdout"]
     assert all(r["error"] is None for r in records), records
-    # The script qsub saw, though the file has deleted itself.
+    # The script the scheduler saw, though the file has deleted itself.
     assert submit["script"]["path"] == submit["argv"][1]
     assert submit["script"]["text"].startswith("#!/bin/bash")
-    assert "#$ -N" in submit["script"]["text"]
+    assert f"\n{cluster.directive_prefix} " in submit["script"]["text"]
     assert not Path(submit["script"]["path"]).exists()
 
     # One record per command line, each with what was typed and printed.
@@ -85,12 +63,12 @@ def test_config_enabled_trace(cluster: Cluster, workdir: Path) -> None:
     config.write_text(
         Path(cluster.config_path).read_text() + f'\n[trace]\nenabled = true\ndir = "{trace}"\n'
     )
-    _hpc(cluster, "--config", str(config), "status")
-    _hpc(cluster, "--config", str(config), "status")  # identical: written again
-    invocations, records = _records(trace)
+    hpc(cluster, "--config", str(config), "status")
+    hpc(cluster, "--config", str(config), "status")  # identical: written again
+    invocations, records = trace_records(trace)
     assert len(records) == 2, [r["argv"] for r in records]
-    assert all(r["argv"][:2] == ["qstat", "-xml"] for r in records)
-    assert "<job_info" in records[0]["stdout"]
+    listing = list(cluster.listing_command)
+    assert all(r["argv"][: len(listing)] == listing for r in records)
     # Each command line has its own scheduler call (same pid) and names the config chain.
     assert len(invocations) == 2
     assert {r["pid"] for r in records} == {i["pid"] for i in invocations}

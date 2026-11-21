@@ -89,7 +89,6 @@ strict = true
 testpaths = ["tests"]
 markers = [
     "integration: needs a live scheduler testbed (see docs/dev/testbed/TESTBED_PLAN.md)",
-    "scheduler(*names): drives the listed schedulers' own CLI or syntax; deselected elsewhere",
     "flavour(*names): only holds on the listed <scheduler>/<flavour> pairs; deselected elsewhere",
     "slow_accounting: needs the master from `hpc-testbed up --slow-accounting`; run with --slow-accounting",
 ]

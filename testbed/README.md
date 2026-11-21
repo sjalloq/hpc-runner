@@ -82,10 +82,23 @@ which `hpc-testbed` command fixes it. Variants are selected, not detected:
 `--slow-accounting` selects exactly the tests marked `slow_accounting`, which
 are deselected otherwise, and exist only for the schedulers that have them
 (SGE). The suite takes the same two options, `--scheduler` and `--flavour`,
-and `hpc-testbed pytest` passes both. `@pytest.mark.scheduler("sge")` names
-a directory under `testbed/` and `@pytest.mark.flavour("sge/ocs")` a
-`<scheduler>/<flavour>` pair; anything else fails collection. The scheduler
-picks the fixture class.
+and `hpc-testbed pytest` passes both. The scheduler picks the fixture class.
+
+There are two kinds of integration test, and the folder says which:
+
+- `tests/integration/test_*.py` are generic. Each checks what hpc-runner
+  does by its outcome on the cluster (a status, an exit code, an output
+  file). The body names no scheduler command, flag or queue: what it needs
+  from the scheduler (a second queue, how to hold a job, the array task
+  variable) it asks of the `cluster` fixture. They run on every scheduler.
+- `tests/integration/<scheduler>/test_*.py` are that scheduler's own. Each
+  checks that hpc-runner drives the scheduler correctly and that the
+  scheduler does what hpc-runner says, so it may call the scheduler's
+  commands and read its output. They run only with `--scheduler <scheduler>`.
+
+A folder under `tests/integration/` must be named after a directory under
+`testbed/`, and `@pytest.mark.flavour("sge/ocs")` must name a
+`<scheduler>/<flavour>` pair; anything else fails collection.
 
 Inside `login` the suite's environment is already set:
 `HPC_RUNNER_CONFIG=/src/testbed/sge/soge/hpc-runner-testbed.toml` (which
@@ -155,7 +168,7 @@ A *flavour* is one release or vendor implementation of a scheduler:
 delete all jobs and wait), the same users and volumes, and its own cell
 configuration and `hpc-runner-testbed.toml`. The fixture classes
 (`tests/integration/cluster.py`) and the tests are shared across flavours of
-one scheduler; `--scheduler <name> --flavour <name>` selects the stack that is up and
+one scheduler (the generic tests across all schedulers); `--scheduler <name> --flavour <name>` selects the stack that is up and
 `@pytest.mark.flavour("<scheduler>/<flavour>")` deselects what a flavour cannot do, which is what
 fills `testbed/sge/README.md`.
 
@@ -163,12 +176,17 @@ A new scheduler is `testbed/<scheduler>/<flavour>/` plus:
 
 - a `TestbedCluster` subclass in `tests/integration/cluster.py` (`name`,
   `probe_command`, `dump_commands`, `accounting_truncate`) registered in
-  `CLUSTERS`; the fixture picks it from `--scheduler`;
+  `CLUSTERS`; the fixture picks it from `--scheduler`. The class also
+  answers what the generic tests ask of a scheduler (the members under "the
+  scheduler's own words" in that file: the array task variable, how to hold,
+  release, suspend and resume a job, the queues and their slots, the wait
+  for accounting records, the command names, the submit output and the
+  script's option prefix). A member with no answer raises
+  `NotImplementedError` naming it;
 - its default flavour in `DEFAULT_FLAVOURS` (`src/hpc_runner/_testbed.py`);
-- `pytestmark = pytest.mark.scheduler("slurm")` on tests that drive its own
-  CLI. Every module that calls `qstat`/`qacct`/`qmod` or relies on SGE
-  syntax is marked `scheduler("sge")`; unmarked tests (`test_smoke.py`) run
-  on every scheduler;
+- a folder `tests/integration/<scheduler>/` (with an `__init__.py`) for the
+  tests that drive its own CLI or read its own output, as
+  `tests/integration/sge/` does for `qstat`/`qacct`/`qmod` and SGE syntax;
 - optionally a capture module in `CAPTURE_MODULES` and the scheduler in
   `SLOW_ACCOUNTING_SCHEDULERS` (`src/hpc_runner/_testbed.py`); without them
   `hpc-testbed capture` and `--slow-accounting` refuse that scheduler.

@@ -21,35 +21,31 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is steps 1, 2 and 6 of `slurm/PLAN.md`, "Order of
+For Slurm that work is steps 1 and 5 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
 
-- 48 of the 49 tests are marked `scheduler("sge")`: every module except
-  `test_smoke.py`. On Slurm or PBS the whole suite is one test.
-- Even that one cannot run there: `cluster.config()` reads
-  `testbed/<scheduler>/<flavour>/hpc-runner-testbed.toml`
-  (`cluster.py`, `config_path`), and only `sge/soge` and `sge/ocs` have
-  the file. The Slurm and PBS compose files do not export
-  `HPC_RUNNER_CONFIG` either.
-- The marker is per module, so it hides which tests are about SGE and
-  which are about hpc-runner. A first sorting, by reading the modules'
-  SGE-specific lines (not every test body; to be confirmed per test when
-  ported):
-  - Promise the same thing on every scheduler, marked SGE only because
-    the body uses SGE words (`$SGE_TASK_ID`, `qstat`/`qacct` checks,
-    `all.q`, `-l hostname=`): `test_arrays`, `test_dependencies`,
-    `test_environment`, `test_listing`, `test_cli`, `test_trace`,
-    `test_failures` (node killed), most of `test_submit` and
-    `test_status`. These need the scheduler's words moved behind the
-    cluster class, or a counterpart per scheduler.
-  - Same feature, tested differently: `test_goldens` (`qsub -w v`; Slurm
-    has `sbatch --test-only`), `test_resources` (PE, `h_vmem`, `h_rt`,
-    queue selection), `test_passthrough`, `test_hold_flag_forwards`.
-  - Possibly SGE only, each needs a decision and a written reason:
-    `test_slow_accounting_window`, `test_memory_per_consumable`,
-    `test_aged_out`, `test_deleted_while_pending_waits_out_to_unknown`.
+- The tests are sorted by folder: generic ones in `tests/integration/`
+  (run on every scheduler, scheduler words from the cluster class), SGE's
+  own in `tests/integration/sge/`. No generic test can run on Slurm or PBS
+  yet:
+  - `cluster.config()` reads
+    `testbed/<scheduler>/<flavour>/hpc-runner-testbed.toml`
+    (`cluster.py`, `config_path`), and only `sge/soge` and `sge/ocs` have
+    the file. The Slurm and PBS compose files do not export
+    `HPC_RUNNER_CONFIG` either.
+  - The members the generic tests ask of the cluster class (`cluster.py`,
+    "the scheduler's own words") are answered by `SGECluster` only;
+    `SlurmCluster` and `PBSCluster` raise `NotImplementedError`.
+- The SGE folder has no counterpart for another scheduler. Same feature,
+  to be tested the other scheduler's way: `test_goldens` (`qsub -w v`;
+  Slurm has `sbatch --test-only`), `test_resources` (PE, `h_rt`),
+  `test_passthrough`, `test_hold_flag_forwards`, `test_node_killed`,
+  `test_deleted_while_pending_waits_out_to_unknown` (Slurm gets its own,
+  expecting CANCELLED). SGE only, with the reason in
+  `testbed/sge/README.md`: `test_slow_accounting_window`, `test_aged_out`,
+  `test_memory_per_consumable`, `test_h_vmem`.
 - `TestbedCluster.accounting_truncate` is implemented for SGE only; the
   Slurm and PBS classes inherit `NotImplementedError`
   (`cluster.py`), though `testbed/README.md` lists it as part of a new
@@ -63,7 +59,7 @@ work". For PBS nothing is planned.
 - `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
   `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 2 and 3).
+  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 1 and 2).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
   and nothing else.
@@ -108,8 +104,8 @@ work". For PBS nothing is planned.
 - CI runs the integration job for `soge` and `ocs` only
   (`.github/workflows/ci.yml`, the `integration` matrix). The Slurm and
   PBS images are never built there, so a broken one is not noticed.
-- Not run since the container renaming of 2026-11-16: the `ocs`
-  integration suite, the CI workflow's log-copy step. The PBS, `ocs` and
+- Not run since the container renaming of 2026-11-16: the CI workflow's
+  log-copy step. The PBS, `ocs` and
   Slurm 22.05 stacks were each brought up and down cleanly on 2026-11-17
   (flag research).
 - Cases the stacks cannot show, found by the flag research of 2026-11-17:
@@ -125,9 +121,6 @@ work". For PBS nothing is planned.
     stands in for one).
   - Jobs started through `docker exec` get no `USER` or `LOGNAME` from the
     caller, so an environment check must not read those as the job's own.
-- The work of 2026-11-17 (`hpc run` exit code, the five removed options,
-  the array output file name, the option table) has run on `soge` only.
-  Closes with one run of the `ocs` integration suite.
 - A third SGE flavour, `daimh/sge`, is not started.
 - PBS has one flavour (OpenPBS). OpenPBS against PBS Professional is not
   examined.

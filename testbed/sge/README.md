@@ -4,12 +4,13 @@ Each vendor implementation of the SGE lineage is a *flavour*: a self-contained
 directory with its own image, compose file, cell configuration and testbed
 config, tested on its own and never grouped with another (docs/dev/testbed/TESTBED_PLAN.md
 section 1). The fixture (`tests/integration/cluster.py`) and the test files
-are shared; `--scheduler sge --flavour <name>` selects the stack that is up.
+(`tests/integration/` and `tests/integration/sge/`) are shared by the
+flavours; `--scheduler sge --flavour <name>` selects the stack that is up.
 
 | Flavour | Lineage | Source | Status |
 |---|---|---|---|
-| `soge` | Son of Grid Engine 8.1.9 | Debian trixie `gridengine-*` 8.1.9+dfsg-13.1 | 49 integration tests pass |
-| `ocs` | Open Cluster Scheduler 9.1.7 (Univa lineage) | upstream binary tarballs (`ocs-9.1.7-bin-lx-amd64`, `-common`) on Debian trixie | 49 integration tests pass |
+| `soge` | Son of Grid Engine 8.1.9 | Debian trixie `gridengine-*` 8.1.9+dfsg-13.1 | 55 integration tests pass |
+| `ocs` | Open Cluster Scheduler 9.1.7 (Univa lineage) | upstream binary tarballs (`ocs-9.1.7-bin-lx-amd64`, `-common`) on Debian trixie | 55 integration tests pass |
 
 Candidate for a later flavour: `daimh/sge` (maintained SoGE fork, built from
 source).
@@ -19,26 +20,29 @@ project as a prefix (`hpc-testbed-sge-ocs-master`) and the subnets differ.
 
 ## Support matrix
 
-One row per integration test, grouped by file (tests/integration/). Each
-column is the result of `hpc-testbed --scheduler sge --flavour <name> pytest` on
-2026-11-02. A test deselected for a flavour with `@pytest.mark.flavour("sge/<name>")`
-would show as such (none so far); nothing skips at run time.
+One row per integration test, grouped by file. The files in
+`tests/integration/` are the generic tests: they check what hpc-runner does
+by its outcome on the cluster, name no scheduler command, and run on every
+scheduler. The files in `tests/integration/sge/` are SGE's own: they check
+that hpc-runner drives SGE correctly and that SGE does what hpc-runner says,
+and run only with `--scheduler sge`.
+
+Each column is the result of `hpc-testbed --scheduler sge --flavour <name> pytest`
+on 2026-11-21. A test deselected for a flavour with
+`@pytest.mark.flavour("sge/<name>")` would show as such (none so far);
+nothing skips at run time.
+
+### Generic tests (`tests/integration/`)
 
 | File | Test | `soge` | `ocs` |
 |---|---|---|---|
 | test_smoke.py | test_batch_echo_hello | pass | pass |
 | test_submit.py | test_batch_echo | pass | pass |
-| | test_passthrough | pass | pass |
 | | test_rejected_queue | pass | pass |
-| | test_rejected_resource (`-l nosuch=1`; `gpu=2` is accepted and queues, D-T27) | pass | pass |
 | | test_interactive | pass | pass |
 | | test_interactive_no_slot (all eight slots filled, D-T28) | pass | pass |
 | test_status.py | test_queued_running_done | pass | pass |
-| | test_slow_accounting_window | pass on `hpc-testbed pytest --slow-accounting` (D-T22); deselected otherwise | pass, likewise (waits out OCS's start-up period, below) |
-| | test_aged_out | pass | pass |
 | | test_suspended_job_is_waited_through | pass | pass |
-| | test_requeued_job_ends_with_its_final_record | pass | pass |
-| | test_deleted_while_pending_waits_out_to_unknown | pass | pass |
 | test_dependencies.py | test_afterok_cascade | pass | pass |
 | | test_afternotok | pass | pass |
 | | test_afterany | pass | pass |
@@ -46,12 +50,7 @@ would show as such (none so far); nothing skips at run time.
 | | test_cli_depend | pass | pass |
 | test_arrays.py | test_array_1_to_5 | pass | pass |
 | | test_array_concurrency_limit_is_accepted | pass | pass |
-| test_resources.py | test_pe_mem_time | pass | pass (requests read from `JB_request_set_list`) |
-| | test_memory_per_consumable[slot], [job] (h_vmem consumable, 8G per host; reads `qc:h_vmem` back) | pass | pass |
-| | test_h_rt_kill (KILLED, exit 137) | pass (`failed 37`) | pass (`failed 100`, `deleted_by execd@`) |
-| | test_signal_exit_code (exit 137 of a signal death, BUG-T5 fixed) | pass | pass |
-| | test_h_vmem | pass | pass |
-| | test_queue_selection | pass | pass |
+| test_resources.py | test_queue_selection | pass | pass |
 | test_environment.py | test_modules_on_node | pass | pass |
 | | test_regardless_of_submitter | pass | pass |
 | | test_hpc_cpus | pass | pass |
@@ -63,15 +62,41 @@ would show as such (none so far); nothing skips at run time.
 | test_listing.py | test_two_users | pass | pass (ISO timestamps) |
 | | test_completed_listing_by_user | pass | pass |
 | test_cli.py | test_status_active_history_and_details (`hpc status`, `--history`, `<id>`, `--json`, times) | pass | pass (`<>` tags repaired) |
-| | test_status_shows_the_schedulers_failure_reason (qdel: exit 137, `100: assumedly after job`) | pass | pass |
+| | test_cancel_by_filter_by_id_and_a_job_that_is_gone | pass | pass |
+| | test_run_exits_with_the_jobs_exit_code | pass | pass |
 | | test_tool_alias_and_config_resolve (`[tools.sort] commands`, `hpc config resolve`) | pass | pass |
+| test_trace.py | test_flag_records_a_session (`hpc --trace`: command line, config, script, scheduler calls, output) | pass | pass |
+| | test_config_enabled_trace (`[trace] enabled`, every scheduler call written) | pass | pass |
+
+### SGE's own tests (`tests/integration/sge/`)
+
+Four of these are built around how SGE finishes a job and will have no
+counterpart on another scheduler; the reason is in the row.
+
+| File | Test | `soge` | `ocs` |
+|---|---|---|---|
+| sge/test_submit.py | test_passthrough | pass | pass |
+| | test_rejected_queue_carries_qsubs_words (new: `unknown queue "nope.q"`) | pass | pass |
+| | test_rejected_resource (`-l nosuch=1`; `gpu=2` is accepted and queues, D-T27) | pass | pass |
+| sge/test_status.py | test_slow_accounting_window. SGE only: Slurm has no gap before accounting | pass on `hpc-testbed pytest --slow-accounting` (D-T22); deselected otherwise | pass, likewise (waits out OCS's start-up period, below) |
+| | test_aged_out. SGE only: needs an accounting store that can be emptied | pass | pass |
+| | test_requeued_job_ends_with_its_final_record | pass | pass |
+| | test_deleted_while_pending_waits_out_to_unknown | pass | pass |
+| sge/test_dependencies.py | test_every_skipped_job_exits_113 (new: the exit code of each job the generic tests see SKIPPED) | pass | pass |
+| sge/test_resources.py | test_pe_mem_time | pass | pass (requests read from `JB_request_set_list`) |
+| | test_memory_per_consumable[slot], [job] (h_vmem consumable, 8G per host; reads `qc:h_vmem` back). SGE only: measures SGE's per-slot booking | pass | pass |
+| | test_h_rt_kill (KILLED, exit 137) | pass (`failed 37`) | pass (`failed 100`, `deleted_by execd@`) |
+| | test_signal_exit_code (exit 137 of a signal death, BUG-T5 fixed) | pass | pass |
+| | test_h_vmem. SGE only until the Slurm testbed enforces memory | pass | pass |
+| sge/test_listing.py | test_details_of_another_users_job_have_cwd_and_script_file (new) | pass | pass |
+| sge/test_cli.py | test_history_reports_failed_0_for_a_job_that_ran (new) | pass | pass |
+| | test_status_shows_the_schedulers_failure_reason (qdel: exit 137, `100: assumedly after job`) | pass | pass |
 | | test_hold_flag_forwards | pass | pass |
-| test_goldens.py | test_every_sge_batch_golden_is_covered | pass | pass |
+| sge/test_goldens.py | test_every_sge_batch_golden_is_covered | pass | pass |
 | | test_qsub_verifies_the_golden[4 SGE batch goldens] (`qsub -w v`; two verify, two get the expected site rejection) | pass | pass (`-binding linear:1` is rejected: OCS 9.1 changed the syntax) |
-| test_failures.py | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass | pass |
+| sge/test_failures.py | test_node_killed (BUG-T3 fixed; fails if the Docker socket is not mounted) | pass | pass |
 | | qmaster stopped | not automated (D-T40): the `master_down` capture scenario and a unit test pin the error | not automated |
-| test_trace.py | test_flag_records_a_session (`hpc --trace`: command line, config, script, scheduler calls, output) | not run since the rewrite of 2026-11-15 | not run |
-| | test_config_enabled_trace (`[trace] enabled`, every scheduler call written) | not run since the rewrite of 2026-11-15 | not run |
+| sge/test_trace.py | test_trace_holds_the_sge_script_and_qstat_xml (new: `#$ -N` in the recorded script, `<job_info` in the recorded listing) | pass | pass |
 | | shared FS missing | not automated (D-T23); see "Manual checks" | not automated |
 
 ### Where OCS output differs from SoGE

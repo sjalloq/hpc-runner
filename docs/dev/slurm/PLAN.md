@@ -514,17 +514,14 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-1. Make the tests ready for a second scheduler. The inventory is in
-   `../FOLLOW_UPS.md`, "Tests and testbed".
-   - Integration tests that promise the same thing on every scheduler:
-     move the SGE words behind the cluster class.
-   - Tests that must differ per scheduler: one per scheduler.
-   - A test kept for SGE only needs the user's decision and a written
-     reason.
-   - Fixture helpers named for SGE (`SGEFixtures`, `make_sge_responder`,
-     `sge_fixtures`, `mock_sge_commands`): tests that are not about SGE
-     stop depending on them.
-2. Slurm testbed support, both flavours.
+1. Slurm testbed support, both flavours.
+   - First: research what it takes to enable cgroups (`ConstrainRAMSpace`)
+     in the Slurm containers, on this machine and in CI, so `--mem` is
+     enforced and `OUT_OF_MEMORY` can be seen. Report to the user before
+     anything else in this step: if it is impossible or hard in
+     containers, the user wants the implications first. Also find what
+     `OverMemoryKill` (no cgroups) reports. Nothing is changed in the
+     testbed until the user decides.
    - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
      files.
    - The Slurm cluster class: every method the SGE one has, or a written
@@ -533,26 +530,35 @@ questions. Results are in the two fact files and `runs/`.
    - `testbed/slurm/README.md` with the table of test against flavour.
    - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
      (account enforcement) on 22.05.
-3. Slurm captures and fixtures: the list in "Testbed". Set a short
+2. Slurm captures and fixtures: the list in "Testbed". Set a short
    `SlurmdTimeout` for `node_fail`.
-4. Rendering.
+   - The unit-suite helpers named for SGE (`SGEFixtures`,
+     `make_sge_responder`, `sge_fixtures`, `mock_sge_commands`) serve both
+     schedulers' captures, and the tests that are not about a scheduler
+     (TUI status labels, `--wait` exit code, trace) run on each.
+3. Rendering.
    - The scheduler class, registered in `schedulers/__init__.py`;
      `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
    - Arguments, batch template, golden scripts.
    - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
      `recorder.note_script`.
    - Interactive: `srun`, the `--pty` rule, `--export`.
-5. Parsing, against the fixtures.
+4. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
     - Cancel.
-6. Integration suite on both Slurm versions; CI cells for `24.11` and
+5. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
       right status and code.
-7. User docs, and a manual checklist on a real cluster.
+   - Generic tests (`tests/integration/`) run as they are; Slurm's own go
+     in `tests/integration/slurm/`, one for each feature SGE's folder
+     tests in SGE's way. `test_deleted_while_pending...` has a Slurm
+     counterpart expecting CANCELLED. A memory-limit test follows the
+     cgroups decision.
+6. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.

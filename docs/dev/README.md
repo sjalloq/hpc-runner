@@ -7,8 +7,8 @@ update it whenever a status or a next action changes. User documentation is
 
 ## Next actions, in order
 
-1. `slurm/PLAN.md`, "Order of work", from step 1 (make the tests ready for a
-   second scheduler). The list is all the remaining Slurm work. It has no
+1. `slurm/PLAN.md`, "Order of work", from step 1 (Slurm testbed support,
+   starting with the cgroups research). The list is all the remaining Slurm work. It has no
    open questions.
 
 Anything missing, unverified or undecided that belongs to no plan is in
