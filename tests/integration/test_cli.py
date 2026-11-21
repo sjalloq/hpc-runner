@@ -91,7 +91,7 @@ def test_status_shows_the_schedulers_failure_reason(cluster: Cluster) -> None:
 
 def test_cancel_by_filter_by_id_and_a_job_that_is_gone(cluster: Cluster) -> None:
     """`hpc cancel` removes jobs chosen by name and by id; an id the scheduler
-    no longer has exits 1."""
+    no longer lists is shown as UNKNOWN and left alone."""
     hold = ("-S", "-a 203001010000")  # pending until cancelled
     by_name = [_run_batch(cluster, "--name", "clican_a", *hold, "true") for _ in range(2)]
     by_id = _run_batch(cluster, "--name", "clikeep", *hold, "true")
@@ -104,9 +104,8 @@ def test_cancel_by_filter_by_id_and_a_job_that_is_gone(cluster: Cluster) -> None
     assert by_id in active and not active & set(by_name)
 
     assert "Cancelled 1 job(s)" in _hpc(cluster, "cancel", "--force", by_id)
-    gone = cluster.run([str(cluster.hpc_cli), "cancel", "--force", by_id], check=False, timeout=90)
-    assert gone.returncode == 1, gone.stdout + gone.stderr
-    assert "not active" in gone.stdout and f"Failed to cancel job {by_id}" in gone.stdout
+    gone = _hpc(cluster, "cancel", by_id)  # no --force: nothing to confirm
+    assert "UNKNOWN" in gone and "0 job(s) will be cancelled" in gone, gone
 
 
 def test_run_exits_with_the_jobs_exit_code(cluster: Cluster) -> None:

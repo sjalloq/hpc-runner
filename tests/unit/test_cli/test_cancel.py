@@ -76,9 +76,10 @@ class TestSelection:
         assert result.exit_code == 0, result.output
         assert _cancelled(scheduler) == expected
 
-    def test_a_filter_lists_only_the_callers_jobs(self, runner, scheduler):
+    @pytest.mark.parametrize("args", [["--all"], ["11"]])
+    def test_only_the_callers_jobs_are_listed(self, runner, scheduler, args):
         with patch("hpc_runner.cli.cancel.current_user", return_value="me"):
-            runner.invoke(cli, ["cancel", "--force", "--all"])
+            runner.invoke(cli, ["cancel", "--force", *args])
         scheduler.list_active_jobs.assert_called_once_with(user="me")
 
     def test_no_match_cancels_nothing(self, runner, scheduler):
@@ -136,10 +137,16 @@ class TestFailure:
         assert "Failed to cancel job 11 (tc_a)" in result.output
         assert "Cancelled 1 job(s)" in result.output
 
-    def test_an_id_that_is_not_active_is_shown_tried_and_reported(self, runner, scheduler):
-        scheduler.cancel.return_value = False
-        result = runner.invoke(cli, ["cancel", "--force", "999"])
-        assert result.exit_code == 1
-        assert "not active" in result.output
-        assert _cancelled(scheduler) == ["999"]
-        assert "Failed to cancel job 999" in result.output
+    def test_an_unknown_id_is_shown_and_not_sent(self, runner, scheduler):
+        result = runner.invoke(cli, ["cancel", "--force", "11", "999"])
+        assert result.exit_code == 0, result.output
+        assert "UNKNOWN" in result.output
+        assert "1 id(s) not among your active jobs" in result.output
+        assert _cancelled(scheduler) == ["11"]
+        assert "Cancelled 1 job(s)" in result.output
+
+    def test_only_unknown_ids_asks_nothing_and_exits_0(self, runner, scheduler):
+        result = runner.invoke(cli, ["cancel", "999"])
+        assert result.exit_code == 0, result.output
+        assert "UNKNOWN" in result.output and "Proceed?" not in result.output
+        assert _cancelled(scheduler) == []

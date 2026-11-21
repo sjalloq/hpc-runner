@@ -78,11 +78,11 @@ def cancel(
 
     # One row per job to cancel: (id, the scheduler's record of it or None).
     selected: list[tuple[str, JobInfo | None]]
+    jobs = scheduler.list_active_jobs(user=current_user())
     if job_ids:
-        active = {j.job_id: j for j in scheduler.list_active_jobs()}
+        active = {j.job_id: j for j in jobs}
         selected = [(job_id, active.get(job_id)) for job_id in dict.fromkeys(job_ids)]
     else:
-        jobs = scheduler.list_active_jobs(user=current_user())
         if pattern is not None:
             jobs = [j for j in jobs if pattern.search(j.name)]
         if pending or running:
@@ -106,12 +106,19 @@ def cancel(
     table.add_column("Node")
     for job_id, info in selected:
         if info is None:
-            table.add_row(job_id, "—", "not active", "—", "—")
+            table.add_row(job_id, "—", JobStatus.UNKNOWN.name, "—", "—")
         else:
             table.add_row(job_id, info.name, info.status.name, info.queue or "—", info.node or "—")
-
     console.print(table)
-    console.print(f"\n[bold]{len(selected)}[/bold] job(s) will be cancelled.")
+
+    # An id that is not one of the caller's active jobs is shown and left alone.
+    known = [info for _, info in selected if info is not None]
+    unknown = len(selected) - len(known)
+    console.print(f"\n[bold]{len(known)}[/bold] job(s) will be cancelled.")
+    if unknown:
+        console.print(f"{unknown} id(s) not among your active jobs: nothing is sent for them.")
+    if not known:
+        return
 
     if not force and not click.confirm("Proceed?"):
         console.print("[yellow]Aborted[/yellow]")
@@ -119,12 +126,11 @@ def cancel(
 
     succeeded = 0
     failed = 0
-    for job_id, info in selected:
-        if scheduler.cancel(job_id):
+    for info in known:
+        if scheduler.cancel(info.job_id):
             succeeded += 1
         else:
-            label = f"{job_id} ({info.name})" if info is not None else job_id
-            console.print(f"[red]Failed to cancel job {label}[/red]")
+            console.print(f"[red]Failed to cancel job {info.job_id} ({info.name})[/red]")
             failed += 1
 
     if succeeded:
