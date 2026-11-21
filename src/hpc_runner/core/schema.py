@@ -143,6 +143,25 @@ def _env_dict(value: Any) -> dict[str, str]:
     return dict(value)
 
 
+def count_problem(value: Any) -> str | None:
+    """Why *value* is not a count (a whole number, 1 or more); None if it is one."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return f"expected a whole number, 1 or more, got {_describe(value)}"
+    return None
+
+
+def _count_map(value: Any) -> dict[str, int]:
+    """A table of ``name = count``: what ``licenses`` and ``devices`` hold."""
+    if not isinstance(value, dict):
+        raise _Invalid(f"expected a table of name = count, got {_describe(value)}")
+    for key, item in value.items():
+        if not isinstance(key, str) or key == "":
+            raise _Invalid(f"expected a name, got {_describe(key)}")
+        if problem := count_problem(item):
+            raise _Invalid(problem, subkey=key)
+    return dict(value)
+
+
 def _list_of(item: Callable[[Any, int], Any], what: str) -> Callable[[Any], Any]:
     """A D1 list validator: a plain list, ``{ set = [...] }`` or ``{ remove, add }``."""
 
@@ -183,24 +202,6 @@ def _str_item(value: Any, index: int) -> str:
     return value
 
 
-def _resource_item(value: Any, index: int) -> dict[str, Any]:
-    where = f"entry {index + 1}"
-    if not isinstance(value, dict):
-        raise _Invalid(f"{where}: expected a {{ name, value }} table, got {_describe(value)}")
-    keys = set(value)
-    if keys != {"name", "value"}:
-        extra = sorted(keys - {"name", "value"})
-        missing = sorted({"name", "value"} - keys)
-        problem = f"unknown key {extra[0]!r}" if extra else f"missing {missing[0]!r}"
-        raise _Invalid(f"{where}: {problem}; a resource is {{ name = ..., value = ... }}")
-    if not isinstance(value["name"], str):
-        raise _Invalid(f"{where}: name: expected a string, got {_describe(value['name'])}")
-    val = value["value"]
-    if isinstance(val, bool) or not isinstance(val, int | str):
-        raise _Invalid(f"{where}: value: expected an integer or string, got {_describe(val)}")
-    return {"name": value["name"], "value": val}
-
-
 def _env_name_item(value: Any, index: int) -> str:
     name = _str_item(value, index)
     if not ENV_NAME.fullmatch(name):
@@ -210,7 +211,6 @@ def _env_name_item(value: Any, index: int) -> str:
 
 _str_list = _list_of(_str_item, "strings")
 _env_name_list = _list_of(_env_name_item, "environment variable names")
-_resources = _list_of(_resource_item, "{ name, value } tables")
 
 
 def _scheduler_args(value: Any) -> dict[str, Any]:
@@ -247,7 +247,9 @@ FIELD_VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "modules": _str_list,
     "modules_path": _str_list,
     "modules_path_append": _str_list,
-    "resources": _resources,
+    "licenses": _count_map,
+    "devices": _count_map,
+    "features": _str_list,
     "scheduler_args": _scheduler_args,
     "interactive": _bool,
 }
@@ -260,7 +262,7 @@ LIST_FIELDS = frozenset(
         "modules",
         "modules_path",
         "modules_path_append",
-        "resources",
+        "features",
     }
 )
 
@@ -288,7 +290,7 @@ EXPANDED_FIELDS = frozenset(
 )
 
 #: Dict-valued job settings: keys merge across layers, later layer wins per key.
-DICT_FIELDS = frozenset({"env_vars", "env_prepend", "env_append"})
+DICT_FIELDS = frozenset({"env_vars", "env_prepend", "env_append", "licenses", "devices"})
 
 
 def env_conflicts(layer: Mapping[str, Any]) -> list[tuple[str, str]]:

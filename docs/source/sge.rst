@@ -126,23 +126,32 @@ and, when ``%MAX`` is given, a separate ``#$ -tc MAX`` (SGE's ``-t`` grammar
 has no concurrency suffix; ``-tc`` caps the number of tasks running at once).
 
 
-Custom resources
-----------------
+Licences, devices and features
+------------------------------
 
-Use ``resources`` to request arbitrary ``-l`` resources:
+``licenses``, ``devices`` and ``features``
+(:ref:`licenses-devices-features`) are each requested with ``-l``, under the
+name the site gave the complex:
 
 .. code-block:: toml
 
    [types.gpu]
    queue = "gpu.q"
-   resources = [{ name = "gpu", value = 1 }]
+   licenses = { xcelium = 1 }
+   devices = { gpu = 2 }
+   features = ["bigmem"]
 
 This renders as:
 
-- ``#$ -l gpu=1`` in the generated script
+- ``#$ -l xcelium=1``, ``#$ -l gpu=2`` and ``#$ -l bigmem=1`` in the
+  generated script (SGE reads ``=1`` on a boolean complex as ``TRUE``)
+- ``-l xcelium=1 -l gpu=2 -l bigmem=1`` on the ``qrsh`` command line of an
+  interactive job
 
-On the command line, ``--resource gpu=1`` (repeatable) adds to the config's
-resources.
+On the command line: ``--license xcelium=1``, ``--device gpu=2``,
+``--feature bigmem`` (each repeatable). Any other ``-l`` request (scratch
+space, a host name, a memory limit by its site name) goes in
+``scheduler_args``, below.
 
 
 Native qsub passthrough

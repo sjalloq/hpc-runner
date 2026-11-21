@@ -4,13 +4,16 @@ import pytest
 
 from hpc_runner import Edit, Set
 from hpc_runner.core.config import HPCConfig
-from hpc_runner.core.merge import compose, merge_list, resource_key
-from hpc_runner.core.resources import ResourceSet
+from hpc_runner.core.merge import compose, merge_list
 from tests.fakes import make_job
 
 
 def _r(name, value):
     return {"name": name, "value": value}
+
+
+def _by_name(item):
+    return item["name"]
 
 
 class TestMergeList:
@@ -33,15 +36,15 @@ class TestMergeList:
     def test_edit_remove_missing_is_noop(self):
         assert merge_list(["a"], Edit(remove=["zzz"])) == ["a"]
 
-    def test_resources_keyed_by_name_later_wins(self):
+    def test_keyed_later_wins(self):
         acc = [_r("gpu", 1), _r("scratch", "10G")]
-        merged = merge_list(acc, [_r("tmp", 1), _r("gpu", 2)], key=resource_key)
+        merged = merge_list(acc, [_r("tmp", 1), _r("gpu", 2)], key=_by_name)
         # One gpu, value 2, in the position of the first occurrence.
         assert merged == [_r("gpu", 2), _r("scratch", "10G"), _r("tmp", 1)]
 
-    def test_resources_edit_removes_by_name(self):
+    def test_keyed_edit_removes_by_key(self):
         acc = [_r("gpu", 1), _r("scratch", "10G")]
-        merged = merge_list(acc, Edit(remove=[_r("gpu", 99)]), key=resource_key)
+        merged = merge_list(acc, Edit(remove=[_r("gpu", 99)]), key=_by_name)
         assert merged == [_r("scratch", "10G")]
 
     def test_string_layer_value_rejected(self):
@@ -101,21 +104,17 @@ class TestSpecLayer:
         job = make_job(config=cfg, modules=Edit(remove=["py/3.11"], add=["py/3.12"]))
         assert job.modules == ("gcc/12", "py/3.12")
 
-    def test_spec_resources_keyed(self):
-        cfg = HPCConfig(defaults={"resources": [_r("gpu", 1), _r("scratch", "1G")]})
-        job = make_job(config=cfg, resources=ResourceSet().add("gpu", 2))
-        assert [(r.name, r.value) for r in job.resources] == [("gpu", 2), ("scratch", "1G")]
-
-    def test_spec_resources_set(self):
-        cfg = HPCConfig(defaults={"resources": [_r("scratch", "1G")]})
-        job = make_job(config=cfg, resources=Set([_r("gpu", 1)]))
-        assert [r.name for r in job.resources] == ["gpu"]
-
-    def test_type_layer_resource_overrides_default(self):
-        cfg = HPCConfig(
-            defaults={"resources": [_r("gpu", 1)]},
-            types={"big": {"resources": [_r("gpu", 2)]}},
+    def test_spec_features_append(self):
+        cfg = HPCConfig(defaults={"features": ["bigmem"]}, types={"t": {"features": ["avx2"]}})
+        job = make_job(type="t", config=cfg, features=["fast", "bigmem"])
+        assert job.features == ("bigmem", "avx2", "fast")
+        assert job.provenance["features"] == (
+            ("bigmem", "defaults"),
+            ("avx2", "types.t"),
+            ("fast", "spec"),
         )
-        job = make_job(type="big", config=cfg)
-        assert [(r.name, r.value) for r in job.resources] == [("gpu", 2)]
-        assert job.provenance["resources"][0][1] == "types.big"
+
+    def test_spec_features_set(self):
+        cfg = HPCConfig(defaults={"features": ["bigmem"]})
+        job = make_job(config=cfg, features=Set(["fast"]))
+        assert job.features == ("fast",)

@@ -197,8 +197,8 @@ class SGEScheduler(BaseScheduler):
     BATCH_OPTIONS: ClassVar[Mapping[str, Support]] = dict.fromkeys(SCHEDULER_OPTIONS, MAPS)
     INTERACTIVE_OPTIONS: ClassVar[Mapping[str, Support]] = {
         **BATCH_OPTIONS,
-        # Not sent to qrsh (``interactive_ok=False`` in sge/args.py).
-        "name": NotApplicable("qrsh is not given a job name"),
+        # qrsh takes -o and -e and writes no file (run on soge, 2026-11-17),
+        # so they are not sent (``interactive_ok=False`` in sge/args.py).
         "stdout": _TO_THE_TERMINAL,
         "stderr": _TO_THE_TERMINAL,
         "array": REJECTS,  # resolve() already refuses an interactive array
@@ -441,9 +441,8 @@ class SGEScheduler(BaseScheduler):
             if d := self._hold_arg.to_directive(hold):
                 directives.append(d)
 
-        # 5. Custom resources (ResourceSet)
-        for resource in job.resources:
-            directives.append(f"#$ -l {resource.name}={resource.value}")
+        # 5. Licences, devices and features: each a complex the site names.
+        directives.extend(f"#$ -l {request}" for request in self._requests(job))
 
         # 6. Raw passthrough arguments, as one directive line: SGE parses a
         #    directive line like a qsub command line, so "-q batch.q -l gpu=2"
@@ -453,6 +452,19 @@ class SGEScheduler(BaseScheduler):
             directives.append("#$ " + " ".join(passthrough))
 
         return directives
+
+    @staticmethod
+    def _requests(job: Job) -> list[str]:
+        """The ``-l`` value for each licence, device and feature of *job*.
+
+        A licence or a device is ``name=N``. A feature is ``name=1``, which
+        SGE reads as ``TRUE`` for a boolean complex.
+        """
+        return [
+            *(f"{name}={count}" for name, count in job.licenses.items()),
+            *(f"{name}={count}" for name, count in job.devices.items()),
+            *(f"{name}=1" for name in job.features),
+        ]
 
     def _check_directive_values(self, job: Job) -> None:
         """Refuse a value a ``#$`` line cannot carry (BUG-T1, decision D-T41).
@@ -465,18 +477,18 @@ class SGEScheduler(BaseScheduler):
         qsub's.
 
         Raises:
-            SubmissionError: A rendered attribute or resource contains
-                whitespace.
+            SubmissionError: A rendered attribute, or the name of a licence,
+                device or feature, contains whitespace.
         """
         offending: list[str] = []
         for attr_name in RENDER_ORDER:
             value = self.render_value(job, attr_name)
             if isinstance(value, str) and _WHITESPACE.search(value):
                 offending.append(f"{attr_name} = {value!r}")
-        for resource in job.resources:
-            text = f"{resource.name}={resource.value}"
-            if _WHITESPACE.search(text):
-                offending.append(f"resource {text!r}")
+        for field in ("licenses", "devices", "features"):
+            for name in getattr(job, field):
+                if _WHITESPACE.search(name):
+                    offending.append(f"{field} name {name!r}")
         if offending:
             raise SubmissionError(
                 "SGE cannot take a value with whitespace in a job script directive "
@@ -610,6 +622,8 @@ class SGEScheduler(BaseScheduler):
         # Without -V, variables named in env_passthrough are passed one by one.
         for name, value in job.env_passthrough.items():
             cmd.extend(["-v", f"{name}={value}"])
+        for request in self._requests(job):
+            cmd.extend(["-l", request])
         cmd.extend(self._passthrough_args(job))
         cmd.append(script_path)
         return cmd

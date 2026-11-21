@@ -30,7 +30,6 @@ from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
 from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resolve import resolve
-from hpc_runner.core.resources import Resource, ResourceSet
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from hpc_runner.schedulers import get_scheduler, list_schedulers, register_scheduler
@@ -52,8 +51,6 @@ __all__ = [
     "JobResult",
     "ArrayJobResult",
     "JobStatus",
-    "Resource",
-    "ResourceSet",
     # Config
     "load_config",
     "HPCConfig",

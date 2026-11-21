@@ -8,7 +8,6 @@ from typing import Any
 
 from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.dependency import Dependency
-from hpc_runner.core.resources import ResourceSet
 from hpc_runner.core.units import Duration, Memory
 
 # Order in which schedulers render the simple per-attribute directives.
@@ -41,6 +40,9 @@ SCHEDULER_OPTIONS: tuple[str, ...] = (
     "inherit_env",
     "env_passthrough",
     "workdir",
+    "licenses",
+    "devices",
+    "features",
     "array",
     "dependencies",
 )
@@ -59,12 +61,13 @@ class Job:
     ``"types.<name>"``, ``"spec"``, ``"package"`` and ``"host"``.
 
     - Scalar and dict fields map to the one layer name that supplied the
-      value (for dicts, the most specific layer that set any key).
+      value (for dicts, ``licenses`` and ``devices`` among them, the most
+      specific layer that set any key).
     - List fields (``modules``, ``modules_path``, ``modules_path_append``,
-      ``env_unset``, ``env_passthrough``, ``resources``) map to a tuple of
-      ``(item, layer)`` pairs, one per item in order; a resource item is its
-      ``Resource``. ``env_passthrough`` lists the names even when
-      ``inherit_env`` makes them redundant and the field itself is empty.
+      ``env_unset``, ``env_passthrough``, ``features``) map to a tuple of
+      ``(item, layer)`` pairs, one per item in order. ``env_passthrough``
+      lists the names even when ``inherit_env`` makes them redundant and
+      the field itself is empty.
     - ``venv`` is ``"captured from VIRTUAL_ENV"``, the layer that set the
       path, ``"<layer> (disabled)"`` for ``venv = false``, or ``"package"``.
     - ``scheduler_args`` maps to a tuple of ``((scheduler, arg), layer)``
@@ -99,7 +102,11 @@ class Job:
     modules_path: tuple[str, ...]
     modules_path_append: tuple[str, ...]
 
-    resources: ResourceSet
+    # What the job asks the scheduler for by name: licences and devices
+    # with a count (a whole number, 1 or more), features by name alone.
+    licenses: Mapping[str, int]
+    devices: Mapping[str, int]
+    features: tuple[str, ...]
     scheduler_args: Mapping[str, tuple[str, ...]]
     dependencies: tuple[Dependency, ...]
     array: ArrayRange | None

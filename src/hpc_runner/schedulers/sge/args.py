@@ -2,8 +2,9 @@
 
 Each class knows how to render a single job attribute to SGE syntax,
 both as a script directive (#$ ...) for batch jobs and as command-line
-arguments for qrsh. Renderers for flags qrsh rejects (-o, -e, -j, -N)
-are declared ``interactive_ok=False``.
+arguments for qrsh. Renderers for the output-file flags (-o, -e, -j),
+which qrsh accepts and does not act on, are declared
+``interactive_ok=False``.
 """
 
 import re
@@ -54,7 +55,7 @@ class SGEJobNameArg(SGEArg):
     """Job name: -N name"""
 
     def __init__(self) -> None:
-        super().__init__("N", doc="Job name", interactive_ok=False)
+        super().__init__("N", doc="Job name")
 
 
 class SGEQueueArg(SGEArg):

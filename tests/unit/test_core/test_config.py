@@ -63,7 +63,7 @@ class TestHPCConfig:
     def test_type_layer(self):
         config = HPCConfig(
             defaults={"cpu": 1},
-            types={"gpu": {"queue": "gpu", "resources": [{"name": "gpu", "value": 1}]}},
+            types={"gpu": {"queue": "gpu", "devices": {"gpu": 1}}},
         )
         assert _layer_names(config, "anything", type="gpu") == ["defaults", "types.gpu"]
         job = make_job("anything", type="gpu", config=config)
@@ -155,16 +155,13 @@ class TestMerge:
 
         assert result["env_unset"] == ["-v", "-x"]
 
-    def test_resources_merge(self):
-        """B2: two files both defining resources merge by name, later wins."""
-        base = {"resources": [{"name": "gpu", "value": 1}, {"name": "scratch", "value": "1G"}]}
-        override = {"resources": [{"name": "gpu", "value": 2}]}
+    def test_licenses_merge(self):
+        """Two files both defining licenses merge by name, later wins."""
+        base = {"licenses": {"xcelium": 1, "vcs": 1}}
+        override = {"licenses": {"xcelium": 2}}
         result = _merge(base, override)
 
-        assert result["resources"] == [
-            {"name": "gpu", "value": 2},
-            {"name": "scratch", "value": "1G"},
-        ]
+        assert result["licenses"] == {"xcelium": 2, "vcs": 1}
 
     def test_dict_merge_deep(self):
         """Nested dicts should merge recursively."""
@@ -856,13 +853,25 @@ class TestSchema:
 
     @pytest.mark.parametrize(
         "line",
-        ["nodes = 2", "tasks = 32", "priority = 0", "use_cwd = false", 'shell = "/bin/zsh"'],
+        [
+            "nodes = 2",
+            "tasks = 32",
+            "priority = 0",
+            "use_cwd = false",
+            'shell = "/bin/zsh"',
+            'resources = [{ name = "gpu", value = 1 }]',
+        ],
     )
     def test_removed_job_keys_are_ordinary_unknown_keys(self, tmp_path, line):
         path = _write(tmp_path, f"config_version = 1\n[types.sim]\n{line}\n")
         (err,) = _errors(path)
         key = line.split()[0]
         assert f"[types.sim] {key}: unknown key" in str(err)
+
+    def test_resources_key_error_names_nothing_else(self, tmp_path):
+        path = _write(tmp_path, "config_version = 1\n[defaults]\nresources = []\n")
+        (err,) = _errors(path)
+        assert str(err).endswith("[defaults] resources: unknown key")
 
     def test_all_errors_reported_together(self, tmp_path):
         path = _write(
@@ -914,12 +923,37 @@ class TestSchema:
         assert err.line == 4
         assert "[defaults] env_vars.B: expected a string" in str(err)
 
-    def test_resource_entry_checked(self, tmp_path):
+    @pytest.mark.parametrize("key", ["licenses", "devices"])
+    @pytest.mark.parametrize(
+        "count, got",
+        [
+            ("0", "integer 0"),
+            ("-2", "integer -2"),
+            ("1.5", "float 1.5"),
+            ('"2"', 'string "2"'),
+            ("true", "boolean true"),
+        ],
+    )
+    def test_count_must_be_a_whole_number_of_one_or_more(self, tmp_path, key, count, got):
         path = _write(
-            tmp_path, 'config_version = 1\n[defaults]\nresources = [{ name = "gpu", val = 1 }]\n'
+            tmp_path, f"config_version = 1\n[defaults]\n{key} = {{ a = 1, b = {count} }}\n"
         )
         (err,) = _errors(path)
-        assert "entry 1: unknown key 'val'" in str(err)
+        assert err.line == 3
+        assert f"[defaults] {key}.b: expected a whole number, 1 or more, got {got}" in str(err)
+
+    @pytest.mark.parametrize("key", ["licenses", "devices"])
+    def test_count_map_must_be_a_table(self, tmp_path, key):
+        path = _write(tmp_path, f'config_version = 1\n[defaults]\n{key} = ["a"]\n')
+        (err,) = _errors(path)
+        assert f"[defaults] {key}: expected a table of name = count, got an array" in str(err)
+
+    def test_features_is_a_list_of_names(self, tmp_path):
+        ok = _write(tmp_path, 'config_version = 1\n[defaults]\nfeatures = ["bigmem", "avx2"]\n')
+        assert load_config(ok).defaults["features"] == ["bigmem", "avx2"]
+        bad = _write(tmp_path, "config_version = 1\n[defaults]\nfeatures = [1]\n", name="b.toml")
+        (err,) = _errors(bad)
+        assert "[defaults] features: entry 1: expected a string, got integer 1" in str(err)
 
     def test_venv_accepts_path_or_false(self, tmp_path):
         ok = _write(
@@ -1019,22 +1053,24 @@ class TestSchema:
         )
         assert load_config(path).types["lint"]["tools"] == ["slang"]
 
-    def test_resources_merge_across_files(self, tmp_path):
-        """B2: two files both defining resources load and merge."""
+    def test_three_maps_merge_across_files(self, tmp_path):
+        """Two files both setting the maps: counts merge by name, features append."""
         _write(
             tmp_path,
-            'config_version = 1\n[defaults]\nresources = [{ name = "gpu", value = 1 }]\n',
+            "config_version = 1\n[defaults]\n"
+            'licenses = { xcelium = 1 }\ndevices = { gpu = 1 }\nfeatures = ["bigmem"]\n',
             name="base.toml",
         )
         path = _write(
             tmp_path,
-            'config_version = 1\nextends = "base.toml"\n'
-            '[defaults]\nresources = [{ name = "gpu", value = 2 }, { name = "s", value = "1G" }]\n',
+            'config_version = 1\nextends = "base.toml"\n[defaults]\n'
+            "licenses = { xcelium = 2, vcs = 1 }\ndevices = { fpga = 1 }\n"
+            'features = ["avx2", "bigmem"]\n',
         )
-        assert load_config(path).defaults["resources"] == [
-            {"name": "gpu", "value": 2},
-            {"name": "s", "value": "1G"},
-        ]
+        defaults = load_config(path).defaults
+        assert defaults["licenses"] == {"xcelium": 2, "vcs": 1}
+        assert defaults["devices"] == {"gpu": 1, "fpga": 1}
+        assert defaults["features"] == ["bigmem", "avx2"]
 
     def test_schema_covers_exactly_the_config_settable_jobspec_fields(self):
         """A new JobSpec field must be added to the config schema (or excluded)."""

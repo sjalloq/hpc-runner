@@ -19,7 +19,9 @@ them to the underlying scheduler's arguments.
   through untouched to the one scheduler named.
 - A scheduler that cannot honour an option set on a job fails the
   submission. The error names the option and points to `scheduler_args`.
-  Nothing is silently ignored.
+- The few options a job kind or the local scheduler ignores are rules,
+  listed with their reasons in `../SCHEDULER_OPTIONS.md` and in the user
+  docs ("Rules for every job").
 - A job is one process on one node. `nodes` and `tasks` are removed. An MPI
   job uses `-S '-N 2 -n 32'`.
 - `priority` is removed (decided 2026-11-15). The number is each
@@ -40,15 +42,39 @@ them to the underlying scheduler's arguments.
   `INTERACTIVE_OPTIONS` over `SCHEDULER_OPTIONS` (`core/job.py`);
   `check_options` (`schedulers/base.py`) raises the error;
   `tests/unit/test_schedulers/test_option_table.py` walks every cell.
+  The rules themselves, for SGE, Slurm and local, are the table in
+  `../SCHEDULER_OPTIONS.md`; the test checks the code against it.
   - A cell has a third value, "nothing to map", with a reason. Used
-    where an option asks nothing of the scheduler: an output file or a
-    job name on an interactive job, and `cpu`, `mem`, `time`, `queue`,
+    where an option asks nothing of the scheduler: an output file on an
+    interactive job (`qrsh -o` exits 0 and writes no file, run on `soge`
+    2026-11-17), and `cpu`, `mem`, `time`, `queue`,
     `project` on the local scheduler, which has nothing to reserve. The
     local scheduler goes on running a site config as it is.
   - Options the job script carries the same way everywhere (modules,
     `env_*`, venv) are not in the table.
   - `resources` is not in the table: the three maps take its place there
     in the next step.
+
+## How config layers combine
+
+Decided by the user 2026-11-21, then reopened the same day: with a type
+that pulls in two tools, strict override drops the first tool's modules.
+Which keys add up and which override is under discussion; nothing below is
+built. As first decided: one rule, for every key and every layer
+(`[defaults]`, a type, a tool, the command line, a `JobSpec`):
+
+- A key that a layer sets replaces whatever earlier layers set for it.
+- A key a layer does not set is inherited.
+- An empty list `[]` or empty table `{}` clears it.
+- Lists and tables follow the same rule as single values: nothing adds up.
+  A type comes after the tools it pulls in, so a type's `licenses`
+  replaces its tools' `licenses` whole.
+- The command line is a layer like any other: `--license vcs=1` replaces
+  the config's licences, `-S` replaces the config's `scheduler_args` for
+  the scheduler. Options repeated on one command line combine with each
+  other.
+- `{ set = [...] }`, `{ remove = [...], add = [...] }` and the Python `Set`
+  and `Edit` are removed outright.
 
 ## Removed options
 
@@ -270,7 +296,9 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
   `by <uid>`, which is SKIPPED (decided 2026-11-16). With the key false
   the job stays PENDING: `sacct` cannot tell it from any other pending
   job, and no second command is run to find out.
-- Interactive jobs refuse dependencies, as on SGE.
+- Interactive jobs refuse dependencies, as on SGE (confirmed by the user
+  2026-11-18): an interactive job runs now, at the terminal, and `srun`
+  waits for ever if the parent failed.
 - Submitting a dependent after its parent has left the controller's memory
   is not supported.
 
@@ -343,6 +371,9 @@ Decided 2026-11-15.
 - The script is written to `~/.cache/hpc-runner/scripts/` (or
   `$HPC_SCRIPT_DIR`) and deletes itself unless `--keep-script`.
 - `--pty` only when stdin and stdout are both terminals.
+- `stdout` and `stderr` are ignored on an interactive job, on every
+  scheduler (user, 2026-11-17): `--output` and `--error` are never sent to
+  `srun`.
 - `hpc run` exits with whatever `srun` exits with (decided 2026-11-15).
   A failure of `srun` itself (bad partition: exit 1, testbed run) is not
   told apart from the command failing, as with `qrsh` on SGE; srun's
@@ -395,9 +426,10 @@ Nothing in it is scheduler-specific.
 - Built 2026-11-17 (`cli/cancel.py`; `hpc kill` deleted). As built:
   - Job ids and `-N`/`--all` cannot be combined; `--pending` and
     `--running` apply only with `-N` or `--all`.
-  - An id the scheduler does not list as active is shown in the table as
-    "not active" and still tried; the scheduler's refusal makes the exit
-    code 1.
+  - Ids are looked up among the caller's own active jobs (one listing,
+    scoped to the user). An id not found there is shown in the table
+    with state `UNKNOWN` and nothing is sent to the scheduler for it; it
+    does not change the exit code (user, 2026-11-17).
   - A filter that matches nothing prints so and exits 0.
 
 ## Testbed
@@ -463,15 +495,22 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-Step 1 changes SGE behaviour and needs no Slurm code.
+Steps 1 and 2 change SGE behaviour and need no Slurm code.
 
-1. The three maps replace `resources`.
+1. Config layers override: "How config layers combine".
+   - `core/merge.py`, `core/resolve.py`, `core/config.py`, `core/schema.py`;
+     `Set` and `Edit` removed from the Python API.
+   - `defaults/config.toml` and the testbed configs rewritten to match.
+   - User docs: the "Lists: append, set, remove" section becomes the one
+     rule.
+2. The three maps replace `resources` (built 2026-11-17 on the old merge
+   rule, uncommitted; finished after the step above).
    - `licenses`, `devices`, `features` in config; `--license`,
      `--device`, `--feature` on the command line.
    - Remove `resources`, `-R/--resource`, `Resource`, `ResourceSet`.
    - Count rule, last one wins, command line over config.
    - Interactive SGE jobs carry all three.
-2. Make the tests ready for a second scheduler. The inventory is in
+3. Make the tests ready for a second scheduler. The inventory is in
    `../FOLLOW_UPS.md`, "Tests and testbed".
    - Integration tests that promise the same thing on every scheduler:
      move the SGE words behind the cluster class.
@@ -481,7 +520,7 @@ Step 1 changes SGE behaviour and needs no Slurm code.
    - Fixture helpers named for SGE (`SGEFixtures`, `make_sge_responder`,
      `sge_fixtures`, `mock_sge_commands`): tests that are not about SGE
      stop depending on them.
-3. Slurm testbed support, both flavours.
+4. Slurm testbed support, both flavours.
    - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
      files.
    - The Slurm cluster class: every method the SGE one has, or a written
@@ -490,26 +529,26 @@ Step 1 changes SGE behaviour and needs no Slurm code.
    - `testbed/slurm/README.md` with the table of test against flavour.
    - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
      (account enforcement) on 22.05.
-4. Slurm captures and fixtures: the list in "Testbed". Set a short
+5. Slurm captures and fixtures: the list in "Testbed". Set a short
    `SlurmdTimeout` for `node_fail`.
-5. Rendering.
+6. Rendering.
    - The scheduler class, registered in `schedulers/__init__.py`;
      `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
    - Arguments, batch template, golden scripts.
    - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
      `recorder.note_script`.
    - Interactive: `srun`, the `--pty` rule, `--export`.
-6. Parsing, against the fixtures.
+7. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
     - Cancel.
-7. Integration suite on both Slurm versions; CI cells for `24.11` and
+8. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
       right status and code.
-8. User docs, and a manual checklist on a real cluster.
+9. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.

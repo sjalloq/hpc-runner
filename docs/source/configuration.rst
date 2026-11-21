@@ -167,10 +167,20 @@ the submit host (:ref:`variable-expansion`).
      - list of strings
      - list
      - ``module use --append`` each (searched last); expanded.
-   * - ``resources``
-     - list of ``{ name, value }``
-     - list (by ``name``)
-     - Scheduler resources and licences (SGE ``-l name=value``).
+   * - ``licenses``
+     - table of ``name = count``
+     - table
+     - Licences the job needs, each with a count (a whole number, 1 or
+       more). SGE ``-l name=count``.
+   * - ``devices``
+     - table of ``name = count``
+     - table
+     - Devices the job needs (a GPU, ...), each with a count (a whole
+       number, 1 or more). SGE ``-l name=count``.
+   * - ``features``
+     - list of strings
+     - list
+     - Node features the job needs, by name. SGE ``-l name=1``.
    * - ``scheduler_args``
      - table of lists of strings
      - table of lists
@@ -349,8 +359,9 @@ is the whole specification.
 
 - **Scalars** (``cpu``, ``queue``, ...): the most specific layer that sets
   one wins.
-- **Tables** (``env_vars``, ``env_prepend``, ``env_append``,
-  ``scheduler_args``): keys merge across layers; the later layer wins per key.
+- **Tables** (``env_vars``, ``env_prepend``, ``env_append``, ``licenses``,
+  ``devices``, ``scheduler_args``): keys merge across layers; the later
+  layer wins per key.
 - **Lists**: see below.
 
 When several files are loaded (``extends``, project and local override), a
@@ -364,7 +375,7 @@ Lists: append, set, remove
 --------------------------
 
 ``modules``, ``modules_path``, ``modules_path_append``, ``env_unset``,
-``env_passthrough``, ``resources`` and each scheduler's ``scheduler_args`` list follow one rule
+``env_passthrough``, ``features`` and each scheduler's ``scheduler_args`` list follow one rule
 in every layer, including the spec:
 
 - A plain list **appends** to what the earlier layers built, dropping
@@ -387,10 +398,8 @@ in every layer, including the spec:
    [tools.pytorch]
    modules = { remove = ["python/3.11"], add = ["python/3.12"] }
 
-``resources`` entries are matched by ``name``: a later layer setting
-``{ name = "gpu", value = 2 }`` over an earlier ``gpu = 1`` requests one
-``gpu=2``, and ``remove`` drops entries by name. ``scheduler_args`` lists
-are raw arguments, so repeated flags (``-l a=1 -l b=2``) are kept.
+``scheduler_args`` lists are raw arguments, so repeated flags
+(``-l a=1 -l b=2``) are kept.
 
 The Python API mirrors the verbs: ``modules=[...]`` appends,
 ``modules=Set([...])`` replaces, ``modules=Edit(remove=[...], add=[...])``
@@ -409,7 +418,7 @@ settings, it pulls tools in by name, in order, then applies its own keys:
 
    [tools.xrun]
    modules = ["xcelium/23.09"]
-   resources = [{ name = "xcelium_lic", value = 1 }]
+   licenses = { xcelium_lic = 1 }
 
    [tools.slang]
    modules = ["slang/0.9"]
@@ -423,6 +432,38 @@ requests the licence and two CPUs. One type per job; a combined flow is its
 own named type. References are one level deep (tools cannot list tools,
 types cannot list types); a type naming an undefined tool, or a ``-t``
 naming an undefined type, is an error.
+
+
+.. _licenses-devices-features:
+
+Licences, devices and features
+------------------------------
+
+Three keys say what a job needs from the cluster by name, on any job layer:
+
+.. code-block:: toml
+
+   [tools.xcelium]
+   licenses = { xcelium = 1 }
+   devices  = { gpu = 2 }
+   features = ["bigmem"]
+
+- ``licenses`` and ``devices`` are tables of ``name = count``. A count is a
+  whole number, 1 or more; anything else is an error before submission. A
+  later layer setting a name replaces that name's count and leaves the
+  other names alone.
+- ``features`` is a list of names and merges like every list
+  (:ref:`list-merging`).
+- A name is only the name the site gave the thing. A GPU type, a licence
+  server, scratch space, a host name or a memory limit by its site name is
+  one scheduler's syntax and goes in :ref:`scheduler_args <scheduler-args>`.
+
+On the command line: ``--license NAME=N``, ``--device NAME=N`` and
+``--feature NAME``, each repeatable. A name given there replaces the same
+name from config; the same name given twice keeps the last.
+
+Interactive and batch jobs carry all three alike. On SGE each is a ``-l``
+request (:doc:`sge`).
 
 
 .. _scheduler-args:
@@ -446,10 +487,9 @@ merges per :ref:`list-merging`, and each scheduler uses only its own:
 On the command line, raw arguments go in ``-S``/``--scheduler-args``
 (``hpc run -S '-l gpu=2' make sim``) and are appended after config's.
 
-An option means the same on every scheduler, and none is silently ignored:
-a scheduler that cannot honour an option a job sets refuses the job, and
-the error names the option. Anything that is one scheduler's own idea goes
-here instead. Job priority is an example (each scheduler has its own
+An option means the same on every scheduler (see :ref:`job-rules` for the
+few that a job kind or the local scheduler does not take). Anything that is
+one scheduler's own idea goes here instead. Job priority is an example (each scheduler has its own
 scale), as is an MPI job's node and task count:
 
 .. code-block:: toml
@@ -463,6 +503,52 @@ scale), as is an MPI job's node and task count:
 ``[schedulers.<name>]`` holds site facts only (PE name, resource names,
 module init script).
 
+
+.. _job-rules:
+
+Rules for every job
+-------------------
+
+hpc-runner has a view on how jobs are run. Where it does not pass an option
+on, that is a rule, and it holds on every scheduler:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Rule
+     - Why
+   * - An interactive job's ``stdout`` and ``stderr`` are ignored.
+     - Its output is your terminal. A file named in config for the batch
+       case does not apply.
+   * - An interactive job cannot be an array. The job is refused.
+     - No scheduler runs an array from its interactive command.
+   * - An interactive job cannot have dependencies. The job is refused.
+     - An interactive job runs now, at your terminal. A job that waits for
+       another belongs in the queue: submit it with ``--batch``.
+   * - A scheduler that cannot honour an option a job sets refuses the job,
+       and the error names the option.
+     - A job never runs with less than it asked for without saying so.
+
+The local scheduler (``scheduler = "local"``) runs the command on this
+machine. It is there to give a tool its modules and environment without a
+cluster:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Rule
+     - Why
+   * - ``cpu`` is given to the job as ``${hpc.cpus}``. Nothing holds the
+       job to that many cores.
+     - It is for your tools and flows to use the count they asked for.
+   * - ``mem``, ``time``, ``queue``, ``project``, ``licenses``, ``devices``
+       and ``features`` are ignored.
+     - Nothing here reserves or limits them, and the same config runs
+       unchanged on the cluster.
+   * - Arrays and dependencies are refused.
+     - There is no scheduler to fan a job out or hold it.
 
 SGE mapping notes
 -----------------
@@ -544,8 +630,9 @@ reads it) and case-insensitive; a bare integer is bytes.
 or 90m"): SGE reads ``90`` as seconds and Slurm as minutes.
 
 Values are expanded (:ref:`variable-expansion`) before they are parsed.
-Odd site resources still go through :ref:`scheduler_args <scheduler-args>`
-untouched.
+Licences, devices and node features have their own keys
+(:ref:`licenses-devices-features`). Any other site request goes through
+:ref:`scheduler_args <scheduler-args>` untouched.
 
 
 .. _variable-expansion:
@@ -726,7 +813,7 @@ an entry can instead list the ``commands`` it stands for:
    [tools.xcelium]
    commands = ["xrun", "xmvlog", "xmelab", "xmsim", "simvision"]
    modules = ["xcelium/23.09"]
-   resources = [{ name = "xcelium_lic", value = 1 }]
+   licenses = { xcelium_lic = 1 }
 
 ``hpc run xmvlog -sv top.sv`` and ``hpc run xrun -f top.f`` both get the
 ``tools.xcelium`` layer, and ``hpc config resolve xmvlog`` reports it under
@@ -829,9 +916,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    modules_path = []           # module use <path>: searched before the site paths
    modules_path_append = []    # module use --append <path>: searched after them
 
-   resources = [
-     { name = "scratch", value = "20G" }
-   ]
+   scheduler_args = { sge = ["-l", "scratch=20G"] }   # a site request with no option
 
    env_unset = ["https_proxy", "http_proxy"]   # unset in the job script
    env_passthrough = ["DISPLAY"]               # used only with inherit_env = false
@@ -862,9 +947,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    time = "4:00:00"
    queue = "short.q"
    modules = { set = ["python/3.11"] }  # replace the list rather than append
-   resources = [
-     { name = "tmpfs", value = "8G" }
-   ]
+   scheduler_args = { sge = ["-l", "tmpfs=8G"] }
 
    [tools.fusesoc]
    modules = ["fusesoc/2.0"]
@@ -889,6 +972,4 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    cpu = 8
    mem = "64G"
    time = "12:00:00"
-   resources = [
-     { name = "gpu", value = 1 }
-   ]
+   devices = { gpu = 1 }

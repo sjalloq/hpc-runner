@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import KW_ONLY, dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hpc_runner.core.dependency import Dependency, DependencyType, dependency_on
 from hpc_runner.core.merge import Edit, Set
-from hpc_runner.core.resources import ResourceSet
 from hpc_runner.core.units import Duration, Memory
 
 if TYPE_CHECKING:
@@ -63,7 +62,12 @@ class JobSpec:
     modules_path: list[str] | Set | Edit | None = None
     modules_path_append: list[str] | Set | Edit | None = None
 
-    resources: ResourceSet | list[dict[str, Any]] | Set | Edit | None = None
+    # Licences and devices by name, each with a count (a whole number, 1 or
+    # more); a name here replaces the same name from config.
+    licenses: dict[str, int] | None = None
+    devices: dict[str, int] | None = None
+    # Node features by name.
+    features: list[str] | Set | Edit | None = None
 
     # Raw per-scheduler passthrough, e.g. {"sge": ["-l", "gpu=2"]}; each list
     # merges with config's per D1. Only the active scheduler's list is used.

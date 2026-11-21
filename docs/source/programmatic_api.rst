@@ -108,6 +108,15 @@ undefined one raises ``ConfigError``), ``$$`` is a literal ``$`` and
 ``${hpc.cpus}``-style runtime values are rendered by the scheduler. The
 command is not expanded.
 
+Licences, devices and node features are requested by name
+(:ref:`licenses-devices-features`). A count is a whole number, 1 or more
+(``resolve()`` raises ``ConfigError`` otherwise), and a name set on the spec
+replaces the same name from config:
+
+.. code-block:: python
+
+   JobSpec("xrun top.f", licenses={"xcelium": 1}, devices={"gpu": 2}, features=["bigmem"])
+
 Raw scheduler flags with no hpc-runner equivalent go in ``scheduler_args``,
 keyed by scheduler. Each list is appended to config's ``scheduler_args``
 for that scheduler, and only the active scheduler's list is used:
@@ -292,7 +301,7 @@ matching rules.
    # arguments trigger option-specific overrides automatically:
    job = resolve(JobSpec("fusesoc run --tool slang core:v:n"), config, host)
 
-A list set on the spec (``modules``, ``modules_path``, ``resources``, ...)
+A list set on the spec (``modules``, ``modules_path``, ``features``, ...)
 appends to the config's list, exactly like a config layer. Use ``Set`` to
 replace it or ``Edit`` to remove items:
 
@@ -398,7 +407,7 @@ command. Set ``type`` on the spec to pull in ``[types.*]`` config instead:
        # Auto-detects "python" -> picks up [tools.python] config
        p.add("python preprocess.py", name="preprocess")
 
-       # Picks up [types.gpu] config (queue, resources, etc.)
+       # Picks up [types.gpu] config (queue, devices, etc.)
        p.add(JobSpec("python train.py", type="gpu"), name="train",
              depends_on=["preprocess"])
 

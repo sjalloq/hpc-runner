@@ -62,4 +62,4 @@ modules = ["python"]
 # Named job types
 [types.gpu]
 queue = "gpu"
-resources = [{name = "gpu", value = 1}]
+devices = { gpu = 1 }

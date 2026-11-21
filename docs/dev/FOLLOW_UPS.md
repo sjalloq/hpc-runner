@@ -21,7 +21,7 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is steps 2, 3 and 7 of `slurm/PLAN.md`, "Order of
+For Slurm that work is steps 3, 4 and 8 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -63,7 +63,7 @@ work". For PBS nothing is planned.
 - `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
   `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 3 and 4).
+  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 4 and 5).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
   and nothing else.
@@ -108,15 +108,65 @@ work". For PBS nothing is planned.
 - CI runs the integration job for `soge` and `ocs` only
   (`.github/workflows/ci.yml`, the `integration` matrix). The Slurm and
   PBS images are never built there, so a broken one is not noticed.
-- Not run since the container renaming of 2026-11-16: the PBS stack (not
-  started at all), the `ocs` integration suite, the CI workflow's
-  log-copy step.
+- Not run since the container renaming of 2026-11-16: the `ocs`
+  integration suite, the CI workflow's log-copy step. The PBS, `ocs` and
+  Slurm 22.05 stacks were each brought up and down cleanly on 2026-11-17
+  (flag research).
+- Cases the stacks cannot show, found by the flag research of 2026-11-17:
+  - `soge` has no project, no capacity for `xcelium_lic` and no host with
+    `display_win_gui` set, so `-P`, licence counting and features ran on
+    `ocs` only (with a config change put back). A request for one of them
+    on `soge` pends for ever.
+  - Slurm has no cgroups (`TaskPlugin=task/none`), so `--mem` is never
+    enforced.
+  - OpenPBS: the GPU node exec1 is also every job's default node, so a GPU
+    request cannot be seen moving a job; `qstat` is not on `PATH` inside a
+    `qsub -I -- script` job; `qsub -I` needs a terminal (`script -qec`
+    stands in for one).
+  - Jobs started through `docker exec` get no `USER` or `LOGNAME` from the
+    caller, so an environment check must not read those as the job's own.
 - The work of 2026-11-17 (`hpc run` exit code, the five removed options,
   the array output file name, the option table) has run on `soge` only.
   Closes with one run of the `ocs` integration suite.
 - A third SGE flavour, `daimh/sge`, is not started.
 - PBS has one flavour (OpenPBS). OpenPBS against PBS Professional is not
   examined.
+
+## SGE: facts from the flag research (2026-11-17)
+
+Found by the flag research, run on `soge` and `ocs`. Nothing is decided.
+
+- `env_passthrough` values reach the job wrong in two cases. A comma splits
+  the value into a second variable, on `qsub` (`batch.sh.j2:8`) and on
+  `qrsh` (`sge/scheduler.py:623-624`). An apostrophe is lost in the `#$ -v`
+  line. `_check_directive_values` does not look at `env_passthrough`.
+- Licence and device counts are multiplied by the slot count when the site's
+  complex is a `YES` consumable (`-pe smp 2 -l gpu=1` needs 2 gpus).
+  `_requests` sends the count unchanged; `mem` has `memory_per` for this,
+  licences and devices have nothing.
+- `_check_directive_values` says `#$` lines have "no quoting" (docstring
+  `sge/scheduler.py:472-473`, error text :495). Single quotes are honoured.
+- The always-sent `#$ -S /bin/bash` has no effect in a `unix_behavior`
+  queue; the script's `#!/bin/bash` is what makes it bash.
+
+## Slurm: facts from the flag research (2026-11-17)
+
+Run on 24.11 and 22.05. Each bears on a line of `slurm/PLAN.md`; nothing
+is decided.
+
+- A dependency on a job the controller no longer knows: 24.11 refuses the
+  submission, 22.05 accepts it and runs the job at once. The plan says only
+  that this is not supported.
+- `sbatch --export=NAME=value,...` builds a login environment, as
+  `--export=NONE` does. The plan says so only for NONE.
+- `srun --export=NONE` builds no login environment on 22.05 either; the
+  plan says "24.11 only".
+- `srun --pty` with no terminal does not fail: two error lines, then it
+  runs without a pty.
+- 22.05 `srun` does not set `SLURM_MEM_PER_NODE` or `SLURM_MEM_PER_CPU` in
+  the task; 24.11 does.
+- Not shown on the testbed: memory enforcement (no cgroups), an array
+  throttle holding a task back, `--mem-per-cpu` against `MaxMemPerCPU`.
 
 ## Trace
 
@@ -129,8 +179,14 @@ No backend is planned. These are for when one is.
 
 - PBS records -29 for a job that hit its time limit, in place of a
   signal. What exit code hpc-runner reports for it is not decided.
-- Not run on the testbed: host exclusion, soft requests, `place=scatter`,
-  why `qsub -V` did not carry a variable.
+- Not run on the testbed: host exclusion, soft requests, `place=scatter`.
+- `qsub -V` adds nothing in OpenPBS 23.06.06: `qsub.c:env_array_to_varlist`
+  returns NULL on every path.
+  `-v` works.
+- An interactive job's exit code cannot be recovered: `qsub -I` exits 0 and
+  the job records `Exit_status=0` whatever the script exits with. Only batch
+  `qsub -W block=true` returns it.
+  How a PBS backend runs interactive jobs is not decided.
 
 ## LSF
 
@@ -142,6 +198,21 @@ No backend is planned. These are for when one is.
   parked. One question hangs off it: what "pipeline retry" means.
 - Stale exit sentinels on job id reuse could mislead the afterok guard
   (noted under D19, not decided).
+
+## `hpc run` (user report, 2026-11-17)
+
+Not decided.
+
+- A job-side value cannot be put in the command line.
+  `hpc run cargo build -j $NSLOTS` sends an empty `-j`. A quoted `$NSLOTS`
+  or `${hpc.cpus}` reaches the script as a literal string, because the
+  command is `shlex.join`ed and never expanded (`resolve.py:98`). Only
+  `bash -c '…'` works, and only on SGE.
+- `cpu` takes no range (`cpu = "8-16"` → `-pe smp 8-16`). It worked
+  unchecked until the typed schema (`43d6488`, v0.14.0) and was dropped
+  with no decision recorded.
+- An interactive `--dry-run` shows neither the CPU count nor the qrsh
+  arguments (`_show_dry_run`, `cli/run.py:322`).
 
 ## `hpc monitor`
 

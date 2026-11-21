@@ -10,7 +10,6 @@ from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
 from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.resolve import resolve
-from hpc_runner.core.resources import Resource, ResourceSet
 from hpc_runner.core.spec import JobSpec
 from hpc_runner.core.units import Duration, Memory
 from tests.fakes import make_host, make_job
@@ -51,15 +50,31 @@ class TestBasics:
         job = make_job("python script.py", modules=["python/3.11", "cuda/12.0"])
         assert job.modules == ("python/3.11", "cuda/12.0")
 
-    def test_resource_set(self):
-        resources = ResourceSet().add("gpu", 2).add("license", 1)
-        job = make_job(resources=resources)
-        assert len(job.resources) == 2
-        assert job.resources is not resources
+    def test_licenses_devices_features(self):
+        licenses = {"xcelium": 1}
+        job = make_job(licenses=licenses, devices={"gpu": 2}, features=["bigmem"])
+        assert job.licenses == {"xcelium": 1}
+        assert job.licenses is not licenses
+        assert job.devices == {"gpu": 2}
+        assert job.features == ("bigmem",)
 
-    def test_resource_list_of_dicts(self):
-        job = make_job(resources=[{"name": "gpu", "value": 2}])
-        assert job.resources.get("gpu").value == 2
+    def test_none_requested_by_default(self):
+        job = make_job()
+        assert (job.licenses, job.devices, job.features) == ({}, {}, ())
+        assert job.provenance["licenses"] == "package"
+        assert job.provenance["devices"] == "package"
+        assert job.provenance["features"] == ()
+
+    @pytest.mark.parametrize("field", ["licenses", "devices"])
+    @pytest.mark.parametrize("count", [0, -1, 1.5, "2", True, None])
+    def test_count_must_be_a_whole_number_of_one_or_more(self, field, count):
+        with pytest.raises(ConfigError, match=rf"spec: {field}\.x: expected a whole number"):
+            make_job(**{field: {"x": count}})
+
+    @pytest.mark.parametrize("field", ["licenses", "devices"])
+    def test_empty_name_is_error(self, field):
+        with pytest.raises(ConfigError, match=f"spec: {field}: '' is not a name"):
+            make_job(**{field: {"": 1}})
 
     def test_scheduler_args(self):
         job = make_job(scheduler_args={"sge": ["-l", "scratch=10G"], "slurm": ["--x"]})
@@ -185,10 +200,10 @@ class TestConfigLayers:
         assert job.cpu == 8
 
     def test_type_config_applied(self):
-        cfg = _config(types={"gpu": {"queue": "gpu.q", "resources": [{"name": "gpu", "value": 1}]}})
+        cfg = _config(types={"gpu": {"queue": "gpu.q", "devices": {"gpu": 1}}})
         job = make_job("python train.py", type="gpu", config=cfg)
         assert job.queue == "gpu.q"
-        assert len(job.resources) == 1
+        assert job.devices == {"gpu": 1}
         assert job.type == "gpu"
 
     def test_type_skips_tool_matching(self):
@@ -224,20 +239,23 @@ class TestConfigLayers:
         assert job.cpu == 8
         assert job.provenance["cpu"] == "tools.make.options.sim"
 
-    def test_resources_from_config(self):
-        cfg = _config(defaults={"resources": [{"name": "scratch", "value": "10G"}]})
+    def test_licenses_from_config(self):
+        cfg = _config(defaults={"licenses": {"xcelium": 1}})
         job = make_job(config=cfg)
-        assert job.resources.get("scratch").value == "10G"
+        assert job.licenses == {"xcelium": 1}
+        assert job.provenance["licenses"] == "defaults"
 
-    def test_spec_resources_append(self):
-        cfg = _config(defaults={"resources": [{"name": "scratch", "value": "10G"}]})
-        job = make_job(config=cfg, resources=ResourceSet().add("gpu", 1))
-        assert [r.name for r in job.resources] == ["scratch", "gpu"]
+    @pytest.mark.parametrize("field", ["licenses", "devices"])
+    def test_spec_name_replaces_the_same_name_from_config(self, field):
+        cfg = _config(defaults={field: {"a": 1, "b": 1}}, types={"t": {field: {"b": 2}}})
+        job = make_job(type="t", config=cfg, **{field: {"a": 4, "c": 1}})
+        assert getattr(job, field) == {"a": 4, "b": 2, "c": 1}
+        assert job.provenance[field] == "spec"
 
-    def test_spec_resources_set_replaces(self):
-        cfg = _config(defaults={"resources": [{"name": "scratch", "value": "10G"}]})
-        job = make_job(config=cfg, resources=Set([Resource("gpu", 1)]))
-        assert [r.name for r in job.resources] == ["gpu"]
+    def test_spec_features_append(self):
+        cfg = _config(defaults={"features": ["bigmem"]})
+        job = make_job(config=cfg, features=["fast"])
+        assert job.features == ("bigmem", "fast")
 
     def test_interactive_from_config(self):
         cfg = _config(tools={"xterm": {"interactive": True}})
@@ -351,7 +369,7 @@ class TestTypeComposition:
         tools={
             "xrun": {
                 "modules": ["xcelium/23"],
-                "resources": [{"name": "xcelium_lic", "value": 1}],
+                "licenses": {"xcelium_lic": 1},
                 "options": {"-gui": {"queue": "gui.q"}},
             },
             "slang": {"modules": ["slang/0.9"], "mem": "8G"},
@@ -378,7 +396,10 @@ class TestTypeComposition:
         )
         assert (job.cpu, job.provenance["cpu"]) == (2, "types.lint")
         assert (job.mem, job.provenance["mem"]) == (Memory.parse("8G"), "tools.slang")
-        assert job.provenance["resources"][0][1] == "tools.xrun"
+        assert (dict(job.licenses), job.provenance["licenses"]) == (
+            {"xcelium_lic": 1},
+            "tools.xrun",
+        )
 
     def test_type_ignores_argv_tool(self):
         job = make_job("python x.py", type="lint", config=self.CFG)

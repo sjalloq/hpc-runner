@@ -96,8 +96,8 @@ def _passthrough_resources_project() -> JobSpec:
         project="chip",
         inherit_env=False,
         env_passthrough=["DISPLAY"],
-        resources=[{"name": "xcelium_lic", "value": 1}, {"name": "scratch", "value": "20G"}],
-        scheduler_args={"sge": ["-l", "h=node01", "-binding", "linear:1"]},
+        licenses={"xcelium_lic": 1},
+        scheduler_args={"sge": ["-l", "scratch=20G", "-l", "h=node01", "-binding", "linear:1"]},
     )
 
 

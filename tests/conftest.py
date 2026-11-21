@@ -133,7 +133,7 @@ modules = ["python/3.11"]
 
 [types.gpu]
 queue = "gpu"
-resources = [{name = "gpu", value = 1}]
+devices = { gpu = 1 }
 """
     config_file = temp_dir / "hpc-runner.toml"
     config_file.write_text(config_content)

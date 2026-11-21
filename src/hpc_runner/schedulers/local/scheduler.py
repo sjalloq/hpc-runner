@@ -65,7 +65,7 @@ class LocalScheduler(BaseScheduler):
 
     BATCH_OPTIONS: ClassVar[Mapping[str, Support]] = {
         "name": MAPS,
-        "cpu": _NO_SCHEDULER,
+        "cpu": MAPS,  # handed to the job as ${hpc.cpus}; nothing holds it to that
         "mem": _NO_SCHEDULER,
         "time": _NO_SCHEDULER,
         "queue": _NO_SCHEDULER,
@@ -75,6 +75,9 @@ class LocalScheduler(BaseScheduler):
         "inherit_env": MAPS,
         "env_passthrough": MAPS,
         "workdir": MAPS,
+        "licenses": _NO_SCHEDULER,
+        "devices": _NO_SCHEDULER,
+        "features": _NO_SCHEDULER,
         "array": REJECTS,
         "dependencies": REJECTS,
     }

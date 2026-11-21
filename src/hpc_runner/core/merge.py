@@ -1,7 +1,7 @@
 """The list merge rule (D1), implemented once.
 
 Every list-valued job setting (``modules``, ``modules_path``,
-``modules_path_append``, ``env_unset``, ``resources`` and each scheduler's
+``modules_path_append``, ``env_unset``, ``features`` and each scheduler's
 ``scheduler_args`` list) merges across layers the same way, whether the
 layer is a config section, a later config file or the ``JobSpec``
 (``scheduler_args`` lists are argv and skip the dedupe):
@@ -38,8 +38,7 @@ class Set:
 class Edit:
     """Remove *remove*, then append *add* (TOML: ``{ remove = [...], add = [...] }``).
 
-    Items are removed by value, or by key for keyed lists (``resources``
-    are matched by ``name``).
+    Items are removed by value, or by key where the merge is given one.
     """
 
     remove: tuple[Any, ...]
@@ -62,16 +61,6 @@ def _check_iterable(items: Iterable[Any]) -> Iterable[Any]:
 
 def _identity(item: Any) -> Any:
     return item
-
-
-def resource_key(item: Any) -> Any:
-    """Dedupe key for ``resources`` entries: the resource name."""
-    return item["name"]
-
-
-def key_for(field: str) -> KeyFunc | None:
-    """The dedupe key for list setting *field* (None = by value)."""
-    return resource_key if field == "resources" else None
 
 
 def _append(

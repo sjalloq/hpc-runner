@@ -119,7 +119,7 @@ def test_memory_per_consumable(
         name=f"vmem_{memory_per}",
         cpu=2,
         mem="2G",
-        resources=[{"name": "hostname", "value": "exec1"}],
+        scheduler_args={"sge": ["-l", "hostname=exec1"]},
     )
     job = resolve(spec, config, cluster.host())
     assert directive in scheduler.preview(job).splitlines()
@@ -152,7 +152,7 @@ def test_signal_exit_code(cluster: Cluster) -> None:
 
 def test_h_vmem(cluster: Cluster) -> None:
     """A 200 MB allocation under ``-l h_vmem=50M`` fails (MemoryError or a kill): FAILED."""
-    spec = JobSpec(ALLOC_200M, name="vmem", resources=[{"name": "h_vmem", "value": "50M"}])
+    spec = JobSpec(ALLOC_200M, name="vmem", scheduler_args={"sge": ["-l", "h_vmem=50M"]})
     job = resolve(spec, cluster.config(), cluster.host())
     assert "#$ -l h_vmem=50M" in cluster.scheduler().preview(job).splitlines()
     result = cluster.scheduler().submit(job)

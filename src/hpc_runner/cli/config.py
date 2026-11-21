@@ -177,7 +177,7 @@ time_resource = "h_rt"
 # [types.gpu]
 # tools = ["python"]
 # queue = "gpu"
-# resources = [{name = "gpu", value = 1}]
+# devices = { gpu = 1 }
 """
 
     config_path.write_text(default_config)
@@ -284,12 +284,8 @@ def resolve_cmd(ctx: Context, job_type: str | None, command: tuple[str, ...]) ->
 
 
 def _format_item(value: Any) -> str:
-    from hpc_runner.core.resources import Resource
-
     if value is None:
         return ""
-    if isinstance(value, Resource):
-        return f"{value.name}={value.value}"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, tuple):

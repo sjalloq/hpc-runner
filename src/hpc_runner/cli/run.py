@@ -47,12 +47,25 @@ console = Console()
     help="Set an environment variable in the job (repeatable)",
 )
 @click.option(
-    "-R",
-    "--resource",
-    "resource",
+    "--license",
+    "license_",
     multiple=True,
-    metavar="NAME=VALUE",
-    help="Request a scheduler resource or licence, e.g. gpu=2 (repeatable)",
+    metavar="NAME=N",
+    help="Request N of a licence, e.g. xcelium=1 (repeatable)",
+)
+@click.option(
+    "--device",
+    "device",
+    multiple=True,
+    metavar="NAME=N",
+    help="Request N of a device, e.g. gpu=2 (repeatable)",
+)
+@click.option(
+    "--feature",
+    "feature",
+    multiple=True,
+    metavar="NAME",
+    help="Request a node feature, e.g. bigmem (repeatable)",
 )
 @click.option(
     "-D",
@@ -94,7 +107,9 @@ def run(
     stdout: str | None,
     array: str | None,
     env: tuple[str, ...],
-    resource: tuple[str, ...],
+    license_: tuple[str, ...],
+    device: tuple[str, ...],
+    feature: tuple[str, ...],
     depend: tuple[str, ...],
     scheduler_args: tuple[str, ...],
     batch: bool,
@@ -149,9 +164,8 @@ def run(
         )
     dependencies = _parse_depend(depend)
     env_vars = dict(_parse_pairs(env, "--env", "KEY=VALUE"))
-    resources = [
-        {"name": n, "value": v} for n, v in _parse_pairs(resource, "--resource", "NAME=VALUE")
-    ]
+    licenses = _parse_counts(license_, "--license")
+    devices = _parse_counts(device, "--device")
 
     scheduler = get_scheduler(config=ctx.config)
 
@@ -170,7 +184,9 @@ def run(
         stdout=stdout,
         array=array,
         env_vars=env_vars or None,
-        resources=resources or None,
+        licenses=licenses or None,
+        devices=devices or None,
+        features=list(feature) or None,
         dependencies=dependencies,
         scheduler_args={scheduler.name: passthrough} if passthrough else None,
         interactive=not batch and not array,
@@ -266,6 +282,23 @@ def _parse_pairs(values: tuple[str, ...], option: str, form: str) -> list[tuple[
             raise click.BadParameter(f"expected {form}, got {text!r}", param_hint=option)
         pairs.append((name, value))
     return pairs
+
+
+def _parse_counts(values: tuple[str, ...], option: str) -> dict[str, int]:
+    """Parse repeated ``NAME=N`` options into ``{name: count}``; a repeated name keeps the last.
+
+    Raises:
+        click.BadParameter: A value has no ``=`` or an empty name, or N is
+            not a whole number, 1 or more.
+    """
+    counts: dict[str, int] = {}
+    for name, text in _parse_pairs(values, option, "NAME=N"):
+        if not text.isascii() or not text.isdigit() or int(text) < 1:
+            raise click.BadParameter(
+                f"{name}: expected a whole number, 1 or more, got {text!r}", param_hint=option
+            )
+        counts[name] = int(text)
+    return counts
 
 
 def _parse_depend(values: tuple[str, ...]) -> list["Dependency"]:

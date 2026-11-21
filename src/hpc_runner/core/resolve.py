@@ -15,14 +15,14 @@ from hpc_runner.core.exceptions import ConfigError, NotSupportedError
 from hpc_runner.core.expand import expand
 from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
-from hpc_runner.core.merge import Edit, KeyFunc, Set, key_for, merge_list
-from hpc_runner.core.resources import Resource, ResourceSet
+from hpc_runner.core.merge import Edit, Set, merge_list
 from hpc_runner.core.schema import (
     DICT_FIELDS,
     ENV_NAME,
     EXPANDED_FIELDS,
     FIELD_VALIDATORS,
     LIST_FIELDS,
+    count_problem,
     env_conflicts,
 )
 from hpc_runner.core.spec import JobSpec
@@ -86,7 +86,9 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
             unknown tool, a value references an undefined variable, a
             module entry expands to nothing, an ``env_passthrough`` name is
             not set on the host, the venv has no ``bin/activate``, the
-            spec sets and prepends/appends the same variable, ``mem`` or
+            spec sets and prepends/appends the same variable, a spec's
+            ``licenses`` or ``devices`` entry is not a name with a whole
+            number of 1 or more, ``mem`` or
             ``time`` does not parse (D10), or an output path is empty,
             uses ``${hpc.cpus}`` or ``${hpc.tmpdir}``, or has ``${hpc.*}``
             in its directory part.
@@ -110,13 +112,13 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
                 dicts[key].update({k: (v, layer_name) for k, v in value.items()})
                 origin[key] = layer_name
             elif key in LIST_FIELDS:
-                lists[key] = _merge_tracked(lists[key], value, key_for(key), layer_name)
+                lists[key] = _merge_tracked(lists[key], value, layer_name)
             elif key == "scheduler_args":
                 # scheduler_args lists are argv, so the D1 verbs apply but
                 # not the dedupe: `-l a=1 -l b=2` must keep both `-l`.
                 for sched, args in value.items():
                     sched_args[sched] = _merge_tracked(
-                        sched_args.get(sched, []), args, None, layer_name, dedupe=False
+                        sched_args.get(sched, []), args, layer_name, dedupe=False
                     )
             else:
                 scalars[key] = value
@@ -219,10 +221,11 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
                 )
             env_passthrough[var] = host.env[var]
 
-    resource_pairs = [
-        (Resource(item["name"], item["value"]), layer) for item, layer in lists["resources"]
-    ]
-    resources = ResourceSet(list(tracked("resources", resource_pairs)))
+    def count_map(field: str) -> Mapping[str, int]:
+        provenance[field] = origin.get(field, "package")
+        return MappingProxyType({name: count for name, (count, _) in dicts[field].items()})
+
+    features = tracked("features", lists["features"])
 
     expanded_args = {
         sched: [(exp(arg, f"{layer}: scheduler_args.{sched}"), layer) for arg, layer in pairs]
@@ -252,7 +255,9 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         venv=venv,
         env_unset=env_unset,
         env_passthrough=MappingProxyType(env_passthrough),
-        resources=resources,
+        licenses=count_map("licenses"),
+        devices=count_map("devices"),
+        features=features,
         scheduler_args=scheduler_args,
         dependencies=dependencies,
         array=array,
@@ -366,17 +371,23 @@ def _spec_layer(spec: JobSpec) -> dict[str, Any]:
     same environment checks here, since its names reach the script.
 
     Raises:
-        ConfigError: An environment variable name is not an identifier, or
-            the spec both sets and prepends/appends one variable.
+        ConfigError: An environment variable name is not an identifier,
+            the spec both sets and prepends/appends one variable, or a
+            ``licenses`` or ``devices`` entry is not a name with a count
+            (a whole number, 1 or more).
     """
     layer: dict[str, Any] = {}
     for field in FIELD_VALIDATORS:
         value = getattr(spec, field)
         if value is None:
             continue
-        if field == "resources":
-            value = _resource_layer(value)
         layer[field] = value
+    for field in ("licenses", "devices"):
+        for name, count in (layer.get(field) or {}).items():
+            if not isinstance(name, str) or name == "":
+                raise ConfigError(f"spec: {field}: {name!r} is not a name")
+            if problem := count_problem(count):
+                raise ConfigError(f"spec: {field}.{name}: {problem}")
     for field in ("env_vars", "env_prepend", "env_append", "env_unset", "env_passthrough"):
         for name in _names(layer.get(field)):
             if not ENV_NAME.fullmatch(str(name)):
@@ -404,31 +415,13 @@ def _names(value: Any) -> list[Any]:
     return list(value)
 
 
-def _resource_layer(value: Any) -> Any:
-    """Normalise a spec's resources (ResourceSet, Resources or dicts) to dicts."""
-
-    def item(entry: Any) -> dict[str, Any]:
-        if isinstance(entry, Resource):
-            return {"name": entry.name, "value": entry.value}
-        return {"name": entry["name"], "value": entry["value"]}
-
-    if isinstance(value, Set):
-        return Set([item(e) for e in value.items])
-    if isinstance(value, Edit):
-        return Edit(remove=[item(e) for e in value.remove], add=[item(e) for e in value.add])
-    return [item(e) for e in value]
-
-
-def _merge_tracked(
-    acc: _Tracked, value: Any, key: KeyFunc | None, layer: str, *, dedupe: bool = True
-) -> _Tracked:
+def _merge_tracked(acc: _Tracked, value: Any, layer: str, *, dedupe: bool = True) -> _Tracked:
     """:func:`merge_list` over items paired with their contributing layer.
 
-    An item already present unchanged keeps its earlier layer; a new item,
-    a keyed item whose value changed, and every item of a ``Set`` take
-    *layer*.
+    An item already present keeps its earlier layer; a new item and every
+    item of a ``Set`` take *layer*.
     """
-    merged = merge_list([item for item, _ in acc], value, key=key, dedupe=dedupe)
+    merged = merge_list([item for item, _ in acc], value, dedupe=dedupe)
     if isinstance(value, Set):
         return [(item, layer) for item in merged]
     if not dedupe:

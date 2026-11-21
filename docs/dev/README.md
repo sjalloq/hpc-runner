@@ -7,8 +7,8 @@ update it whenever a status or a next action changes. User documentation is
 
 ## Next actions, in order
 
-1. `slurm/PLAN.md`, "Order of work", from step 1 (the three maps replace
-   `resources`). The list is all the remaining Slurm work. It has no open questions.
+1. `slurm/PLAN.md`, "Order of work", from step 1 (config layers override;
+   then the three maps, built but uncommitted). The list is all the remaining Slurm work. It has no open questions.
 
 Anything missing, unverified or undecided that belongs to no plan is in
 `FOLLOW_UPS.md`. Add to it whenever work is left unported or unrun.
@@ -17,7 +17,7 @@ Anything missing, unverified or undecided that belongs to no plan is in
 
 | Work | Status | Read | What is left |
 |---|---|---|---|
-| Slurm backend | Research closed; plan consolidated 2026-11-17; `hpc run` exit code, option removals, the option table and `hpc cancel` built (SGE, local), no Slurm code yet | `slurm/PLAN.md` | Its "Order of work" (8 steps) |
+| Slurm backend | Research closed; plan consolidated 2026-11-17; `hpc run` exit code, option removals, the option table and `hpc cancel` built (SGE, local), no Slurm code yet | `slurm/PLAN.md` | Its "Order of work" (9 steps) |
 | Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
 | SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | See `FOLLOW_UPS.md` ("Testbed stacks") |
 | Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |
@@ -37,6 +37,7 @@ Anything missing, unverified or undecided that belongs to no plan is in
 | `trace/DESIGN.md` | What `hpc --trace` and `[trace]` record, and why |
 | `cli/RUN_ARG_PARSING.md` | Record of the `--` passthrough design and why `-S/--scheduler-args` replaced it |
 | `sge-xml-defects.md` | Reference: four defects in gridengine XML output and how the parser repairs each |
+| `SCHEDULER_OPTIONS.md` | The spec for options: what hpc-runner does with each option on each scheduler (SGE, Slurm, local), its own rules with reasons, the flag for each option, and what the interactive commands do differently. The suite checks the code against it |
 | `tui/TEXTUAL_STYLING_COOKBOOK.md` | Rules and checklist for styling `hpc monitor` |
 | `tui/TUI_HORIZONTAL_SCROLLBAR.md` | How the job table avoids a horizontal scrollbar |
 | `slurm/PLAN.md` | The Slurm plan: what is decided, all remaining work in order, open questions |

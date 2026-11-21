@@ -18,7 +18,7 @@ else:
 
 from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.expand import CONFIG_DIR, bind_config_dir, expand
-from hpc_runner.core.merge import Edit, Set, compose, is_list_value, key_for
+from hpc_runner.core.merge import Edit, Set, compose, is_list_value
 from hpc_runner.core.schema import EXPANDED_FIELDS, find_line, validate_file
 
 if TYPE_CHECKING:
@@ -172,21 +172,15 @@ def _match_contiguous(haystack: list[str], needle: list[str]) -> bool:
 def _merge(base: dict[str, Any], override: dict[str, Any], parent: str = "") -> dict[str, Any]:
     """Merge two config files' tables: dicts recurse, lists compose per D1.
 
-    ``resources`` lists dedupe by name; the per-scheduler lists under
-    ``scheduler_args`` (*parent*) are argv and do not dedupe. Scalars:
-    later wins.
+    The per-scheduler lists under ``scheduler_args`` (*parent*) are argv
+    and do not dedupe. Scalars: later wins.
     """
     result = base.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = _merge(result[key], value, key)
         elif key in result and is_list_value(result[key]) and is_list_value(value):
-            result[key] = compose(
-                result[key],
-                value,
-                key=key_for(key),
-                dedupe=parent != "scheduler_args",
-            )
+            result[key] = compose(result[key], value, dedupe=parent != "scheduler_args")
         else:
             result[key] = value
     return result

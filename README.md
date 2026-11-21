@@ -12,8 +12,8 @@ Full documentation: <https://sjalloq.github.io/hpc-runner/>
 ## Features
 
 - **One CLI and one Python API** in front of the scheduler's own commands.
-- **Config by tool or job type**: queue, cpu, mem, time, modules and
-  resources keyed on the command's first word, or on a `-t` type for
+- **Config by tool or job type**: queue, cpu, mem, time, modules,
+  licences and devices keyed on the command's first word, or on a `-t` type for
   makefiles and scripts.
 - **Reproducible environments**: every job script runs `module purge` and
   loads the configured versions.
@@ -106,7 +106,7 @@ memory_resource = "mem_free"
 [tools.xcelium]
 commands = ["xrun", "xmvlog", "xmelab", "simvision"]   # one entry, several executables
 modules = ["xcelium/23.09"]
-resources = [{ name = "xcelium_lic", value = 1 }]
+licenses = { xcelium_lic = 1 }
 
 [tools.slang]
 modules = ["slang/0.9"]

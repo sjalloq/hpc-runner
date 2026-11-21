@@ -168,8 +168,16 @@ class TestRunCommand:
         assert "#$ -t 1-4" in result.output
 
     def test_removed_options_rejected(self, runner):
-        """--job-type, --job-name, --interactive, --extra-module no longer exist."""
-        for opt in ("--job-type", "--job-name", "--interactive", "--extra-module", "--nodes"):
+        """Options that no longer exist get click's unknown-option error."""
+        for opt in (
+            "--job-type",
+            "--job-name",
+            "--interactive",
+            "--extra-module",
+            "--nodes",
+            "--resource",
+            "-R",
+        ):
             result = runner.invoke(cli, ["run", "--dry-run", opt, "x", "echo"])
             assert result.exit_code != 0, opt
             assert "No such option" in result.output, opt
@@ -541,8 +549,9 @@ class TestPassthroughDirectives:
         assert "#$ -q batch.q -l gpu=2" in result.output
 
 
-class TestEnvResourceWaitOptions:
-    """--env and --resource reach the spec; --wait needs --batch; --local is gone."""
+class TestEnvRequestWaitOptions:
+    """--env, --license, --device and --feature reach the spec; --wait needs --batch;
+    --local is gone."""
 
     @pytest.fixture
     def runner(self):
@@ -563,15 +572,50 @@ class TestEnvResourceWaitOptions:
         assert result.exit_code == 2
         assert "KEY=VALUE" in result.output
 
-    def test_resource_requests(self, runner, sge_dirs):
-        out = self._dry(runner, "--resource", "gpu=2", "--resource", "xcelium_lic=1", "echo")
-        assert "#$ -l gpu=2" in out
-        assert "#$ -l xcelium_lic=1" in out
+    def test_license_device_feature_requests(self, runner, sge_dirs):
+        out = self._dry(
+            runner,
+            *("--license", "xcelium_lic=1", "--license", "vcs=2"),
+            *("--device", "gpu=2"),
+            *("--feature", "bigmem", "--feature", "avx2"),
+            "echo",
+        )
+        for request in ("xcelium_lic=1", "vcs=2", "gpu=2", "bigmem=1", "avx2=1"):
+            assert f"#$ -l {request}" in out
 
-    def test_resource_bad_form(self, runner):
-        result = runner.invoke(cli, ["run", "--resource", "=2", "echo"])
+    @pytest.mark.parametrize("option", ["--license", "--device"])
+    def test_same_name_twice_last_wins(self, runner, sge_dirs, option):
+        out = self._dry(runner, option, "x=1", option, "y=1", option, "x=3", "echo")
+        assert "#$ -l x=3" in out
+        assert "#$ -l x=1" not in out
+        assert "#$ -l y=1" in out
+
+    def test_command_line_name_replaces_the_same_name_from_config(
+        self, runner, sge_dirs, tmp_path, monkeypatch
+    ):
+        (tmp_path / "hpc-runner.toml").write_text(
+            'config_version = 1\nscheduler = "sge"\n[defaults]\n'
+            "licenses = { xcelium_lic = 1, vcs = 1 }\ndevices = { gpu = 1 }\n"
+            'features = ["bigmem"]\n'
+        )
+        monkeypatch.chdir(tmp_path)
+        out = self._dry(
+            runner,
+            *("--license", "xcelium_lic=2", "--device", "gpu=4", "--feature", "avx2"),
+            "echo",
+        )
+        requests = [line.split("-l ")[1].strip() for line in out.splitlines() if "#$ -l " in line]
+        assert requests == ["xcelium_lic=2", "vcs=1", "gpu=4", "bigmem=1", "avx2=1"]
+
+    @pytest.mark.parametrize("option", ["--license", "--device"])
+    @pytest.mark.parametrize(
+        "value", ["=2", "gpu", "gpu=", "gpu=0", "gpu=-1", "gpu=1.5", "gpu=two"]
+    )
+    def test_count_bad_form(self, runner, option, value):
+        result = runner.invoke(cli, ["run", "--dry-run", option, value, "echo"])
         assert result.exit_code == 2
-        assert "NAME=VALUE" in result.output
+        assert option in result.output
+        assert "NAME=N" in result.output or "expected a whole number, 1 or more" in result.output
 
     def test_wait_without_batch_is_usage_error(self, runner):
         result = runner.invoke(cli, ["run", "--wait", "echo"])

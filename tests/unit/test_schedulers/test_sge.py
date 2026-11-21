@@ -1047,11 +1047,16 @@ class TestSGESubmissionContract:
         assert result.job is job
         argv = calls[0]
         assert argv[:3] == ["qrsh", "-now", "no"]
-        # qrsh rejects -N/-o/-e/-j/-S; those are skipped
-        for flag in ("-N", "-o", "-e", "-j", "-S"):
+        # qrsh writes no output file and has no -S; those are skipped
+        for flag in ("-o", "-e", "-j", "-S"):
             assert flag not in argv
         assert argv[3] == "-cwd"  # always: the job runs in its workdir
-        for pair in (["-q", "interactive.q"], ["-P", "proj1"], ["-pe", "smp", "2"]):
+        for pair in (
+            ["-N", "gui"],
+            ["-q", "interactive.q"],
+            ["-P", "proj1"],
+            ["-pe", "smp", "2"],
+        ):
             idx = argv.index(pair[0])
             assert argv[idx : idx + len(pair)] == pair
         assert argv[-3:-1] == ["-l", "display=1"]
@@ -1289,6 +1294,38 @@ class TestSGEUnits:
         assert "#$ -l h_rt=48:00:00" in self._script(make_job(time="2d"))
 
 
+class TestSGERequests:
+    """Licences, devices and features: each ``-l``, on batch and interactive jobs alike."""
+
+    FIELDS = {
+        "licenses": {"xcelium": 1, "vcs": 2},
+        "devices": {"gpu": 2},
+        "features": ["bigmem", "avx2"],
+    }
+    REQUESTS = ["xcelium=1", "vcs=2", "gpu=2", "bigmem=1", "avx2=1"]
+
+    def test_batch_directives(self):
+        script = SGEScheduler(HPCConfig()).preview(make_job(**self.FIELDS))
+        lines = [line for line in script.splitlines() if line.startswith("#$ -l ")]
+        assert lines == [f"#$ -l {request}" for request in self.REQUESTS]
+
+    def test_batch_requests_come_before_scheduler_args(self):
+        job = make_job(licenses={"xcelium": 1}, scheduler_args={"sge": ["-l", "scratch=20G"]})
+        lines = SGEScheduler(HPCConfig()).preview(job).splitlines()
+        assert lines.index("#$ -l xcelium=1") < lines.index("#$ -l scratch=20G")
+
+    def test_qrsh_carries_all_three(self):
+        job = make_job(interactive=True, scheduler_args={"sge": ["-now", "yes"]}, **self.FIELDS)
+        cmd = SGEScheduler(HPCConfig())._build_qrsh_command(job, "/s.sh")
+        requests = [flag for request in self.REQUESTS for flag in ("-l", request)]
+        assert cmd[-3 - len(requests) :] == [*requests, "-now", "yes", "/s.sh"]
+
+    def test_no_requests_no_arguments(self):
+        scheduler = SGEScheduler(HPCConfig())
+        assert "#$ -l " not in scheduler.preview(make_job())
+        assert "-l" not in scheduler._build_qrsh_command(make_job(interactive=True), "/s.sh")
+
+
 class TestDirectiveWhitespace:
     """BUG-T1 / D-T41: a value a ``#$`` line cannot carry is refused before qsub."""
 
@@ -1308,11 +1345,16 @@ class TestDirectiveWhitespace:
         assert not any(call.args[0][0] == "qsub" for call in mock_sge_commands.call_args_list)
         assert "stdout" in RENDER_ORDER
 
-    def test_resource_with_space_is_refused(self, tmp_path):
+    @pytest.mark.parametrize(
+        "fields",
+        [{"licenses": {"a b": 1}}, {"devices": {"a b": 1}}, {"features": ["a b"]}],
+    )
+    def test_request_name_with_space_is_refused(self, tmp_path, fields):
         from hpc_runner.core.exceptions import SubmissionError
 
-        job = make_job("pwd", workdir=str(tmp_path), resources=[{"name": "lic", "value": "a b"}])
-        with pytest.raises(SubmissionError, match="resource 'lic=a b'"):
+        (field,) = fields
+        job = make_job("pwd", workdir=str(tmp_path), **fields)
+        with pytest.raises(SubmissionError, match=f"{field} name 'a b'"):
             SGEScheduler(HPCConfig()).preview(job)
 
     def test_name_with_space_is_sanitised_not_refused(self, tmp_path):

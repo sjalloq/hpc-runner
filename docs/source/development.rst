@@ -55,7 +55,6 @@ Core (``src/hpc_runner/core/``)
   does not name), SKIPPED, UNKNOWN. ``reduce_statuses()`` gives one status
   for several (an array, a pipeline step): active while any is, COMPLETED
   only when all are, otherwise the worst.
-- ``ResourceSet`` (``resources.py``): named resources (gpu, licences, ...).
 - ``HPCConfig`` (``config.py``, schema in ``schema.py``): typed, validated
   TOML (``config_version = 1``; unknown keys are errors) with two-level
   discovery, ``$HPC_RUNNER_CONFIG`` or ``<git-root>/hpc-runner.toml`` then

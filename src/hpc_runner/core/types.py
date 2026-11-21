@@ -8,6 +8,3 @@ PathLike: TypeAlias = str | Path
 
 # Command types
 Command: TypeAlias = str | list[str]
-
-# Resource value types
-ResourceValue: TypeAlias = int | str

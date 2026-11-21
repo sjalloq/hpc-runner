@@ -69,8 +69,13 @@ Options:
 - ``-a, --array TEXT`` (e.g. ``1-100``, ``1-100:10%5``; implies batch)
 - ``-E, --env KEY=VALUE`` (repeatable; sets ``KEY`` in the job, added to the
   config's ``env_vars``; ``$VAR`` is resolved where you submit)
-- ``-R, --resource NAME=VALUE`` (repeatable; requests a scheduler resource or
-  licence, added to the config's ``resources``; SGE ``-l NAME=VALUE``)
+- ``--license NAME=N`` (repeatable; requests ``N`` of a licence; a name here
+  replaces the same name in the config's ``licenses``, and the last of a
+  repeated name wins; SGE ``-l NAME=N``)
+- ``--device NAME=N`` (repeatable; requests ``N`` of a device such as a GPU,
+  merged with the config's ``devices`` the same way; SGE ``-l NAME=N``)
+- ``--feature NAME`` (repeatable; requests a node feature, added to the
+  config's ``features``; SGE ``-l NAME=1``)
 - ``-D, --depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
   e.g. ``afterok:123:124,afterany:125``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
@@ -121,7 +126,7 @@ Examples:
    hpc run -t xcelium make sim
    hpc run --batch --cpu 4 --mem 16G --time 2:00:00 python train.py
    hpc run --batch -t gpu python train.py
-   hpc run --batch --env OMP_NUM_THREADS=4 --resource xcelium_lic=1 make sim
+   hpc run --batch --env OMP_NUM_THREADS=4 --license xcelium_lic=1 make sim
    hpc run -S '-l gpu=1 -P proj' python train.py
    hpc run --cpu 4 -S '-l scratch=50G' mpirun -N 4 ./sim
 
@@ -171,8 +176,9 @@ Other commands
   with ``--all``), optionally only pending or only running ones
 
   Either way the jobs are listed and confirmed once (``--force`` skips the
-  question). It exits 1 if any job could not be cancelled; answering "no"
-  exits 0.
+  question). A job id that is not one of your active jobs is listed as
+  ``UNKNOWN`` and left alone. It exits 1 if the scheduler refused to cancel
+  a job; answering "no" exits 0.
 - ``hpc monitor [--refresh SECONDS]``: launch the TUI job monitor
 - ``hpc config show [--raw]``: print the active configuration (merged, or the
   raw file contents)

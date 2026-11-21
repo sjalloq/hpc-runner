@@ -9,8 +9,7 @@
 #$ -o /work/$JOB_NAME.$JOB_ID.out
 #$ -j y
 #$ -l xcelium_lic=1
-#$ -l scratch=20G
-#$ -l h=node01 -binding linear:1
+#$ -l scratch=20G -l h=node01 -binding linear:1
 #$ -v DISPLAY=:0
 
 # Exit on error
