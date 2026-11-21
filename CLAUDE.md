@@ -29,6 +29,23 @@ hpc run --dry-run echo hello                      # preview a script; HPC_SCHEDU
   written as `unverified`, never as fact. A plan that touches existing code
   includes a pass over that code, with the same care as the pass over the
   external system. Procedure: `docs/agents/evidence.md`.
+- **A kept claim is a tested claim.** Provenance governs conversation and
+  research. What is kept (the spec in `docs/dev/`, the user docs, the code)
+  states a fact about what hpc-runner does, or about how a scheduler
+  responds to what hpc-runner sends, only if a test ultimately proves it:
+  one run against a real scheduler in the testbed, or against a capture
+  taken from that testbed. The test is the evidence, so the document states
+  the fact in one line with no citation, and research logs are deleted once
+  the test exists. A claim with no test stays out of the spec and the
+  product; it goes in `docs/dev/FOLLOW_UPS.md` as unproven.
+- **Test with judgement.** Test what hpc-runner does and the scheduler
+  behaviour it depends on. Write no test that a scheduler accepts the
+  arguments its own documentation lists, and none for scheduler behaviour
+  hpc-runner never touches. A test states the expected answer literally; a
+  test that passes for a wrong answer is not evidence.
+- **hpc-runner has opinions, and states them.** Where it refuses an option,
+  ignores one, or handles one its own way, that is a rule: in the spec, with
+  a test, and in the user docs with the reason.
 - **Research is finished only when it is verified.** Every claim in a
   research file has been checked against its source by a second, independent
   pass. A file with unchecked or unconfirmed claims is reported as
