@@ -12,7 +12,6 @@ from rich.table import Table
 
 from hpc_runner.cli._context import Context, pass_context
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.core.merge import Edit, Set
 
 console = Console()
 
@@ -101,15 +100,6 @@ def show(ctx: Context, raw: bool) -> None:
 
 def _format_toml_value(value: Any) -> str:
     """Format a value for TOML output."""
-    if isinstance(value, Set):
-        return f"{{ set = {_format_toml_value(list(value.items))} }}"
-    if isinstance(value, Edit):
-        parts = []
-        if value.remove:
-            parts.append(f"remove = {_format_toml_value(list(value.remove))}")
-        if value.add:
-            parts.append(f"add = {_format_toml_value(list(value.add))}")
-        return f"{{ {', '.join(parts)} }}"
     if isinstance(value, bool):
         return "true" if value else "false"
     elif isinstance(value, str):
@@ -185,15 +175,14 @@ time_resource = "h_rt"
 
 
 @config_cmd.command("path")
-@click.option("--all", "show_all", is_flag=True, help="Show all configs in merge chain")
+@click.option("--all", "show_all", is_flag=True, help="Show every config file read, in order")
 @pass_context
 def path(ctx: Context, show_all: bool) -> None:
     """Show path to active configuration file(s)."""
-    from hpc_runner.core.config import HPC_CONFIG_ENV_VAR, _resolve_extends, find_config_files
+    from hpc_runner.core.config import HPC_CONFIG_ENV_VAR, find_config_files
 
     if ctx.config_path:
-        # Explicit config - show its extends chain
-        config_files = _resolve_extends(ctx.config_path)
+        config_files = [ctx.config_path.resolve()]
     else:
         config_files = find_config_files()
 
@@ -206,7 +195,7 @@ def path(ctx: Context, show_all: bool) -> None:
         return
 
     if show_all or len(config_files) > 1:
-        console.print("[bold]Config merge chain[/bold] (first = lowest priority):\n")
+        console.print("[bold]Config files[/bold] (project file, then local file):\n")
         for i, p in enumerate(config_files, 1):
             console.print(f"  {i}. {p}")
     else:
@@ -219,8 +208,8 @@ def path(ctx: Context, show_all: bool) -> None:
 def check(ctx: Context, path: Path | None) -> None:
     """Validate configuration and report every problem.
 
-    Checks PATH (with its extends chain), else --config, else the
-    discovered files. Exits 1 if anything is wrong.
+    Checks PATH, else --config, else the discovered files. Exits 1 if
+    anything is wrong.
     """
     from hpc_runner.core.config import check_config
 
@@ -273,11 +262,9 @@ def resolve_cmd(ctx: Context, job_type: str | None, command: tuple[str, ...]) ->
             if not source:
                 table.add_row(f.name, "", "")
             for item, layer in source:
-                if f.name == "scheduler_args":
-                    sched, arg = item
-                    table.add_row(f"scheduler_args.{sched}", escape(arg), layer)
-                else:
-                    table.add_row(f.name, escape(_format_item(item)), layer)
+                # A licence or device is a (name, count) pair.
+                shown = f"{item[0]}={item[1]}" if isinstance(item, tuple) else _format_item(item)
+                table.add_row(f.name, escape(shown), layer)
             continue
         table.add_row(f.name, escape(_format_item(getattr(job, f.name))), source)
     console.print(table)

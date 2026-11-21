@@ -69,7 +69,6 @@ export PATH=/opt/tools/bin${PATH:+:$PATH}
 export PYTHONPATH=${PYTHONPATH:+$PYTHONPATH:}/work/lib
 
 # Set environment variables
-export PYTHONUNBUFFERED=1
 export MAKEFLAGS=-j"$NSLOTS"
 export GREETING='it'"'"'s $5 "quoted"'
 # --- end hpc-runner environment ---

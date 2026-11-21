@@ -27,7 +27,9 @@ RENDER_ORDER: tuple[str, ...] = (
 #: The options a scheduler has to place, as opposed to those the job script
 #: carries the same way everywhere (modules, ``env_*``, venv). Every
 #: scheduler says, for a batch and for an interactive job, whether it maps
-#: or rejects each one (``BaseScheduler.BATCH_OPTIONS``).
+#: or rejects each one (``BaseScheduler.BATCH_OPTIONS``). ``scheduler_args``
+#: is among them: a scheduler passes the raw arguments on, or has nothing
+#: to pass them to.
 SCHEDULER_OPTIONS: tuple[str, ...] = (
     "name",
     "cpu",
@@ -45,6 +47,7 @@ SCHEDULER_OPTIONS: tuple[str, ...] = (
     "features",
     "array",
     "dependencies",
+    "scheduler_args",
 )
 
 
@@ -60,18 +63,19 @@ class Job:
     ``"defaults"``, ``"tools.<name>"``, ``"tools.<name>.options.<key>"``,
     ``"types.<name>"``, ``"spec"``, ``"package"`` and ``"host"``.
 
-    - Scalar and dict fields map to the one layer name that supplied the
-      value (for dicts, ``licenses`` and ``devices`` among them, the most
-      specific layer that set any key).
-    - List fields (``modules``, ``modules_path``, ``modules_path_append``,
-      ``env_unset``, ``env_passthrough``, ``features``) map to a tuple of
-      ``(item, layer)`` pairs, one per item in order. ``env_passthrough``
-      lists the names even when ``inherit_env`` makes them redundant and
-      the field itself is empty.
+    - A field that overrides (every field but the three below) maps to the
+      one layer name that supplied its value, lists and tables included:
+      the whole value is that layer's.
+    - ``env_passthrough`` maps to a tuple of ``(name, layer)`` pairs, every
+      pair with the one layer that set the list. It lists the names even
+      when ``inherit_env`` makes them redundant and the field itself is
+      empty.
+    - ``modules`` adds up across layers and maps to a tuple of
+      ``(module, layer)`` pairs, one per module in order.
+    - ``licenses`` and ``devices`` add up too and map to a tuple of
+      ``((name, count), layer)`` pairs: the layer that set that count.
     - ``venv`` is ``"captured from VIRTUAL_ENV"``, the layer that set the
       path, ``"<layer> (disabled)"`` for ``venv = false``, or ``"package"``.
-    - ``scheduler_args`` maps to a tuple of ``((scheduler, arg), layer)``
-      pairs, schedulers in first-seen order.
     """
 
     command: str
@@ -107,7 +111,8 @@ class Job:
     licenses: Mapping[str, int]
     devices: Mapping[str, int]
     features: tuple[str, ...]
-    scheduler_args: Mapping[str, tuple[str, ...]]
+    # Raw arguments for the scheduler; the local scheduler ignores them.
+    scheduler_args: tuple[str, ...]
     dependencies: tuple[Dependency, ...]
     array: ArrayRange | None
     interactive: bool

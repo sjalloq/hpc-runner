@@ -38,7 +38,7 @@ def _job_id(result: JobResult) -> str:
 
 def _held(cluster: Cluster, command: str, name: str) -> str:
     """Submit *command* in user hold (``-h``); the id, PENDING until released."""
-    return _job_id(_submit(cluster, JobSpec(command, name=name, scheduler_args={"sge": ["-h"]})))
+    return _job_id(_submit(cluster, JobSpec(command, name=name, scheduler_args=["-h"])))
 
 
 def _qacct_has(cluster: Cluster, job_id: str) -> bool:
@@ -167,9 +167,7 @@ def test_requeued_job_ends_with_its_final_record(cluster: Cluster) -> None:
     qacct holds a ``failed 25`` record for the first run; the reader must take
     the last one (COMPLETED, exit 0), not the reschedule.
     """
-    handle = _submit(
-        cluster, JobSpec("sleep 8", name="requeue", scheduler_args={"sge": ["-r", "y"]})
-    )
+    handle = _submit(cluster, JobSpec("sleep 8", name="requeue", scheduler_args=["-r", "y"]))
     job_id = _job_id(handle)
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
     cluster.run(["qmod", "-rj", job_id], user="root")

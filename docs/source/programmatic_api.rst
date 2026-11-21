@@ -41,9 +41,10 @@ A job goes through three values, each with one job:
    "not specified". It reads no config and no environment.
 
 ``resolve(spec, config, host) -> Job``
-   The only place merge rules live. Scalars: the spec wins, then the most
-   specific config layer, then the package default. Lists append across
-   layers (see :ref:`list-merging`); a spec list is one more layer. ``config`` and ``host`` are
+   The only place the layer rules live (:ref:`layer-rules`). ``modules``,
+   ``licenses`` and ``devices`` add up across the config layers and the
+   spec. For every other field the spec wins, then the most specific config
+   layer, then the package default. ``config`` and ``host`` are
    always explicit: ``host`` carries the submit-side facts (environment,
    working directory, user) so the result does not depend on hidden process
    state.
@@ -118,12 +119,12 @@ replaces the same name from config:
    JobSpec("xrun top.f", licenses={"xcelium": 1}, devices={"gpu": 2}, features=["bigmem"])
 
 Raw scheduler flags with no hpc-runner equivalent go in ``scheduler_args``,
-keyed by scheduler. Each list is appended to config's ``scheduler_args``
-for that scheduler, and only the active scheduler's list is used:
+a plain list. It replaces the config's ``scheduler_args``. The local
+scheduler ignores it:
 
 .. code-block:: python
 
-   JobSpec("python train.py", scheduler_args={"sge": ["-l", "gpu=2"]})
+   JobSpec("python train.py", scheduler_args=["-l", "gpu=2"])
 
 
 Submitting jobs
@@ -301,17 +302,19 @@ matching rules.
    # arguments trigger option-specific overrides automatically:
    job = resolve(JobSpec("fusesoc run --tool slang core:v:n"), config, host)
 
-A list set on the spec (``modules``, ``modules_path``, ``features``, ...)
-appends to the config's list, exactly like a config layer. Use ``Set`` to
-replace it or ``Edit`` to remove items:
+The spec is the last layer and follows the same rules as a config layer
+(:ref:`layer-rules`). ``modules``, ``licenses`` and ``devices`` add to the
+config's. Any other field set on the spec replaces the config's value,
+whole; an empty list or dict clears it:
 
 .. code-block:: python
 
-   from hpc_runner import Edit, JobSpec, Set
+   from hpc_runner import JobSpec
 
-   JobSpec("python train.py", modules=["cuda/12"])          # config's + cuda/12
-   JobSpec("python train.py", modules=Set(["python/3.12"]))  # only python/3.12
-   JobSpec("python train.py", modules=Edit(remove=["python/3.11"], add=["python/3.12"]))
+   JobSpec("python train.py", modules=["cuda/12"])        # config's modules + cuda/12
+   JobSpec("python train.py", features=["avx2"])          # only avx2
+   JobSpec("python train.py", env_vars={})                # no variables set
+   JobSpec("python train.py", modules_path=["/my/mf"])    # instead of the one in [defaults]
 
 
 Job dependencies

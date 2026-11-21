@@ -80,29 +80,28 @@ class TestBindConfigDir:
 class TestConfigDirFromFile:
     """${CONFIG_DIR} is the directory of the file that set the value."""
 
-    def test_two_file_extends_chain(self, tmp_path):
-        base_dir = tmp_path / "site"
-        proj_dir = tmp_path / "proj"
-        base_dir.mkdir()
-        proj_dir.mkdir()
-        (base_dir / "base.toml").write_text(
+    def test_project_file_and_local_file(self, tmp_path, monkeypatch):
+        """Each file's values get that file's directory."""
+        below = tmp_path / "below"
+        below.mkdir()
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "hpc-runner.toml").write_text(
             "config_version = 1\n"
             '[defaults]\nmodules_path = ["${CONFIG_DIR}/modulefiles"]\n'
             '[defaults.env_vars]\nSITE = "${CONFIG_DIR}"\n'
+            '[tools.echo.env_prepend]\nPATH = "${CONFIG_DIR}/bin"\n'
         )
-        proj = proj_dir / "hpc-runner.toml"
-        proj.write_text(
-            "config_version = 1\n"
-            'extends = "../site/base.toml"\n'
-            '[defaults]\nmodules_path = ["${CONFIG_DIR}/mf"]\n'
-            '[defaults.env_prepend]\nPATH = "${CONFIG_DIR}/bin"\n'
+        (below / "hpc-runner.toml").write_text(
+            'config_version = 1\n[tools.echo]\nmodules = ["${CONFIG_DIR}/mf/tool"]\n'
         )
-        config = load_config(proj)
-        job = resolve(JobSpec("echo hi"), config, make_host())
-        site, project = str(base_dir.resolve()), str(proj_dir.resolve())
-        assert job.modules_path == (f"{site}/modulefiles", f"{project}/mf")
-        assert job.env_vars["SITE"] == site
+        monkeypatch.delenv("HPC_RUNNER_CONFIG", raising=False)
+        monkeypatch.chdir(below)
+        job = resolve(JobSpec("echo hi"), load_config(), make_host())
+        project, local = str(tmp_path.resolve()), str(below.resolve())
+        assert job.modules_path == (f"{project}/modulefiles",)
+        assert job.env_vars["SITE"] == project
         assert job.env_prepend["PATH"] == f"{project}/bin"
+        assert job.modules == (f"{local}/mf/tool",)
 
     def test_spec_value_is_error(self, tmp_path):
         proj = tmp_path / "hpc-runner.toml"
@@ -116,11 +115,11 @@ class TestConfigDirFromFile:
             "config_version = 1\n"
             '[tools.xrun.options."-gui"]\nworkdir = "${CONFIG_DIR}/gui"\n'
             '[types.t]\nstdout = "${CONFIG_DIR}/t.out"\n'
-            '[types.t.scheduler_args]\nsge = ["-l", "x=${CONFIG_DIR}"]\n'
+            'scheduler_args = ["-l", "x=${CONFIG_DIR}"]\n'
         )
         config = load_config(proj)
         here = str(tmp_path.resolve())
         assert resolve(JobSpec("xrun -gui"), config, make_host()).workdir == f"{here}/gui"
         job = resolve(JobSpec("x", type="t"), config, make_host())
         assert job.stdout == f"{here}/t.out"
-        assert job.scheduler_args["sge"] == ("-l", f"x={here}")
+        assert job.scheduler_args == ("-l", f"x={here}")

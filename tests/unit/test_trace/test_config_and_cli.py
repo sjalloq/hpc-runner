@@ -45,13 +45,6 @@ class TestTraceSection:
             load_config(_write(tmp_path, "trace = true\n"))
         assert "trace: expected a table" in str(err.value)
 
-    def test_later_file_wins(self, tmp_path):
-        (tmp_path / "base").mkdir()
-        base = _write(tmp_path / "base", '[trace]\nenabled = true\ndir = "/a"\n')
-        child = tmp_path / "hpc-runner.toml"
-        child.write_text(f'config_version = 1\nextends = "{base}"\n[trace]\ndir = "/b"\n')
-        assert load_config(child).trace == {"enabled": True, "dir": "/b"}
-
     def test_config_show_prints_it(self, tmp_path):
         path = _write(tmp_path, '[trace]\nenabled = true\ndir = "/t"\n')
         result = CliRunner().invoke(cli, ["--config", str(path), "config", "show"])

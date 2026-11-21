@@ -7,7 +7,6 @@ from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING
 
 from hpc_runner.core.dependency import Dependency, DependencyType, dependency_on
-from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.units import Duration, Memory
 
 if TYPE_CHECKING:
@@ -19,9 +18,10 @@ class JobSpec:
     """A job request as the caller wrote it.
 
     ``None`` means "not specified": ``resolve()`` fills it from config, then
-    from the package default. List fields merge with config exactly as a
-    config layer does (D1): a plain list appends to the config's list,
-    ``Set([...])`` replaces it, ``Edit(remove=[...], add=[...])`` edits it.
+    from the package default. The spec is the last layer and combines with
+    config as a config layer does: ``modules``, ``licenses`` and ``devices``
+    add to the config's; any other field that is set replaces the config's
+    value whole, and an empty list or dict clears it.
     A spec does no config or environment access and no validation beyond
     types; it may be built up incrementally.
 
@@ -54,24 +54,28 @@ class JobSpec:
     env_vars: dict[str, str] | None = None
     env_prepend: dict[str, str] | None = None
     env_append: dict[str, str] | None = None
-    env_unset: list[str] | Set | Edit | None = None
+    env_unset: list[str] | None = None
     # Submit-host variables passed explicitly when inherit_env is false.
-    env_passthrough: list[str] | Set | Edit | None = None
+    env_passthrough: list[str] | None = None
 
-    modules: list[str] | Set | Edit | None = None
-    modules_path: list[str] | Set | Edit | None = None
-    modules_path_append: list[str] | Set | Edit | None = None
+    # Added to the config's modules.
+    modules: list[str] | None = None
+    # Where modules are read from; a value here replaces the one in
+    # [defaults], the only config section that sets it.
+    modules_path: list[str] | None = None
+    modules_path_append: list[str] | None = None
 
     # Licences and devices by name, each with a count (a whole number, 1 or
-    # more); a name here replaces the same name from config.
+    # more), added to the config's; a name here replaces the same name's
+    # count from config.
     licenses: dict[str, int] | None = None
     devices: dict[str, int] | None = None
     # Node features by name.
-    features: list[str] | Set | Edit | None = None
+    features: list[str] | None = None
 
-    # Raw per-scheduler passthrough, e.g. {"sge": ["-l", "gpu=2"]}; each list
-    # merges with config's per D1. Only the active scheduler's list is used.
-    scheduler_args: dict[str, list[str] | Set | Edit] | None = None
+    # Raw arguments for the scheduler, e.g. ["-l", "gpu=2"]. The local
+    # scheduler ignores them.
+    scheduler_args: list[str] | None = None
 
     dependencies: list[Dependency] = field(default_factory=list)
     array: str | None = None  # "1-100", "1-100:10", "1-100%5"; arrays are always batch

@@ -8,8 +8,7 @@ from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
-from hpc_runner.core.merge import Edit, Set
-from hpc_runner.core.resolve import resolve
+from hpc_runner.core.resolve import combine_layers, resolve
 from hpc_runner.core.spec import JobSpec
 from hpc_runner.core.units import Duration, Memory
 from tests.fakes import make_host, make_job
@@ -61,9 +60,9 @@ class TestBasics:
     def test_none_requested_by_default(self):
         job = make_job()
         assert (job.licenses, job.devices, job.features) == ({}, {}, ())
-        assert job.provenance["licenses"] == "package"
-        assert job.provenance["devices"] == "package"
-        assert job.provenance["features"] == ()
+        assert job.provenance["licenses"] == ()
+        assert job.provenance["devices"] == ()
+        assert job.provenance["features"] == "package"
 
     @pytest.mark.parametrize("field", ["licenses", "devices"])
     @pytest.mark.parametrize("count", [0, -1, 1.5, "2", True, None])
@@ -77,8 +76,8 @@ class TestBasics:
             make_job(**{field: {"": 1}})
 
     def test_scheduler_args(self):
-        job = make_job(scheduler_args={"sge": ["-l", "scratch=10G"], "slurm": ["--x"]})
-        assert job.scheduler_args == {"sge": ("-l", "scratch=10G"), "slurm": ("--x",)}
+        job = make_job(scheduler_args=["-l", "scratch=10G"])
+        assert job.scheduler_args == ("-l", "scratch=10G")
 
     def test_dependencies_carried(self):
         job = make_job(dependencies=[Dependency("1")])
@@ -243,19 +242,18 @@ class TestConfigLayers:
         cfg = _config(defaults={"licenses": {"xcelium": 1}})
         job = make_job(config=cfg)
         assert job.licenses == {"xcelium": 1}
-        assert job.provenance["licenses"] == "defaults"
+        assert job.provenance["licenses"] == ((("xcelium", 1), "defaults"),)
 
     @pytest.mark.parametrize("field", ["licenses", "devices"])
     def test_spec_name_replaces_the_same_name_from_config(self, field):
         cfg = _config(defaults={field: {"a": 1, "b": 1}}, types={"t": {field: {"b": 2}}})
         job = make_job(type="t", config=cfg, **{field: {"a": 4, "c": 1}})
         assert getattr(job, field) == {"a": 4, "b": 2, "c": 1}
-        assert job.provenance[field] == "spec"
-
-    def test_spec_features_append(self):
-        cfg = _config(defaults={"features": ["bigmem"]})
-        job = make_job(config=cfg, features=["fast"])
-        assert job.features == ("bigmem", "fast")
+        assert job.provenance[field] == (
+            (("a", 4), "spec"),
+            (("b", 2), "types.t"),
+            (("c", 1), "spec"),
+        )
 
     def test_interactive_from_config(self):
         cfg = _config(tools={"xterm": {"interactive": True}})
@@ -273,14 +271,6 @@ class TestConfigLayers:
     def test_env_unset_from_config(self):
         cfg = _config(defaults={"env_unset": ["https_proxy"]})
         assert make_job(config=cfg).env_unset == ("https_proxy",)
-
-    def test_spec_env_unset_appends(self):
-        cfg = _config(defaults={"env_unset": ["https_proxy"]})
-        assert make_job(config=cfg, env_unset=["X"]).env_unset == ("https_proxy", "X")
-
-    def test_spec_env_unset_set_replaces(self):
-        cfg = _config(defaults={"env_unset": ["https_proxy"]})
-        assert make_job(config=cfg, env_unset=Set(["X"])).env_unset == ("X",)
 
 
 class TestProvenance:
@@ -311,54 +301,221 @@ class TestProvenance:
         assert fields <= set(job.provenance)
 
 
-class TestListsMerge:
-    """D1: a spec list appends to the config list like any other layer."""
+def _chain(field: str, values: list) -> tuple[HPCConfig, object]:
+    """*field* set to one of four *values* in defaults, a tool, a type and the spec."""
+    defaults, tool, type_, spec = values
+    cfg = _config(
+        defaults={field: defaults},
+        tools={"sim": {field: tool}},
+        types={"regress": {"tools": ["sim"], field: type_}},
+    )
+    return cfg, spec
 
-    def test_spec_modules_append(self):
-        job = make_job(config=_config(defaults={"modules": ["default/1.0"]}), modules=["o/2.0"])
-        assert job.modules == ("default/1.0", "o/2.0")
 
-    def test_spec_modules_set_replaces(self):
-        cfg = _config(defaults={"modules": ["default/1.0"]})
-        job = make_job(config=cfg, modules=Set(["o/2.0"]))
-        assert job.modules == ("o/2.0",)
+class TestKeysThatAdd:
+    """modules, licenses and devices add up: defaults, tool, type, spec."""
+
+    def test_modules_append_and_keep_the_first_of_a_duplicate(self):
+        cfg, spec = _chain(
+            "modules", [["site/1", "gcc/12"], ["xcelium/23"], ["gcc/12", "cov/2"], ["dbg/1"]]
+        )
+        job = make_job(type="regress", config=cfg, modules=spec)
+        assert job.modules == ("site/1", "gcc/12", "xcelium/23", "cov/2", "dbg/1")
+        assert job.provenance["modules"] == (
+            ("site/1", "defaults"),
+            ("gcc/12", "defaults"),
+            ("xcelium/23", "tools.sim"),
+            ("cov/2", "types.regress"),
+            ("dbg/1", "spec"),
+        )
+
+    @pytest.mark.parametrize("field", ["licenses", "devices"])
+    def test_counts_add_by_name_and_the_later_count_wins(self, field):
+        cfg, spec = _chain(field, [{"a": 1, "b": 1}, {"c": 1}, {"b": 2, "d": 1}, {"a": 4, "e": 1}])
+        job = make_job(type="regress", config=cfg, **{field: spec})
+        assert getattr(job, field) == {"a": 4, "b": 2, "c": 1, "d": 1, "e": 1}
+        assert job.provenance[field] == (
+            (("a", 4), "spec"),
+            (("b", 2), "types.regress"),
+            (("c", 1), "tools.sim"),
+            (("d", 1), "types.regress"),
+            (("e", 1), "spec"),
+        )
+
+    def test_a_type_with_two_tools_gets_both_tools_modules_and_licences(self):
+        cfg = _config(
+            tools={
+                "xrun": {"modules": ["xcelium/23"], "licenses": {"xcelium": 1}},
+                "slang": {"modules": ["slang/0.9"], "licenses": {"slang": 2}},
+            },
+            types={"lint": {"tools": ["xrun", "slang"]}},
+        )
+        job = make_job("make lint", type="lint", config=cfg)
+        assert job.modules == ("xcelium/23", "slang/0.9")
+        assert job.licenses == {"xcelium": 1, "slang": 2}
+
+    @pytest.mark.parametrize(
+        ("field", "start", "empty"),
+        [("modules", ["a", "b"], []), ("licenses", {"a": 1}, {}), ("devices", {"a": 1}, {})],
+    )
+    def test_an_empty_value_adds_nothing_and_drops_nothing(self, field, start, empty):
+        cfg = _config(defaults={field: start}, types={"t": {field: empty}})
+        job = make_job(type="t", config=cfg, **{field: empty})
+        assert getattr(job, field) == (tuple(start) if field == "modules" else start)
 
     def test_config_modules_kept_without_spec(self):
         job = make_job(config=_config(defaults={"modules": ["a", "b"]}))
         assert job.modules == ("a", "b")
 
-    def test_modules_path_append_from_config(self):
-        job = make_job(config=_config(defaults={"modules_path_append": ["/site/local"]}))
-        assert job.modules_path_append == ("/site/local",)
 
-    def test_modules_path_append_spec_appends(self):
-        cfg = _config(defaults={"modules_path_append": ["/site/local"]})
-        job = make_job(config=cfg, modules_path_append=["/override"])
-        assert job.modules_path_append == ("/site/local", "/override")
-        assert job.modules_path == ()
+class TestKeysThatOverride:
+    """Every other key: the last layer that sets it supplies the whole value."""
 
-    def test_type_config_merges_with_defaults(self):
-        cfg = _config(
-            defaults={"modules_path_append": ["/site/local"]},
-            types={"xrun": {"modules_path_append": ["/proj/modulefiles"]}},
+    @pytest.mark.parametrize(
+        ("field", "values", "expected"),
+        [
+            ("features", [["bigmem"], ["avx2", "fast"]], ("avx2", "fast")),
+            ("env_unset", [["http_proxy"], ["https_proxy"]], ("https_proxy",)),
+            ("scheduler_args", [["-p", "-500"], ["-l", "gpu=1"]], ("-l", "gpu=1")),
+            ("env_vars", [{"A": "1", "B": "2"}, {"C": "3"}], {"C": "3"}),
+            ("env_prepend", [{"PATH": "/a"}, {"LD": "/b"}], {"LD": "/b"}),
+            ("env_append", [{"PATH": "/a"}, {"LD": "/b"}], {"LD": "/b"}),
+        ],
+    )
+    def test_each_later_layer_replaces_the_whole_value(self, field, values, expected):
+        first, second = values
+        tool = _config(defaults={field: first}, tools={"sim": {field: second}})
+        job = make_job("sim", config=tool)
+        assert (getattr(job, field), job.provenance[field]) == (expected, "tools.sim")
+
+        type_ = _config(
+            defaults={field: second},
+            tools={"sim": {field: second}},
+            types={"t": {"tools": ["sim"], field: first}},
         )
-        job = make_job("xrun", type="xrun", config=cfg)
-        assert job.modules_path_append == ("/site/local", "/proj/modulefiles")
+        job = make_job(type="t", config=type_, **{field: second})
+        assert (getattr(job, field), job.provenance[field]) == (expected, "spec")
 
-    def test_type_edit_removes_default_module(self):
+    def test_a_layer_that_does_not_set_the_key_inherits_it(self):
         cfg = _config(
-            defaults={"modules": ["gcc/12", "python/3.11"]},
-            types={"py": {"modules": Edit(remove=["python/3.11"], add=["python/3.12"])}},
+            defaults={"features": ["bigmem"], "env_vars": {"A": "1"}},
+            tools={"sim": {"cpu": 2}},
         )
-        assert make_job(type="py", config=cfg).modules == ("gcc/12", "python/3.12")
+        job = make_job("sim", config=cfg, queue="q")
+        assert (job.features, job.provenance["features"]) == (("bigmem",), "defaults")
+        assert (job.env_vars, job.provenance["env_vars"]) == ({"A": "1"}, "defaults")
 
-    def test_removed_entry_never_expanded(self):
-        """$VAR in an entry a later layer removed is not an error."""
-        cfg = _config(
-            defaults={"modules": ["$TEST_UNSET_REMOVED"]},
-            types={"t": {"modules": Set(["a"])}},
+    @pytest.mark.parametrize(
+        ("field", "start", "empty", "expected"),
+        [
+            ("features", ["bigmem"], [], ()),
+            ("env_unset", ["http_proxy"], [], ()),
+            ("scheduler_args", ["-p", "-500"], [], ()),
+            ("env_vars", {"A": "1"}, {}, {}),
+            ("env_prepend", {"PATH": "/a"}, {}, {}),
+            ("env_append", {"PATH": "/a"}, {}, {}),
+        ],
+    )
+    def test_an_empty_value_clears(self, field, start, empty, expected):
+        cfg = _config(defaults={field: start}, types={"t": {field: empty}})
+        job = make_job(type="t", config=cfg)
+        assert (getattr(job, field), job.provenance[field]) == (expected, "types.t")
+        job = make_job(config=_config(defaults={field: start}), **{field: empty})
+        assert (getattr(job, field), job.provenance[field]) == (expected, "spec")
+
+    def test_env_passthrough_is_replaced_and_cleared(self):
+        cfg = _config(defaults={"env_passthrough": ["DISPLAY"]})
+        host = make_host(env={"LM_LICENSE_FILE": "1@lic"})
+        job = make_job(
+            config=cfg, inherit_env=False, env_passthrough=["LM_LICENSE_FILE"], host=host
         )
-        assert make_job(type="t", config=cfg).modules == ("a",)
+        assert job.env_passthrough == {"LM_LICENSE_FILE": "1@lic"}
+        assert job.provenance["env_passthrough"] == (("LM_LICENSE_FILE", "spec"),)
+        job = make_job(config=cfg, inherit_env=False, env_passthrough=[])
+        assert (job.env_passthrough, job.provenance["env_passthrough"]) == ({}, ())
+
+    def test_a_replaced_value_is_never_expanded(self):
+        """$VAR in a value a later layer replaced is not an error."""
+        cfg = _config(
+            defaults={"env_vars": {"A": "$TEST_UNSET_REPLACED"}},
+            types={"t": {"env_vars": {"B": "1"}}},
+        )
+        assert make_job(type="t", config=cfg).env_vars == {"B": "1"}
+
+    def test_scheduler_args_keep_repeated_flags(self):
+        job = make_job(scheduler_args=["-l", "b=2", "-l", "c=3"])
+        assert job.scheduler_args == ("-l", "b=2", "-l", "c=3")
+
+
+class TestModulePaths:
+    """modules_path and modules_path_append: [defaults], or the spec."""
+
+    @pytest.mark.parametrize("field", ["modules_path", "modules_path_append"])
+    def test_from_defaults(self, field):
+        job = make_job(config=_config(defaults={field: ["/site/mf"]}))
+        assert (getattr(job, field), job.provenance[field]) == (("/site/mf",), "defaults")
+
+    @pytest.mark.parametrize("field", ["modules_path", "modules_path_append"])
+    def test_a_spec_value_replaces_the_defaults_one(self, field):
+        cfg = _config(defaults={field: ["/site/mf", "/site/more"]})
+        job = make_job(config=cfg, **{field: ["/mine"]})
+        assert (getattr(job, field), job.provenance[field]) == (("/mine",), "spec")
+
+    @pytest.mark.parametrize("field", ["modules_path", "modules_path_append"])
+    @pytest.mark.parametrize(
+        ("section", "layer"),
+        [
+            ("tools", "tools.sim"),
+            ("options", "tools.sim.options.-gui"),
+            ("types", "types.sim"),
+        ],
+    )
+    def test_refused_in_a_tool_and_in_a_type(self, field, section, layer):
+        entry = {field: ["/proj/mf"]}
+        cfg = {
+            "tools": _config(tools={"sim": entry}),
+            "options": _config(tools={"sim": {"options": {"-gui": entry}}}),
+            "types": _config(types={"sim": entry}),
+        }[section]
+        with pytest.raises(ConfigError) as err:
+            make_job("sim -gui", type="sim" if section == "types" else None, config=cfg)
+        assert str(err.value) == f"[{layer}] {field}: unknown key"
+
+
+class TestCombineLayers:
+    """One section held by the project file and the local file."""
+
+    def test_adding_keys_add_and_every_other_key_is_the_later_one(self):
+        earlier = {
+            "cpu": 2,
+            "mem": "4G",
+            "modules": ["a", "b"],
+            "licenses": {"x": 1, "y": 1},
+            "devices": {"gpu": 1},
+            "features": ["bigmem"],
+            "env_vars": {"A": "1"},
+            "scheduler_args": ["-p", "-500"],
+        }
+        later = {
+            "cpu": 4,
+            "modules": ["b", "c"],
+            "licenses": {"x": 2},
+            "devices": {},
+            "features": [],
+            "env_vars": {"B": "2"},
+            "scheduler_args": ["-l", "gpu=1"],
+        }
+        assert combine_layers(earlier, later) == {
+            "cpu": 4,
+            "mem": "4G",
+            "modules": ["a", "b", "c"],
+            "licenses": {"x": 2, "y": 1},
+            "devices": {"gpu": 1},
+            "features": [],
+            "env_vars": {"B": "2"},
+            "scheduler_args": ["-l", "gpu=1"],
+        }
+        assert earlier["modules"] == ["a", "b"] and earlier["licenses"] == {"x": 1, "y": 1}
 
 
 class TestTypeComposition:
@@ -398,7 +555,7 @@ class TestTypeComposition:
         assert (job.mem, job.provenance["mem"]) == (Memory.parse("8G"), "tools.slang")
         assert (dict(job.licenses), job.provenance["licenses"]) == (
             {"xcelium_lic": 1},
-            "tools.xrun",
+            ((("xcelium_lic", 1), "tools.xrun"),),
         )
 
     def test_type_ignores_argv_tool(self):
@@ -424,57 +581,6 @@ class TestTypeComposition:
         cfg = _config(types={"t": {"tools": ["missing"]}})
         with pytest.raises(ConfigError, match=r"\[types.t\] tools: no tool 'missing'"):
             make_job(type="t", config=cfg)
-
-
-class TestSchedulerArgs:
-    def test_merged_across_layers_per_scheduler(self):
-        cfg = _config(
-            defaults={"scheduler_args": {"sge": ["-binding", "linear:1"]}},
-            tools={"sim": {"scheduler_args": {"sge": ["-masterq", "a.q"], "slurm": ["--x"]}}},
-        )
-        job = make_job("sim run", config=cfg, scheduler_args={"sge": ["-l", "gpu=1"]})
-        assert job.scheduler_args == {
-            "sge": ("-binding", "linear:1", "-masterq", "a.q", "-l", "gpu=1"),
-            "slurm": ("--x",),
-        }
-        assert job.provenance["scheduler_args"][0] == (("sge", "-binding"), "defaults")
-        assert (("slurm", "--x"), "tools.sim") in job.provenance["scheduler_args"]
-        assert (("sge", "gpu=1"), "spec") in job.provenance["scheduler_args"]
-
-    def test_repeated_flags_kept(self):
-        # DECISION NEEDED (see resolve): scheduler_args are argv, not deduped.
-        cfg = _config(defaults={"scheduler_args": {"sge": ["-l", "a=1"]}})
-        job = make_job(config=cfg, scheduler_args={"sge": ["-l", "b=2", "-l", "c=3"]})
-        assert job.scheduler_args["sge"] == ("-l", "a=1", "-l", "b=2", "-l", "c=3")
-        assert [layer for _, layer in job.provenance["scheduler_args"]] == [
-            "defaults",
-            "defaults",
-            "spec",
-            "spec",
-            "spec",
-            "spec",
-        ]
-
-    def test_edit_removes_every_occurrence(self):
-        cfg = _config(defaults={"scheduler_args": {"sge": ["-pty", "y", "-l", "a=1"]}})
-        job = make_job(config=cfg, scheduler_args={"sge": Edit(remove=["-pty", "y"])})
-        assert job.scheduler_args["sge"] == ("-l", "a=1")
-
-    def test_verbs_apply_per_scheduler(self):
-        cfg = _config(defaults={"scheduler_args": {"sge": ["-binding", "linear:1"]}})
-        job = make_job(config=cfg, scheduler_args={"sge": Set(["-pty", "y"])})
-        assert job.scheduler_args["sge"] == ("-pty", "y")
-
-    def test_each_scheduler_reads_its_own(self):
-        from types import SimpleNamespace
-
-        from hpc_runner.schedulers.base import BaseScheduler
-
-        cfg = _config(defaults={"scheduler_args": {"sge": ["-binding", "linear:1"]}})
-        job = make_job(config=cfg)
-        sge, local = SimpleNamespace(name="sge"), SimpleNamespace(name="local")
-        assert BaseScheduler._passthrough_args(sge, job) == ("-binding", "linear:1")  # type: ignore[arg-type]
-        assert BaseScheduler._passthrough_args(local, job) == ()  # type: ignore[arg-type]
 
 
 class TestEnvVarExpansion:
@@ -571,11 +677,15 @@ class TestExpandedFields:
         job = make_job(host=make_host(env={"M": "16", "T": "4"}), mem="${M}G", time="${T}h")
         assert (job.mem, job.time) == (Memory.parse("16G"), Duration(4 * 3600))
 
-    @pytest.mark.parametrize("field", ["modules", "modules_path", "modules_path_append"])
-    def test_module_lists(self, field):
+    def test_modules(self):
+        job = make_job(host=make_host(env=self.ENV), modules=["x/$V"])
+        assert job.modules == ("x/val",)
+        assert job.provenance["modules"] == (("x/val", "spec"),)
+
+    @pytest.mark.parametrize("field", ["modules_path", "modules_path_append"])
+    def test_module_paths(self, field):
         job = make_job(host=make_host(env=self.ENV), **{field: ["x/$V"]})
-        assert getattr(job, field) == ("x/val",)
-        assert job.provenance[field] == (("x/val", "spec"),)
+        assert (getattr(job, field), job.provenance[field]) == (("x/val",), "spec")
 
     @pytest.mark.parametrize("field", ["env_vars", "env_prepend", "env_append"])
     def test_env_dicts(self, field):
@@ -583,9 +693,9 @@ class TestExpandedFields:
         assert getattr(job, field) == {"K": "val"}
 
     def test_scheduler_args(self):
-        job = make_job(host=make_host(env=self.ENV), scheduler_args={"sge": ["-l", "x=$V"]})
-        assert job.scheduler_args == {"sge": ("-l", "x=val")}
-        assert job.provenance["scheduler_args"][1] == (("sge", "x=val"), "spec")
+        job = make_job(host=make_host(env=self.ENV), scheduler_args=["-l", "x=$V"])
+        assert job.scheduler_args == ("-l", "x=val")
+        assert job.provenance["scheduler_args"] == "spec"
 
     def test_command_not_expanded(self):
         job = make_job("echo $V", host=make_host(env=self.ENV))
@@ -615,7 +725,7 @@ class TestEnvConflicts:
 
     def test_spec_env_unset_name_validated(self):
         with pytest.raises(ConfigError, match="not a valid environment variable name"):
-            make_job(env_unset=Set(["a;rm"]))
+            make_job(env_unset=["a;rm"])
 
 
 class TestEnvPassthrough:
@@ -639,14 +749,6 @@ class TestEnvPassthrough:
         assert job.inherit_env is True
         assert job.env_passthrough == {}
         assert job.provenance["env_passthrough"] == (("DISPLAY", "spec"),)
-
-    def test_merges_across_layers(self):
-        cfg = _config(defaults={"env_passthrough": ["DISPLAY"]})
-        host = make_host(env={"DISPLAY": ":0", "LM_LICENSE_FILE": "1@lic"})
-        job = make_job(
-            config=cfg, inherit_env=False, env_passthrough=["LM_LICENSE_FILE"], host=host
-        )
-        assert list(job.env_passthrough) == ["DISPLAY", "LM_LICENSE_FILE"]
 
 
 class TestModuleExpansion:

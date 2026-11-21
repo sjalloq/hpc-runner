@@ -57,24 +57,43 @@ them to the underlying scheduler's arguments.
 
 ## How config layers combine
 
-Decided by the user 2026-11-21, then reopened the same day: with a type
-that pulls in two tools, strict override drops the first tool's modules.
-Which keys add up and which override is under discussion; nothing below is
-built. As first decided: one rule, for every key and every layer
-(`[defaults]`, a type, a tool, the command line, a `JobSpec`):
+Decided by the user 2026-11-21 and built the same day. The layers are
+`[defaults]`, tools, a type, the command line, a `JobSpec`.
 
-- A key that a layer sets replaces whatever earlier layers set for it.
-- A key a layer does not set is inherited.
-- An empty list `[]` or empty table `{}` clears it.
-- Lists and tables follow the same rule as single values: nothing adds up.
-  A type comes after the tools it pulls in, so a type's `licenses`
-  replaces its tools' `licenses` whole.
-- The command line is a layer like any other: `--license vcs=1` replaces
-  the config's licences, `-S` replaces the config's `scheduler_args` for
-  the scheduler. Options repeated on one command line combine with each
-  other.
+| Keys | Rule | Why |
+|---|---|---|
+| `modules`, `licenses`, `devices` | Add up across layers. Same licence or device name: the later count wins | The job consumes them; a type that pulls in two tools needs both tools' modules and licences |
+| Every other key, including `features`, `env_vars`, `env_prepend`, `env_append`, `env_unset`, `env_passthrough`, `scheduler_args` | A layer that sets the key replaces what earlier layers set; a layer that does not set it inherits | They say where and how the job runs |
+| `modules_path`, `modules_path_append` | Set in `[defaults]` only; an unknown key in a tool or a type. Stay on `JobSpec`, for a Python caller with no config file; a `JobSpec` value replaces the one in `[defaults]` | They say where the site's modules are read from, once |
+
+- A layer cannot drop a module, licence or device it inherited.
+  `[defaults]` holds only what every job wants.
 - `{ set = [...] }`, `{ remove = [...], add = [...] }` and the Python `Set`
   and `Edit` are removed outright.
+
+- `[]` or `{}` on a key that overrides clears it. On `modules`,
+  `licenses` or `devices` it adds nothing.
+- `scheduler_args` is a plain list, `scheduler_args = ["-p", "-500"]`,
+  in config and on `JobSpec`; the table keyed by scheduler is removed. A
+  config file is for one scheduler. local ignores `scheduler_args`: a rule
+  for `../SCHEDULER_OPTIONS.md`, a test and the user docs.
+
+- `extends` is removed (user, 2026-11-21): the key, `_resolve_extends`,
+  its tests and its docs.
+
+- The local file (`./hpc-runner.toml`) stays: it overrides a job's config
+  for one directory. A section in both the project file and the local file
+  combines per key by the table above, local after project.
+
+- The local file may hold `[tools.*]` and `[types.*]` only (and
+  `config_version`). Any other key or section there is a config error
+  naming the key and the file. The scheduler setup, `[defaults]` and the
+  module paths come from the project file alone.
+
+- The search resolves to one project file: `$HPC_RUNNER_CONFIG`, else
+  the git root's `hpc-runner.toml`, else (none there, or no git root)
+  `./hpc-runner.toml`, read as a full config. `./hpc-runner.toml` is a
+  local file only when a different project file was found.
 
 ## Removed options
 
@@ -495,22 +514,7 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-Steps 1 and 2 change SGE behaviour and need no Slurm code.
-
-1. Config layers override: "How config layers combine".
-   - `core/merge.py`, `core/resolve.py`, `core/config.py`, `core/schema.py`;
-     `Set` and `Edit` removed from the Python API.
-   - `defaults/config.toml` and the testbed configs rewritten to match.
-   - User docs: the "Lists: append, set, remove" section becomes the one
-     rule.
-2. The three maps replace `resources` (built 2026-11-17 on the old merge
-   rule, uncommitted; finished after the step above).
-   - `licenses`, `devices`, `features` in config; `--license`,
-     `--device`, `--feature` on the command line.
-   - Remove `resources`, `-R/--resource`, `Resource`, `ResourceSet`.
-   - Count rule, last one wins, command line over config.
-   - Interactive SGE jobs carry all three.
-3. Make the tests ready for a second scheduler. The inventory is in
+1. Make the tests ready for a second scheduler. The inventory is in
    `../FOLLOW_UPS.md`, "Tests and testbed".
    - Integration tests that promise the same thing on every scheduler:
      move the SGE words behind the cluster class.
@@ -520,7 +524,7 @@ Steps 1 and 2 change SGE behaviour and need no Slurm code.
    - Fixture helpers named for SGE (`SGEFixtures`, `make_sge_responder`,
      `sge_fixtures`, `mock_sge_commands`): tests that are not about SGE
      stop depending on them.
-4. Slurm testbed support, both flavours.
+2. Slurm testbed support, both flavours.
    - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
      files.
    - The Slurm cluster class: every method the SGE one has, or a written
@@ -529,26 +533,26 @@ Steps 1 and 2 change SGE behaviour and need no Slurm code.
    - `testbed/slurm/README.md` with the table of test against flavour.
    - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
      (account enforcement) on 22.05.
-5. Slurm captures and fixtures: the list in "Testbed". Set a short
+3. Slurm captures and fixtures: the list in "Testbed". Set a short
    `SlurmdTimeout` for `node_fail`.
-6. Rendering.
+4. Rendering.
    - The scheduler class, registered in `schedulers/__init__.py`;
      `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
    - Arguments, batch template, golden scripts.
    - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
      `recorder.note_script`.
    - Interactive: `srun`, the `--pty` rule, `--export`.
-7. Parsing, against the fixtures.
+5. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
     - Cancel.
-8. Integration suite on both Slurm versions; CI cells for `24.11` and
+6. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
       right status and code.
-9. User docs, and a manual checklist on a real cluster.
+7. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.

@@ -21,7 +21,7 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is steps 3, 4 and 8 of `slurm/PLAN.md`, "Order of
+For Slurm that work is steps 1, 2 and 6 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -63,7 +63,7 @@ work". For PBS nothing is planned.
 - `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
   `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 4 and 5).
+  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 2 and 3).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
   and nothing else.

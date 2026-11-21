@@ -6,7 +6,7 @@ import logging
 import os
 import shlex
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,8 +17,7 @@ else:
     import tomli as tomllib  # type: ignore[import-not-found]
 
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.core.expand import CONFIG_DIR, bind_config_dir, expand
-from hpc_runner.core.merge import Edit, Set, compose, is_list_value
+from hpc_runner.core.expand import bind_config_dir, expand
 from hpc_runner.core.schema import EXPANDED_FIELDS, find_line, validate_file
 
 if TYPE_CHECKING:
@@ -38,9 +37,8 @@ def _config_error(path: Path, message: str) -> ConfigError:
 class HPCConfig:
     """Loaded, validated configuration.
 
-    List settings hold their layer value as written: a plain list (append),
-    :class:`~hpc_runner.core.merge.Set` or :class:`~hpc_runner.core.merge.Edit`;
-    :func:`~hpc_runner.resolve` applies them in :meth:`layers_for` order.
+    Each job layer holds its keys as written; :func:`~hpc_runner.resolve`
+    combines the layers in :meth:`layers_for` order.
     """
 
     #: The top-level ``scheduler`` key: the one scheduler this installation
@@ -169,20 +167,29 @@ def _match_contiguous(haystack: list[str], needle: list[str]) -> bool:
     return False
 
 
-def _merge(base: dict[str, Any], override: dict[str, Any], parent: str = "") -> dict[str, Any]:
-    """Merge two config files' tables: dicts recurse, lists compose per D1.
+def _combine_named(
+    project: dict[str, dict[str, Any]],
+    local: dict[str, dict[str, Any]],
+    combine: Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """``[tools.*]`` or ``[types.*]`` of the project file with the local file's on top.
 
-    The per-scheduler lists under ``scheduler_args`` (*parent*) are argv
-    and do not dedupe. Scalars: later wins.
+    An entry in both files becomes one layer, combined per key by *combine*
+    (:func:`~hpc_runner.core.resolve.combine_layers`), local after project;
+    so does each ``options`` sub-entry of a tool that both files hold.
     """
-    result = base.copy()
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _merge(result[key], value, key)
-        elif key in result and is_list_value(result[key]) and is_list_value(value):
-            result[key] = compose(result[key], value, dedupe=parent != "scheduler_args")
-        else:
-            result[key] = value
+    result = dict(project)
+    for name, entry in local.items():
+        if name not in result:
+            result[name] = entry
+            continue
+        merged = combine(_without(result[name], "options"), _without(entry, "options"))
+        options = dict(result[name].get("options", {}))
+        for pattern, option in entry.get("options", {}).items():
+            options[pattern] = combine(options[pattern], option) if pattern in options else option
+        if options:
+            merged["options"] = options
+        result[name] = merged
     return result
 
 
@@ -196,10 +203,6 @@ def _bind_config_dir(converted: dict[str, Any], config_dir: str) -> None:
     def bind(value: Any) -> Any:
         if isinstance(value, str):
             return bind_config_dir(value, config_dir)
-        if isinstance(value, Set):
-            return Set([bind(v) for v in value.items])
-        if isinstance(value, Edit):
-            return Edit(remove=[bind(v) for v in value.remove], add=[bind(v) for v in value.add])
         if isinstance(value, list):
             return [bind(v) for v in value]
         if isinstance(value, dict):
@@ -238,123 +241,53 @@ def _read_toml(path: Path) -> tuple[str, dict[str, Any]]:
         raise _config_error(path, f"invalid TOML — {e}") from e
 
 
-def _resolve_extends(config_path: Path, chain: list[Path] | None = None) -> list[Path]:
-    """Resolve the ``extends`` chain of *config_path*.
+def _discover() -> tuple[Path | None, Path | None]:
+    """The ``(project, local)`` config files of the two-level discovery.
 
-    Returns the paths in merge order (base first).
-
-    Raises:
-        ConfigError: A file cannot be read or parsed, ``extends`` names a
-            file that does not exist, or the chain is a cycle.
-    """
-    chain = [] if chain is None else chain
-    config_path = config_path.resolve()
-
-    if config_path in chain:
-        cycle = " -> ".join(str(p) for p in [*chain[chain.index(config_path) :], config_path])
-        raise _config_error(config_path, f"extends cycle: {cycle}")
-    chain.append(config_path)
-
-    text, data = _read_toml(config_path)
-    extends = data.get("extends")
-    if not isinstance(extends, str) or not extends:
-        # A non-string extends is reported by validation.
-        return [config_path]
-
-    # Expand per D5 and resolve relative to the config file's directory.
-    try:
-        expanded = expand(
-            extends,
-            host_env=os.environ,
-            extra={CONFIG_DIR: str(config_path.parent)},
-            where="extends",
-        )
-    except ConfigError as exc:
-        raise ConfigError(
-            exc.message, path=config_path, line=find_line(text, ["extends"])
-        ) from None
-    extends_path = Path(expanded)
-    if not extends_path.is_absolute():
-        extends_path = config_path.parent / extends_path
-    extends_path = extends_path.resolve()
-
-    if not extends_path.is_file():
-        raise ConfigError(
-            f"extends: file not found: {extends_path}",
-            path=config_path,
-            line=find_line(text, ["extends"]),
-        )
-
-    return _resolve_extends(extends_path, chain) + [config_path]
-
-
-def find_config_files() -> list[Path]:
-    """Find all configuration files to merge.
-
-    Returns list of paths in merge order (first = lowest priority).
-
-    Two-level discovery model:
-
-    1. **Project config (level 1):** ``$HPC_RUNNER_CONFIG`` if set and the file
-       exists, otherwise ``<git-root>/hpc-runner.toml``.  These are mutually
-       exclusive — the env var exists for submodule scenarios where a parent
+    1. **Project file:** ``$HPC_RUNNER_CONFIG`` if set and the file exists,
+       otherwise ``<git-root>/hpc-runner.toml``. These are mutually
+       exclusive: the env var exists for submodule scenarios where a parent
        project's config should win over the submodule's git root.
-    2. **Local override (level 2):** ``./hpc-runner.toml`` in the current
-       working directory, when it resolves to a different file from level 1.
-       Allows subdirectories to override project defaults.
+    2. **Local file:** ``./hpc-runner.toml`` in the current working
+       directory, when it is a different file from the project file.
 
-    Both levels go through ``add_config`` → ``_resolve_extends`` so extends
-    chains are preserved.
+    With no project file, ``./hpc-runner.toml`` is returned as the project
+    file: it is the only config and is read as a whole one.
     """
-    configs: list[Path] = []
-    seen: set[Path] = set()
-
-    def add_config(path: Path) -> None:
-        """Add config and its extends chain, avoiding duplicates."""
-        resolved = path.resolve()
-        if resolved in seen:
-            return
-
-        # Resolve extends chain
-        chain = _resolve_extends(path)
-        for p in chain:
-            if p not in seen:
-                seen.add(p)
-                configs.append(p)
-
-    # Level 1: Project config
-    # If $HPC_RUNNER_CONFIG is set and exists, use it.
-    # Otherwise fall back to <git-root>/hpc-runner.toml.
+    project: Path | None = None
     env_config = os.environ.get(HPC_CONFIG_ENV_VAR)
     if env_config:
         env_path = Path(
             expand(env_config, host_env=os.environ, extra={}, where=f"${HPC_CONFIG_ENV_VAR}")
         )
         if env_path.exists():
-            add_config(env_path)
+            project = env_path.resolve()
     else:
-        cwd = Path.cwd()
-        git_root = _find_git_root(cwd)
-        if git_root:
-            git_config = git_root / "hpc-runner.toml"
-            if git_config.exists():
-                add_config(git_config)
+        git_root = _find_git_root(Path.cwd())
+        if git_root and (git_root / "hpc-runner.toml").exists():
+            project = (git_root / "hpc-runner.toml").resolve()
 
-    # Level 2: Local override
-    # ./hpc-runner.toml in cwd, if it's a different file from level 1.
-    cwd = Path.cwd()
-    if (cwd / "hpc-runner.toml").exists():
-        add_config(cwd / "hpc-runner.toml")
+    cwd_config = Path.cwd() / "hpc-runner.toml"
+    local = cwd_config.resolve() if cwd_config.exists() else None
+    if project is None:
+        return local, None
+    return project, (local if local != project else None)
 
-    return configs
+
+def find_config_files() -> list[Path]:
+    """The configuration files read, in order: the project file, then the local file.
+
+    See :func:`_discover` for where each is looked for.
+    """
+    return [path for path in _discover() if path is not None]
 
 
 def find_config_file() -> Path | None:
     """Find the highest priority configuration file.
 
-    Returns the last (highest priority) config from the two-level discovery
-    (project config at git root or ``$HPC_RUNNER_CONFIG``, then local
-    ``./hpc-runner.toml`` override).
+    Returns the last file of the two-level discovery (the project file at
+    the git root or ``$HPC_RUNNER_CONFIG``, then the local
+    ``./hpc-runner.toml``).
     """
     configs = find_config_files()
     return configs[-1] if configs else None
@@ -391,10 +324,19 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         when *errors* is empty.
 
     Raises:
-        ConfigError: A file cannot be read or parsed, or its ``extends``
-            chain is broken; nothing further can be checked.
+        ConfigError: A file cannot be read or parsed; nothing further can
+            be checked.
     """
-    config_files = _resolve_extends(Path(path)) if path is not None else find_config_files()
+    # Imported here: resolve, which owns the rules for combining layers,
+    # imports this module.
+    from hpc_runner.core.resolve import combine_layers
+
+    project: Path | None
+    if path is not None:
+        project, local = Path(path).resolve(), None
+    else:
+        project, local = _discover()
+    config_files = [p for p in (project, local) if p is not None]
 
     scheduler: str | None = None
     module_init_script = ""
@@ -416,8 +358,10 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
     for config_path in config_files:
         text, data = _read_toml(config_path)
         texts[config_path] = text
+        # The local file holds [tools.*] and [types.*] only; validation
+        # refuses anything else there, so the rest is the project file's.
         converted, file_errors, file_warnings = validate_file(
-            config_path, text, data, _scheduler_config_keys
+            config_path, text, data, _scheduler_config_keys, local=config_path is local
         )
         errors.extend(file_errors)
         warnings.extend(file_warnings)
@@ -428,10 +372,10 @@ def check_config(path: Path | str | None = None) -> tuple[HPCConfig, list[Config
         for name, entry in converted.get("tools", {}).items():
             if "commands" in entry:
                 tool_commands_origin[name] = config_path
-        for key in merged:
-            if key in converted:
-                merged[key] = _merge(merged[key], converted[key])
-        # Top-level scalars: the last file to set one wins.
+        for key in ("tools", "types"):
+            merged[key] = _combine_named(merged[key], converted.get(key, {}), combine_layers)
+        for key in ("defaults", "schedulers", "trace"):
+            merged[key] = converted.get(key, merged[key])
         scheduler = converted.get("scheduler", scheduler)
         module_init_script = converted.get("module_init_script", module_init_script)
 
@@ -492,8 +436,8 @@ def load_config(path: Path | str | None = None) -> HPCConfig:
     """Load, validate and merge configuration from all discovered files.
 
     Args:
-        path: Explicit config path (with its ``extends`` chain), or None to
-            auto-discover and merge all.
+        path: Explicit config path, or None to discover the project file
+            and the local file.
 
     Raises:
         ConfigError: Any file is unreadable, invalid TOML, fails the schema

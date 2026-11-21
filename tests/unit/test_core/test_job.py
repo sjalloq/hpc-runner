@@ -15,11 +15,11 @@ class TestJobValue:
             job.cpu = 4  # type: ignore[misc]
 
     def test_mappings_are_read_only(self):
-        job = make_job(env_vars={"A": "1"}, scheduler_args={"sge": ["-l", "x=1"]})
+        job = make_job(env_vars={"A": "1"}, scheduler_args=["-l", "x=1"])
         with pytest.raises(TypeError):
             job.env_vars["B"] = "2"  # type: ignore[index]
         with pytest.raises(TypeError):
-            job.scheduler_args["sge"] = ()  # type: ignore[index]
+            job.scheduler_args[0] = "-x"  # type: ignore[index]
         with pytest.raises(TypeError):
             job.provenance["cpu"] = "spec"  # type: ignore[index]
 
@@ -28,7 +28,7 @@ class TestJobValue:
         assert job.modules == ("a",)
         assert job.modules_path == ("/m",)
         assert job.env_unset == ("X",)
-        assert job.scheduler_args == {}
+        assert job.scheduler_args == ()
         assert job.dependencies == ()
 
     def test_replace_makes_a_new_job(self):

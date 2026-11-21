@@ -10,18 +10,25 @@ configuration values map to scheduler flags (with a focus on SGE).
 Where configuration is loaded from
 ----------------------------------------
 
-Configuration uses a two-level discovery model.  Both levels are deep-merged
-(level 2 wins on conflicts).
+Two files are read, in this order.
 
-1. **Project config (level 1):** ``$HPC_RUNNER_CONFIG`` if set and the file
-   exists, otherwise ``<git root>/hpc-runner.toml``.  These are mutually
-   exclusive — the env var exists for submodule scenarios where a parent
-   project's config should win over the submodule's git root.
-2. **Local override (level 2):** ``./hpc-runner.toml`` in the current working
-   directory, when it resolves to a different file from level 1.  Allows
-   subdirectories to override project defaults.
+1. **The project file:** ``$HPC_RUNNER_CONFIG`` if set and the file exists,
+   otherwise ``<git root>/hpc-runner.toml``. It is one or the other: the
+   variable is for a submodule, where the parent project's config should
+   win over the submodule's git root.
+2. **The local file:** ``./hpc-runner.toml`` in the current directory, when
+   it is a different file from the project file. It overrides a job's
+   config for one directory.
 
-You can always bypass discovery by providing ``--config /path/to/file.toml``.
+The local file may hold ``config_version``, ``[tools.*]`` and ``[types.*]``
+only. Anything else there is an error that names the key and the file. The
+scheduler, ``[defaults]``, the module paths and ``[schedulers.*]`` are the
+site's setup, and are said once, in the project file.
+
+A tool or type in both files is one entry. Its keys combine as layers do
+(:ref:`layer-rules`), the local file after the project file.
+
+``--config /path/to/file.toml`` reads that one file and nothing else.
 
 
 Top-level sections
@@ -36,16 +43,13 @@ top-level keys are:
   (``sge``, or ``local`` to run jobs on this machine). There is one per
   installation and hpc-runner never guesses it: without this key, or
   ``HPC_SCHEDULER`` in the environment (which overrides it), every command
-  that needs a scheduler fails with an error saying where to set it. Like
-  any other key, a later file in the chain overrides an earlier one.
+  that needs a scheduler fails with an error saying where to set it.
 - ``module_init_script = "/path/init.sh"``: the script every job sources to
   define ``module`` on the compute nodes. Empty, or absent, tries the
   standard Environment Modules locations (``/etc/profile.d/modules.sh``,
   ``/usr/share/Modules/init/bash``, ``/etc/modules/init/bash``). It
   describes the nodes, not a scheduler, so it is set once here; a copy
   under ``[schedulers.<name>]`` is an error.
-- ``extends = "path.toml"``: load another file first (relative to this
-  file; variables expanded as in :ref:`variable-expansion`). The target must exist, and a cycle is an error.
 - ``[defaults]``: baseline job settings applied to all jobs
 - ``[tools.<name>]``: settings keyed by tool name (e.g., ``python``, ``make``).
   A tool entry can list the ``commands`` it matches (see :ref:`tool-commands`)
@@ -56,8 +60,10 @@ top-level keys are:
 
 ``[defaults]``, ``[tools.*]``, ``[tools.*.options.*]`` and ``[types.*]`` are
 *job layers*: they all accept the same job settings, listed in
-:ref:`job-settings`. In addition ``options`` and ``commands`` are allowed
-only under ``[tools.<name>]`` and ``tools`` only under ``[types.<name>]``.
+:ref:`job-settings`. ``modules_path`` and ``modules_path_append`` are the
+exception: they are set in ``[defaults]`` only. In addition ``options`` and
+``commands`` are allowed only under ``[tools.<name>]`` and ``tools`` only
+under ``[types.<name>]``.
 
 
 .. _job-settings:
@@ -68,11 +74,11 @@ Job settings reference
 Every key a job layer accepts. They are the fields of ``JobSpec`` (the
 Python API) except the per-invocation ones, ``command``, ``type``,
 ``dependencies`` and ``array``, which only the command line or the spec
-can set. *Merge* says how a key combines across layers
-(:ref:`how-jobs-pick-up-config`): **scalar** (most specific layer wins),
-**table** (keys merge, later layer wins per key) or **list**
-(:ref:`list-merging`). Keys marked *expanded* have ``$VAR`` resolved on
-the submit host (:ref:`variable-expansion`).
+can set. *Layers* says how a key combines across layers
+(:ref:`layer-rules`): **adds** (each layer adds to the earlier ones) or
+**overrides** (a layer that sets the key replaces the earlier value, whole).
+Keys marked *expanded* have ``$VAR`` resolved on the submit host
+(:ref:`variable-expansion`).
 
 .. list-table::
    :header-rows: 1
@@ -80,111 +86,113 @@ the submit host (:ref:`variable-expansion`).
 
    * - Key
      - Type
-     - Merge
+     - Layers
      - Meaning
    * - ``name``
      - string
-     - scalar
+     - overrides
      - Job name; expanded. Default ``<user>_<first command word>``.
    * - ``cpu``
      - integer
-     - scalar
+     - overrides
      - CPUs / slots (SGE ``-pe <parallel_environment> <cpu>``).
    * - ``mem``
      - string
-     - scalar
+     - overrides
      - Memory for the whole job (:ref:`memory-and-time`); expanded.
    * - ``time``
      - string
-     - scalar
+     - overrides
      - Run-time limit (:ref:`memory-and-time`); expanded.
    * - ``queue``
      - string
-     - scalar
+     - overrides
      - Queue / partition (SGE ``-q``); expanded.
    * - ``project``
      - string
-     - scalar
+     - overrides
      - Project / account charged (SGE ``-P``); expanded.
    * - ``stdout``
      - string
-     - scalar
+     - overrides
      - Output file pattern (:ref:`output-files`); expanded. Default
        ``${hpc.job_name}.${hpc.job_id}.out``.
    * - ``stderr``
      - string
-     - scalar
+     - overrides
      - Separate stderr pattern; unset means merged into ``stdout``; expanded.
    * - ``inherit_env``
      - boolean
-     - scalar
+     - overrides
      - Inherit the submitting shell's environment (SGE ``-V``). Default
        ``true``; see :ref:`environment`.
    * - ``workdir``
      - string
-     - scalar
+     - overrides
      - Working directory, relative to the submit directory; expanded.
        Default: the submit directory.
    * - ``venv``
      - path or ``false``
-     - scalar
+     - overrides
      - Virtualenv to activate; unset captures ``$VIRTUAL_ENV``, ``false``
        means none (:ref:`environment`); expanded.
    * - ``interactive``
      - boolean
-     - scalar
+     - overrides
      - Run attached and wait (SGE ``qrsh``). Default ``false``; ``hpc run``
        sets it unless ``--batch`` or ``--array`` is given.
    * - ``env_vars``
      - table of strings
-     - table
+     - overrides
      - Variables set in the job; expanded.
    * - ``env_prepend``
      - table of strings
-     - table
+     - overrides
      - Values prepended to variables, ``:``-separated; expanded.
    * - ``env_append``
      - table of strings
-     - table
+     - overrides
      - Values appended to variables, ``:``-separated; expanded.
    * - ``env_unset``
      - list of names
-     - list
+     - overrides
      - Variables unset in the job.
    * - ``env_passthrough``
      - list of names
-     - list
+     - overrides
      - Submit-host variables passed when ``inherit_env = false``.
    * - ``modules``
      - list of strings
-     - list
+     - adds
      - ``module load`` each, after ``module purge``; expanded.
    * - ``modules_path``
      - list of strings
-     - list
-     - ``module use`` each (searched first); expanded.
+     - ``[defaults]`` only
+     - ``module use`` each (searched first); expanded. A ``JobSpec`` value
+       replaces the one in ``[defaults]``.
    * - ``modules_path_append``
      - list of strings
-     - list
-     - ``module use --append`` each (searched last); expanded.
+     - ``[defaults]`` only
+     - ``module use --append`` each (searched last); expanded. A
+       ``JobSpec`` value replaces the one in ``[defaults]``.
    * - ``licenses``
      - table of ``name = count``
-     - table
+     - adds
      - Licences the job needs, each with a count (a whole number, 1 or
        more). SGE ``-l name=count``.
    * - ``devices``
      - table of ``name = count``
-     - table
+     - adds
      - Devices the job needs (a GPU, ...), each with a count (a whole
        number, 1 or more). SGE ``-l name=count``.
    * - ``features``
      - list of strings
-     - list
+     - overrides
      - Node features the job needs, by name. SGE ``-l name=1``.
    * - ``scheduler_args``
-     - table of lists of strings
-     - table of lists
-     - Raw per-scheduler arguments (:ref:`scheduler-args`); expanded.
+     - list of strings
+     - overrides
+     - Raw arguments for the scheduler (:ref:`scheduler-args`); expanded.
 
 Structural keys:
 
@@ -331,8 +339,8 @@ Two commands help:
 - ``hpc config check [PATH]`` validates ``PATH`` (or the discovered files),
   prints every error and warning, and exits 1 if there is any error.
 - ``hpc config resolve [-t TYPE] COMMAND...`` prints the job ``COMMAND``
-  would get, one row per field (one per item for lists) with the layer that
-  supplied it: ``defaults``, ``tools.<name>``, ``tools.<name>.options.<key>``,
+  would get, one row per field (one per module, licence and device, which
+  add up across layers) with the layer that supplied it: ``defaults``, ``tools.<name>``, ``tools.<name>.options.<key>``,
   ``types.<name>``, ``spec``, ``package`` (built-in default) or ``host``
   (captured from the submitting shell).
 
@@ -357,53 +365,62 @@ stripped. With a type named, the tool inferred from the command is **not**
 consulted, and the ``options`` of the type's tools are not applied: the type
 is the whole specification.
 
-- **Scalars** (``cpu``, ``queue``, ...): the most specific layer that sets
-  one wins.
-- **Tables** (``env_vars``, ``env_prepend``, ``env_append``, ``licenses``,
-  ``devices``, ``scheduler_args``): keys merge across layers; the later
-  layer wins per key.
-- **Lists**: see below.
-
-When several files are loaded (``extends``, project and local override), a
-section set in more than one file merges with the same rules, later file
-over earlier.
+The command line is a layer like any other. Options repeated on one command
+line combine with each other first: ``-E A=1 -E B=2`` is one ``env_vars``
+table with both.
 
 
-.. _list-merging:
+.. _layer-rules:
 
-Lists: append, set, remove
---------------------------
+How layers combine
+------------------
 
-``modules``, ``modules_path``, ``modules_path_append``, ``env_unset``,
-``env_passthrough``, ``features`` and each scheduler's ``scheduler_args`` list follow one rule
-in every layer, including the spec:
+.. list-table::
+   :header-rows: 1
+   :widths: 30 40 30
 
-- A plain list **appends** to what the earlier layers built, dropping
-  duplicates (first-seen order kept).
-- ``{ set = [...] }`` **replaces** the list outright.
-- ``{ remove = [...], add = [...] }`` removes items, then appends ``add``
-  (either key may be omitted).
+   * - Keys
+     - Rule
+     - Why
+   * - ``modules``, ``licenses``, ``devices``
+     - Add up across layers. Modules append; a module already listed is not
+       listed again. A licence or device named again takes the later count.
+     - The job consumes them. A type that pulls in two tools needs both
+       tools' modules and licences.
+   * - Every other key, including ``features``, ``env_vars``,
+       ``env_prepend``, ``env_append``, ``env_unset``, ``env_passthrough``
+       and ``scheduler_args``
+     - A layer that sets the key replaces what earlier layers set, whole. A
+       layer that does not set it inherits it.
+     - They say where and how the job runs.
+   * - ``modules_path``, ``modules_path_append``
+     - Set in ``[defaults]`` only. In a tool or a type they are an unknown
+       key.
+     - They say where the site's modules are read from, once.
 
 .. code-block:: toml
 
    [defaults]
-   modules = ["gcc/12", "python/3.11"]
+   modules = ["gcc/12"]
+   env_vars = { TMPDIR = "/scratch" }
+   features = ["bigmem"]
 
    [tools.xrun]
-   modules = ["xcelium/23"]                    # gcc/12, python/3.11, xcelium/23
+   modules = ["xcelium/23"]             # the job loads gcc/12, then xcelium/23
+   licenses = { xcelium = 1 }
+   env_vars = { XRUN_OPTS = "-64bit" }  # the only variable set: TMPDIR is gone
+   features = []                        # cleared
 
-   [tools.legacy]
-   modules = { set = ["gcc/9"] }               # gcc/9 only
-
-   [tools.pytorch]
-   modules = { remove = ["python/3.11"], add = ["python/3.12"] }
-
-``scheduler_args`` lists are raw arguments, so repeated flags
-(``-l a=1 -l b=2``) are kept.
-
-The Python API mirrors the verbs: ``modules=[...]`` appends,
-``modules=Set([...])`` replaces, ``modules=Edit(remove=[...], add=[...])``
-edits (``from hpc_runner import Set, Edit``).
+- A layer cannot drop a module, licence or device it inherited.
+  ``[defaults]`` holds only what every job wants.
+- ``[]`` or ``{}`` on a key that overrides clears it. On ``modules``,
+  ``licenses`` or ``devices`` it adds nothing.
+- On the command line, ``--license`` and ``--device`` add to the config's.
+  ``-E``, ``--feature`` and ``-S`` replace the config's ``env_vars``,
+  ``features`` and ``scheduler_args``.
+- A ``JobSpec`` follows the same rules. Its ``modules_path`` and
+  ``modules_path_append`` replace the ones in ``[defaults]``; they are there
+  for a Python caller with no config file.
 
 
 .. _job-types:
@@ -449,18 +466,19 @@ Three keys say what a job needs from the cluster by name, on any job layer:
    features = ["bigmem"]
 
 - ``licenses`` and ``devices`` are tables of ``name = count``. A count is a
-  whole number, 1 or more; anything else is an error before submission. A
-  later layer setting a name replaces that name's count and leaves the
-  other names alone.
-- ``features`` is a list of names and merges like every list
-  (:ref:`list-merging`).
+  whole number, 1 or more; anything else is an error before submission.
+  They add up across layers: a later layer setting a name replaces that
+  name's count and leaves the other names alone.
+- ``features`` is a list of names. A layer that sets it replaces the
+  earlier list (:ref:`layer-rules`).
 - A name is only the name the site gave the thing. A GPU type, a licence
   server, scratch space, a host name or a memory limit by its site name is
   one scheduler's syntax and goes in :ref:`scheduler_args <scheduler-args>`.
 
 On the command line: ``--license NAME=N``, ``--device NAME=N`` and
-``--feature NAME``, each repeatable. A name given there replaces the same
-name from config; the same name given twice keeps the last.
+``--feature NAME``, each repeatable. A licence or device given there is
+added to the config's, replacing the count of the same name; the same name
+given twice keeps the last. ``--feature`` replaces the config's features.
 
 Interactive and batch jobs carry all three alike. On SGE each is a ``-l``
 request (:doc:`sge`).
@@ -472,33 +490,34 @@ Scheduler-specific arguments
 ----------------------------
 
 ``scheduler_args`` is an escape hatch for flags hpc-runner does not model
-(``-binding``, ``-masterq``, ``--constraint``, ...). It may appear on any job
-layer, as a table of argument lists keyed by scheduler name; each list
-merges per :ref:`list-merging`, and each scheduler uses only its own:
+(``-binding``, ``-masterq``, ...). It may appear on any job layer, as a
+plain list of arguments. A config file is for one scheduler, so the list is
+written in that scheduler's own flags:
 
 .. code-block:: toml
 
-   [defaults.scheduler_args]
-   sge = ["-binding", "linear:1"]
+   [defaults]
+   scheduler_args = ["-binding", "linear:1"]
 
    [tools.sim]
-   scheduler_args = { sge = ["-masterq", "fast.q"], slurm = ["--constraint=avx512"] }
+   scheduler_args = ["-binding", "linear:1", "-masterq", "fast.q"]
+
+A layer that sets ``scheduler_args`` replaces the earlier list
+(:ref:`layer-rules`), so ``[tools.sim]`` above repeats the flag it wants to
+keep. Repeated flags (``-l a=1 -l b=2``) are kept as written.
 
 On the command line, raw arguments go in ``-S``/``--scheduler-args``
-(``hpc run -S '-l gpu=2' make sim``) and are appended after config's.
+(``hpc run -S '-l gpu=2' make sim``). They replace the config's list.
 
 An option means the same on every scheduler (see :ref:`job-rules` for the
 few that a job kind or the local scheduler does not take). Anything that is
-one scheduler's own idea goes here instead. Job priority is an example (each scheduler has its own
-scale), as is an MPI job's node and task count:
+one scheduler's own idea goes here instead. Job priority is an example (each
+scheduler has its own scale), as is an MPI job's node and task count:
 
 .. code-block:: toml
 
    [types.low]
-   scheduler_args = { sge = ["-p", "-500"], slurm = ["--nice=500"] }
-
-   [types.mpi]
-   scheduler_args = { slurm = ["-N", "2", "-n", "32"] }
+   scheduler_args = ["-p", "-500"]
 
 ``[schedulers.<name>]`` holds site facts only (PE name, resource names,
 module init script).
@@ -547,6 +566,9 @@ cluster:
        and ``features`` are ignored.
      - Nothing here reserves or limits them, and the same config runs
        unchanged on the cluster.
+   * - ``scheduler_args`` is ignored.
+     - The arguments are the cluster scheduler's own flags. There is no
+       scheduler here to pass them to.
    * - Arrays and dependencies are refused.
      - There is no scheduler to fan a job out or hold it.
 
@@ -759,7 +781,9 @@ The separator is always ``:``. Names must be valid shell identifiers and
 values are shell-quoted, so they arrive exactly as written. Setting a
 variable in ``env_vars`` and prepending or appending to it in the same
 section is an error; across layers it is allowed (the set wins, since it
-renders last).
+renders last). Each of the four keys overrides: a layer that sets
+``env_vars`` replaces the whole table from the earlier layers
+(:ref:`layer-rules`).
 
 .. code-block:: toml
 
@@ -829,8 +853,7 @@ that name. The rules:
 - ``options`` sub-entries apply under every listed command. A command that
   needs different settings is its own entry or a type.
 - Names are bare commands (no path, no whitespace); patterns such as ``x*``
-  are not accepted. Across files the list merges like every other list
-  (:ref:`list-merging`).
+  are not accepted.
 
 
 .. _tool-option-specialisation:
@@ -840,8 +863,8 @@ Tool option specialisation
 
 A tool entry can define ``[tools.<name>.options]`` sub-entries that match
 against arguments in the command string.  When matched, the option entry is
-merged on top of the base tool config.  This allows a single tool to have
-different environments depending on how it is invoked.
+one more layer after the tool's (:ref:`layer-rules`).  This allows a single
+tool to have different environments depending on how it is invoked.
 
 **TOML syntax:**
 
@@ -853,11 +876,11 @@ different environments depending on how it is invoked.
 
    [tools.fusesoc.options."--tool slang"]
    mem = "16G"
-   modules = ["slang/0.9"]          # appended → ["fusesoc/2.0", "slang/0.9"]
+   modules = ["slang/0.9"]          # added → ["fusesoc/2.0", "slang/0.9"]
 
    [tools.fusesoc.options."--tool verilator"]
    cpu = 4
-   modules = ["verilator/5.0"]      # appended → ["fusesoc/2.0", "verilator/5.0"]
+   modules = ["verilator/5.0"]      # added → ["fusesoc/2.0", "verilator/5.0"]
 
    [tools.mytool]
    cpu = 2
@@ -892,7 +915,7 @@ different environments depending on how it is invoked.
 Example: fully populated config (standalone file)
 -------------------------------------------------
 
-Save as ``hpc-runner.toml`` at your git root or in the current directory:
+Save as ``hpc-runner.toml`` at your git root:
 
 .. code-block:: toml
 
@@ -916,7 +939,7 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    modules_path = []           # module use <path>: searched before the site paths
    modules_path_append = []    # module use --append <path>: searched after them
 
-   scheduler_args = { sge = ["-l", "scratch=20G"] }   # a site request with no option
+   scheduler_args = ["-l", "scratch=20G"]      # a site request with no option
 
    env_unset = ["https_proxy", "http_proxy"]   # unset in the job script
    env_passthrough = ["DISPLAY"]               # used only with inherit_env = false
@@ -946,8 +969,8 @@ Save as ``hpc-runner.toml`` at your git root or in the current directory:
    mem = "16G"
    time = "4:00:00"
    queue = "short.q"
-   modules = { set = ["python/3.11"] }  # replace the list rather than append
-   scheduler_args = { sge = ["-l", "tmpfs=8G"] }
+   modules = ["python/3.11"]            # added to the modules in [defaults]
+   scheduler_args = ["-l", "tmpfs=8G"]  # replaces the list in [defaults]
 
    [tools.fusesoc]
    modules = ["fusesoc/2.0"]

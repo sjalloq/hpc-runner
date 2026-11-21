@@ -104,8 +104,8 @@ difference is handled by the shape of the output (TESTBED_REVIEW D-T49).
   `login`. By hand: start the stack with a compose override that omits the
   `work` volume from `exec1` (for example a `compose.override.yml` giving
   `exec1` a `volumes:` list without `/work`, passed with a second `-f`), pin
-  a job there (`JobSpec("echo hi", scheduler_args={"sge": ["-l",
-  "hostname=exec1"]})` or `qsub -l hostname=exec1`), and observe the symptom: the
+  a job there (`JobSpec("echo hi", scheduler_args=["-l",
+  "hostname=exec1"])` or `qsub -l hostname=exec1`), and observe the symptom: the
   job's `#$ -o /work/...` cannot be opened, SGE puts the job in `Eqw`
   ("can't open output file") or it fails at once, `get_status` reports
   FAILED (`Eqw`) or the job never leaves the queue, and `read_stdout()`

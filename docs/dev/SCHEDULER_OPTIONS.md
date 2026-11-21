@@ -35,6 +35,7 @@ the code is built and tested against it.
 | `features` | passes on | passes on | passes on | passes on | ignores | ignores |
 | `array` | passes on | refuses | passes on | refuses | refuses | refuses |
 | `dependencies` | passes on | refuses | passes on | refuses | refuses | refuses |
+| `scheduler_args` | passes on | passes on | passes on | passes on | ignores | ignores |
 
 ## hpc-runner's own rules
 
@@ -50,6 +51,7 @@ with its reason, in the user docs (`docs/source/configuration.rst`,
 | local: `cpu` is given to the job as `${hpc.cpus}` and nothing holds the job to it | It is for the user's tools and flows to use the count they asked for |
 | local: `mem`, `time`, `queue`, `project`, `licenses`, `devices`, `features` are ignored | local exists to give the modules and environment without a scheduler; nothing here reserves or limits |
 | local: no arrays, no dependencies | There is no scheduler to fan out or hold a job |
+| local: `scheduler_args` is ignored | The arguments are the cluster scheduler's own flags; local has no scheduler to pass them to |
 
 ## Flags
 
@@ -74,6 +76,7 @@ an interactive one (an argument to the command).
 | `features` | `-l name=1` | `-C name` |
 | `array` | `-t`, limit `-tc` | `--array=...%N` |
 | `dependencies` | `-hold_jid` | `--dependency` |
+| `scheduler_args` | the arguments as given | the arguments as given |
 
 `<pe>` and `<mem>` are the site's names, from `[schedulers.sge]`.
 

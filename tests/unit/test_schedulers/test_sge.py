@@ -963,15 +963,11 @@ class TestSGESubmissionContract:
 
     def test_passthrough_is_one_directive_line(self, scheduler):
         """B1: '-q batch.q -l gpu=2' stays together on one #$ line."""
-        job = make_job("python train.py", scheduler_args={"sge": ["-q", "batch.q", "-l", "gpu=2"]})
+        job = make_job("python train.py", scheduler_args=["-q", "batch.q", "-l", "gpu=2"])
         script = scheduler.preview(job)
         assert "#$ -q batch.q -l gpu=2\n" in script
         assert "#$ -batch.q" not in script
         assert "#$ -gpu=2" not in script
-
-    def test_other_schedulers_passthrough_ignored(self, scheduler):
-        job = make_job(scheduler_args={"slurm": ["--constraint=x"]})
-        assert "--constraint" not in scheduler.preview(job)
 
     def test_preview_equals_submitted_script(self, scheduler, tmp_path, mock_sge_commands):
         job = make_job(
@@ -1037,7 +1033,7 @@ class TestSGESubmissionContract:
             project="proj1",
             stdout="out.log",
             cpu=2,
-            scheduler_args={"sge": ["-l", "display=1"]},
+            scheduler_args=["-l", "display=1"],
         )
         with patch_seam(respond):
             result = scheduler.submit(job)
@@ -1310,12 +1306,12 @@ class TestSGERequests:
         assert lines == [f"#$ -l {request}" for request in self.REQUESTS]
 
     def test_batch_requests_come_before_scheduler_args(self):
-        job = make_job(licenses={"xcelium": 1}, scheduler_args={"sge": ["-l", "scratch=20G"]})
+        job = make_job(licenses={"xcelium": 1}, scheduler_args=["-l", "scratch=20G"])
         lines = SGEScheduler(HPCConfig()).preview(job).splitlines()
         assert lines.index("#$ -l xcelium=1") < lines.index("#$ -l scratch=20G")
 
     def test_qrsh_carries_all_three(self):
-        job = make_job(interactive=True, scheduler_args={"sge": ["-now", "yes"]}, **self.FIELDS)
+        job = make_job(interactive=True, scheduler_args=["-now", "yes"], **self.FIELDS)
         cmd = SGEScheduler(HPCConfig())._build_qrsh_command(job, "/s.sh")
         requests = [flag for request in self.REQUESTS for flag in ("-l", request)]
         assert cmd[-3 - len(requests) :] == [*requests, "-now", "yes", "/s.sh"]

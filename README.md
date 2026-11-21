@@ -86,7 +86,7 @@ the [Python API guide](https://sjalloq.github.io/hpc-runner/programmatic_api.htm
 ## Configuration
 
 `hpc-runner.toml` at the git root is the project config; one in the current
-directory overrides it. Settings layer from `[defaults]` through the tool
+directory can add or override tools and types. Settings layer from `[defaults]` through the tool
 matched by the command (or the tools a `-t` type pulls in) to the command
 line, and `hpc config resolve CMD` shows which layer set each value.
 
@@ -116,7 +116,7 @@ tools = ["xcelium", "slang"]   # pulled in, in this order, then the keys below
 cpu = 2
 ```
 
-Every key, the merge rules, variable expansion and the SGE mapping are in
+Every key, how layers combine, variable expansion and the SGE mapping are in
 the [configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html)
 and the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html).
 

@@ -67,22 +67,23 @@ Options:
   ``${hpc.job_name}.${hpc.job_id}.out``; see :ref:`output-files`)
 - ``-e, --stderr TEXT`` (separate stderr file pattern; default: merged into stdout)
 - ``-a, --array TEXT`` (e.g. ``1-100``, ``1-100:10%5``; implies batch)
-- ``-E, --env KEY=VALUE`` (repeatable; sets ``KEY`` in the job, added to the
-  config's ``env_vars``; ``$VAR`` is resolved where you submit)
-- ``--license NAME=N`` (repeatable; requests ``N`` of a licence; a name here
-  replaces the same name in the config's ``licenses``, and the last of a
-  repeated name wins; SGE ``-l NAME=N``)
+- ``-E, --env KEY=VALUE`` (repeatable; sets ``KEY`` in the job. The
+  variables given here replace the config's ``env_vars``, whole; ``$VAR`` is
+  resolved where you submit)
+- ``--license NAME=N`` (repeatable; requests ``N`` of a licence, added to
+  the config's ``licenses``. A name here replaces the count of the same
+  name, and the last of a repeated name wins; SGE ``-l NAME=N``)
 - ``--device NAME=N`` (repeatable; requests ``N`` of a device such as a GPU,
-  merged with the config's ``devices`` the same way; SGE ``-l NAME=N``)
-- ``--feature NAME`` (repeatable; requests a node feature, added to the
-  config's ``features``; SGE ``-l NAME=1``)
+  added to the config's ``devices`` the same way; SGE ``-l NAME=N``)
+- ``--feature NAME`` (repeatable; requests a node feature. The features
+  given here replace the config's ``features``; SGE ``-l NAME=1``)
 - ``-D, --depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
   e.g. ``afterok:123:124,afterany:125``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
 - ``--dry-run`` (print the mode and the rendered script, don’t submit)
 - ``-w, --wait`` (with ``--batch`` or ``--array``: block until the job completes;
   without them it is a usage error, since an interactive run already waits)
-- ``-S, --scheduler-args 'FLAGS'`` (repeatable; raw flags for the active
+- ``-S, --scheduler-args 'FLAGS'`` (repeatable; raw flags for the
   scheduler, see below)
 - ``--keep-script`` (keep generated script; path is logged at debug level —
   use ``--verbose`` to see it)
@@ -91,9 +92,10 @@ Scheduler passthrough
 ^^^^^^^^^^^^^^^^^^^^^
 
 Raw scheduler flags go in one quoted string with ``-S``/``--scheduler-args``.
-It is split like a shell would split it and appended to the scheduler's
-command line (``qsub``/``sbatch`` flags) after anything the config adds. It may
-be repeated; the pieces are kept in order.
+It is split like a shell would split it and passed to the scheduler
+(``qsub``/``sbatch`` flags). It may be repeated; the pieces are kept in
+order. The flags given here replace the config's ``scheduler_args``
+(:ref:`layer-rules`). The local scheduler ignores them.
 
 .. code-block:: bash
 
@@ -183,7 +185,7 @@ Other commands
 - ``hpc config show [--raw]``: print the active configuration (merged, or the
   raw file contents)
 - ``hpc config path [--all]``: print the active config file path (``--all``
-  lists the whole merge chain)
+  lists every file read: the project file, then the local file)
 - ``hpc config init``: create a starter ``hpc-runner.toml`` in the current directory
 - ``hpc config check [PATH]``: validate the config (or ``PATH``), print every
   error and warning, exit 1 on any error

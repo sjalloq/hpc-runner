@@ -3,10 +3,10 @@
 The keys allowed in a job layer (``[defaults]``, ``[tools.x]``,
 ``[tools.x.options."..."]``, ``[types.x]``) are the :class:`JobSpec` fields
 minus the per-invocation ones; :data:`FIELD_VALIDATORS` gives each its
-expected TOML type. Three structural keys sit beside them: ``options`` and
-``commands`` under ``[tools.x]``, ``tools`` under ``[types.x]``. Validation
-converts as it checks: verb tables become :class:`~hpc_runner.core.merge.Set`
-/ :class:`~hpc_runner.core.merge.Edit`.
+expected TOML type. ``modules_path`` and ``modules_path_append`` are accepted
+in ``[defaults]`` only. Three structural keys sit beside the job keys:
+``options`` and ``commands`` under ``[tools.x]``, ``tools`` under
+``[types.x]``.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.core.merge import Edit, Set
 from hpc_runner.core.units import Duration, Memory
 
 #: The config format this package reads.
@@ -30,7 +29,6 @@ PER_INVOCATION_FIELDS = frozenset({"command", "type", "dependencies", "array"})
 #: Top-level keys of a config file.
 TOP_LEVEL_KEYS = (
     "config_version",
-    "extends",
     "scheduler",
     "module_init_script",
     "defaults",
@@ -39,6 +37,10 @@ TOP_LEVEL_KEYS = (
     "schedulers",
     "trace",
 )
+
+#: The top-level keys a local file (``./hpc-runner.toml`` read after a
+#: project file) may hold.
+LOCAL_FILE_KEYS = ("config_version", "tools", "types")
 
 #: Keys that used to live under ``[schedulers.<name>]``, and what to do now.
 RETIRED_SCHEDULER_KEYS = {
@@ -162,36 +164,13 @@ def _count_map(value: Any) -> dict[str, int]:
     return dict(value)
 
 
-def _list_of(item: Callable[[Any, int], Any], what: str) -> Callable[[Any], Any]:
-    """A D1 list validator: a plain list, ``{ set = [...] }`` or ``{ remove, add }``."""
+def _list_of(item: Callable[[Any, int], Any], what: str) -> Callable[[Any], list[Any]]:
+    """A validator for a list whose entries each pass *item*."""
 
-    expected = f"expected a list of {what} or a {{ set | remove | add }} table"
-
-    def items(value: Any, verb: str | None) -> list[Any]:
+    def validate(value: Any) -> list[Any]:
         if not isinstance(value, list):
-            where = f"{verb}: " if verb else ""
-            raise _Invalid(f"{where}{expected}, got {_describe(value)}")
+            raise _Invalid(f"expected a list of {what}, got {_describe(value)}")
         return [item(entry, i) for i, entry in enumerate(value)]
-
-    def validate(value: Any) -> Any:
-        if isinstance(value, list):
-            return items(value, None)
-        if not isinstance(value, dict):
-            raise _Invalid(f"{expected}, got {_describe(value)}")
-        unknown = [k for k in value if k not in ("set", "remove", "add")]
-        if unknown:
-            raise _Invalid(
-                f"unknown list verb {unknown[0]!r}; use {{ set = [...] }} "
-                "or { remove = [...], add = [...] }"
-            )
-        if "set" in value:
-            if len(value) > 1:
-                raise _Invalid("'set' cannot be combined with 'remove' or 'add'")
-            return Set(items(value["set"], "set"))
-        return Edit(
-            remove=items(value.get("remove", []), "remove"),
-            add=items(value.get("add", []), "add"),
-        )
 
     return validate
 
@@ -211,18 +190,6 @@ def _env_name_item(value: Any, index: int) -> str:
 
 _str_list = _list_of(_str_item, "strings")
 _env_name_list = _list_of(_env_name_item, "environment variable names")
-
-
-def _scheduler_args(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise _Invalid(f"expected a table of scheduler name = [args], got {_describe(value)}")
-    result: dict[str, Any] = {}
-    for sched, args in value.items():
-        try:
-            result[sched] = _str_list(args)
-        except _Invalid as exc:
-            raise _Invalid(exc.message, subkey=sched) from None
-    return result
 
 
 #: Every config-settable JobSpec field and its validator. A test asserts this
@@ -250,21 +217,13 @@ FIELD_VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "licenses": _count_map,
     "devices": _count_map,
     "features": _str_list,
-    "scheduler_args": _scheduler_args,
+    "scheduler_args": _str_list,
     "interactive": _bool,
 }
 
-#: List-valued job settings, merged per D1.
-LIST_FIELDS = frozenset(
-    {
-        "env_unset",
-        "env_passthrough",
-        "modules",
-        "modules_path",
-        "modules_path_append",
-        "features",
-    }
-)
+#: Job keys accepted in ``[defaults]`` only (and on a ``JobSpec``): where the
+#: site's modules are read from is said once.
+DEFAULTS_ONLY_FIELDS = frozenset({"modules_path", "modules_path_append"})
 
 #: Settings whose strings are expanded per D5 (:mod:`hpc_runner.core.expand`).
 #: ``command`` is deliberately absent: it is the user's shell.
@@ -289,9 +248,6 @@ EXPANDED_FIELDS = frozenset(
     }
 )
 
-#: Dict-valued job settings: keys merge across layers, later layer wins per key.
-DICT_FIELDS = frozenset({"env_vars", "env_prepend", "env_append", "licenses", "devices"})
-
 
 def env_conflicts(layer: Mapping[str, Any]) -> list[tuple[str, str]]:
     """``(field, key)`` for each key a layer both sets and prepends/appends (D5).
@@ -310,8 +266,7 @@ def env_conflicts(layer: Mapping[str, Any]) -> list[tuple[str, str]]:
 
 
 def _tool_commands(value: Any) -> list[str]:
-    # The command names a tool entry matches instead of its own name. Merged
-    # across files like every other list (D1).
+    # The command names a tool entry matches instead of its own name.
     if not isinstance(value, list):
         raise _Invalid(f"expected a list of command names, got {_describe(value)}")
     names = [_str_item(v, i) for i, v in enumerate(value)]
@@ -325,8 +280,6 @@ def _tool_commands(value: Any) -> list[str]:
 
 
 def _type_tools(value: Any) -> list[str]:
-    # Two config files both setting [types.T] tools follow the D1 list rule
-    # (append + dedupe; `{ set = [...] }` to replace), like every other list.
     if not isinstance(value, list):
         raise _Invalid(f"expected a list of tool names, got {_describe(value)}")
     return [_str_item(v, i) for i, v in enumerate(value)]
@@ -432,16 +385,26 @@ def _validate_job_layer(
     table: Any,
     *,
     structural: Mapping[str, Callable[[Any], Any]] | None = None,
+    defaults: bool = False,
 ) -> dict[str, Any]:
-    """Validate one job layer; returns the converted table (valid keys only)."""
+    """Validate one job layer; returns the table with its valid keys only.
+
+    *defaults* is True for ``[defaults]``, the one layer that accepts
+    :data:`DEFAULTS_ONLY_FIELDS`.
+    """
     if not isinstance(table, dict):
         c.error(section[:-1], section[-1], f"expected a table, got {_describe(table)}")
         return {}
-    extra = dict(structural or {})
-    allowed = list(FIELD_VALIDATORS) + list(extra)
+    validators: dict[str, Callable[[Any], Any]] = {
+        key: validator
+        for key, validator in FIELD_VALIDATORS.items()
+        if defaults or key not in DEFAULTS_ONLY_FIELDS
+    }
+    validators.update(structural or {})
+    allowed = list(validators)
     result: dict[str, Any] = {}
     for key, value in table.items():
-        validator = FIELD_VALIDATORS.get(key) or extra.get(key)
+        validator = validators.get(key)
         if validator is None:
             c.error(section, key, _unknown_key(key, allowed))
             continue
@@ -473,6 +436,8 @@ def validate_file(
     text: str,
     data: dict[str, Any],
     scheduler_keys: Callable[[str], Mapping[str, type] | None],
+    *,
+    local: bool = False,
 ) -> tuple[dict[str, Any], list[ConfigError], list[str]]:
     """Validate one parsed config file.
 
@@ -482,11 +447,13 @@ def validate_file(
         data: ``tomllib``'s parse of *text*.
         scheduler_keys: Maps a scheduler name to its declared
             ``CONFIG_KEYS``, or None if the package has no such backend.
+        local: The file is a local file, read after a project file: any
+            top-level key outside :data:`LOCAL_FILE_KEYS` is an error and
+            is not read.
 
     Returns:
-        ``(converted, errors, warnings)``: the file's sections with every
-        valid key converted (verb tables become ``Set``/``Edit``), every
-        problem found, and every warning.
+        ``(converted, errors, warnings)``: the file's sections with their
+        valid keys, every problem found, and every warning.
     """
     c = _Collector(path, text)
 
@@ -508,9 +475,15 @@ def validate_file(
     for key in data:
         if key not in TOP_LEVEL_KEYS:
             c.error((), key, _unknown_key(key, TOP_LEVEL_KEYS))
-
-    if "extends" in data and not isinstance(data["extends"], str):
-        c.error((), "extends", f"expected a path, got {_describe(data['extends'])}")
+        elif local and key not in LOCAL_FILE_KEYS:
+            c.error(
+                (),
+                key,
+                "not allowed in a local file, which holds [tools.*] and [types.*] only; "
+                "set it in the project file",
+            )
+    if local:
+        data = {key: value for key, value in data.items() if key in LOCAL_FILE_KEYS}
 
     converted: dict[str, Any] = {}
 
@@ -538,7 +511,9 @@ def validate_file(
             )
 
     if "defaults" in data:
-        converted["defaults"] = _validate_job_layer(c, ("defaults",), data["defaults"])
+        converted["defaults"] = _validate_job_layer(
+            c, ("defaults",), data["defaults"], defaults=True
+        )
 
     def tool(name: str, entry: Any) -> dict[str, Any]:
         section = ("tools", name)

@@ -11,16 +11,13 @@ from hpc_runner.core.config import (
     HPC_CONFIG_ENV_VAR,
     HPCConfig,
     _match_contiguous,
-    _merge,
     _normalise_tokens,
-    _resolve_extends,
     check_config,
     find_config_file,
     find_config_files,
     load_config,
 )
 from hpc_runner.core.exceptions import ConfigError
-from hpc_runner.core.merge import Edit, Set, merge_list
 from hpc_runner.core.schema import FIELD_VALIDATORS, PER_INVOCATION_FIELDS, find_line
 from hpc_runner.core.spec import JobSpec
 from hpc_runner.core.units import Memory
@@ -114,83 +111,6 @@ class TestHPCConfig:
         assert sge_config == {}
 
 
-class TestMerge:
-    """_merge: one file's sections over an earlier file's (D1 for lists)."""
-
-    def test_list_merge_preserves_order(self):
-        """Module load order matters on HPC - merge must preserve it."""
-        base = {"modules": ["gcc/12", "openmpi/4", "python/3.11"]}
-        override = {"modules": ["cuda/12", "python/3.11"]}
-        result = _merge(base, override)
-
-        # python/3.11 appears in both - should be deduplicated
-        assert result["modules"].count("python/3.11") == 1
-        # Order from base should come first, then new items from override
-        assert result["modules"] == ["gcc/12", "openmpi/4", "python/3.11", "cuda/12"]
-
-    def test_list_set_replaces(self):
-        base = {"modules": ["gcc/12", "openmpi/4"]}
-        override = {"modules": Set(["intel/2024", "impi/2024"])}
-        result = _merge(base, override)
-
-        assert result["modules"] == Set(["intel/2024", "impi/2024"])
-
-    def test_list_edit_composes(self):
-        """An earlier file's list then a later file's edit is one edit."""
-        base = {"modules": ["gcc/12", "python/3.11"]}
-        override = {"modules": Edit(remove=["python/3.11"], add=["python/3.12"])}
-        result = _merge(base, override)
-
-        assert merge_list(["site/1", "python/3.11"], result["modules"]) == [
-            "site/1",
-            "gcc/12",
-            "python/3.12",
-        ]
-
-    def test_list_merge_no_duplicates_from_base(self):
-        """An item in both files appears once."""
-        base = {"env_unset": ["-v"]}
-        override = {"env_unset": ["-v", "-x"]}
-        result = _merge(base, override)
-
-        assert result["env_unset"] == ["-v", "-x"]
-
-    def test_licenses_merge(self):
-        """Two files both defining licenses merge by name, later wins."""
-        base = {"licenses": {"xcelium": 1, "vcs": 1}}
-        override = {"licenses": {"xcelium": 2}}
-        result = _merge(base, override)
-
-        assert result["licenses"] == {"xcelium": 2, "vcs": 1}
-
-    def test_dict_merge_deep(self):
-        """Nested dicts should merge recursively."""
-        base = {"schedulers": {"sge": {"pe": "smp", "mem": "mem_free"}}}
-        override = {"schedulers": {"sge": {"pe": "mpi"}}}
-        result = _merge(base, override)
-
-        assert result["schedulers"]["sge"]["pe"] == "mpi"
-        assert result["schedulers"]["sge"]["mem"] == "mem_free"
-
-    def test_scalar_override(self):
-        """Scalars in override should replace base."""
-        base = {"cpu": 1, "mem": "4G"}
-        override = {"cpu": 8}
-        result = _merge(base, override)
-
-        assert result["cpu"] == 8
-        assert result["mem"] == "4G"
-
-    def test_new_keys_added(self):
-        """Keys only in override should be added."""
-        base = {"cpu": 1}
-        override = {"queue": "batch"}
-        result = _merge(base, override)
-
-        assert result["cpu"] == 1
-        assert result["queue"] == "batch"
-
-
 class TestLoadConfig:
     """Tests for config loading."""
 
@@ -263,149 +183,8 @@ class TestFindConfigFile:
             os.chdir(old_cwd)
 
 
-class TestExtendsExpansion:
-    """`extends` follows the D5 rule: $VAR from the environment, ${CONFIG_DIR}."""
-
-    def test_env_var(self, tmp_path, monkeypatch):
-        (tmp_path / "base.toml").write_text("config_version = 1\n")
-        child = tmp_path / "child.toml"
-        child.write_text('config_version = 1\nextends = "${TEST_HPC_BASE}/base.toml"\n')
-        monkeypatch.setenv("TEST_HPC_BASE", str(tmp_path))
-        assert _resolve_extends(child) == [(tmp_path / "base.toml").resolve(), child.resolve()]
-
-    def test_config_dir(self, tmp_path):
-        (tmp_path / "base.toml").write_text("config_version = 1\n")
-        child = tmp_path / "child.toml"
-        child.write_text('config_version = 1\nextends = "${CONFIG_DIR}/base.toml"\n')
-        assert _resolve_extends(child)[0] == (tmp_path / "base.toml").resolve()
-
-    def test_undefined_is_error(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("TEST_HPC_UNSET", raising=False)
-        child = tmp_path / "child.toml"
-        child.write_text('config_version = 1\nextends = "$TEST_HPC_UNSET/base.toml"\n')
-        with pytest.raises(ConfigError, match=r"undefined variable \$TEST_HPC_UNSET") as info:
-            _resolve_extends(child)
-        assert info.value.line == 2
-
-
-class TestExtendsResolution:
-    """Tests for extends chain resolution."""
-
-    def test_resolve_extends_single(self, temp_dir):
-        """Test resolving a single extends."""
-        base_config = temp_dir / "base.toml"
-        base_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
-
-        child_config = temp_dir / "child.toml"
-        child_config.write_text(
-            f'config_version = 1\nextends = "{base_config}"\n[defaults]\nmem = "8G"\n'
-        )
-
-        chain = _resolve_extends(child_config)
-
-        assert len(chain) == 2
-        assert chain[0] == base_config.resolve()
-        assert chain[1] == child_config.resolve()
-
-    def test_resolve_extends_relative_path(self, temp_dir):
-        """Test resolving extends with relative path."""
-        base_config = temp_dir / "base.toml"
-        base_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
-
-        child_config = temp_dir / "child.toml"
-        child_config.write_text(
-            'config_version = 1\nextends = "base.toml"\n[defaults]\nmem = "8G"\n'
-        )
-
-        chain = _resolve_extends(child_config)
-
-        assert len(chain) == 2
-        assert chain[0] == base_config.resolve()
-
-    def test_resolve_extends_chain(self, temp_dir):
-        """Test resolving a chain of extends."""
-        grandparent = temp_dir / "grandparent.toml"
-        grandparent.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
-
-        parent = temp_dir / "parent.toml"
-        parent.write_text(
-            'config_version = 1\nextends = "grandparent.toml"\n[defaults]\nmem = "4G"\n'
-        )
-
-        child = temp_dir / "child.toml"
-        child.write_text(
-            'config_version = 1\nextends = "parent.toml"\n[defaults]\ntime = "1:00:00"\n'
-        )
-
-        chain = _resolve_extends(child)
-
-        assert len(chain) == 3
-        assert chain[0] == grandparent.resolve()
-        assert chain[1] == parent.resolve()
-        assert chain[2] == child.resolve()
-
-    def test_resolve_extends_circular_detected(self, temp_dir):
-        """Test that circular extends are detected."""
-        config_a = temp_dir / "a.toml"
-        config_b = temp_dir / "b.toml"
-
-        config_a.write_text('config_version = 1\nextends = "b.toml"\n[defaults]\ncpu = 1\n')
-        config_b.write_text('config_version = 1\nextends = "a.toml"\n[defaults]\nmem = "4G"\n')
-
-        with pytest.raises(ConfigError, match="extends cycle"):
-            _resolve_extends(config_a)
-
-    def test_resolve_extends_with_env_var(self, temp_dir):
-        """Test resolving extends with env var in path."""
-        base_config = temp_dir / "base.toml"
-        base_config.write_text("config_version = 1\n[defaults]\ncpu = 1\n")
-
-        os.environ["TEST_CONFIG_DIR"] = str(temp_dir)
-        try:
-            child_config = temp_dir / "child.toml"
-            child_config.write_text(
-                "config_version = 1\n"
-                'extends = "${TEST_CONFIG_DIR}/base.toml"\n'
-                '[defaults]\nmem = "8G"\n'
-            )
-
-            chain = _resolve_extends(child_config)
-
-            assert len(chain) == 2
-            assert chain[0] == base_config.resolve()
-        finally:
-            del os.environ["TEST_CONFIG_DIR"]
-
-
-class TestConfigMerging:
-    """Tests for merging multiple config files."""
-
-    def test_load_config_merges_extends(self, temp_dir):
-        """Test that extends configs are merged correctly."""
-        base_config = temp_dir / "base.toml"
-        base_config.write_text(
-            'config_version = 1\n[defaults]\ncpu = 1\nmem = "4G"\n'
-            '[schedulers.sge]\nparallel_environment = "smp"\n'
-        )
-
-        child_config = temp_dir / "child.toml"
-        child_config.write_text(
-            "config_version = 1\n"
-            f'extends = "{base_config}"\n'
-            "[defaults]\ncpu = 4\n"
-            '[tools.python]\nmodules = ["python/3.11"]\n'
-        )
-
-        config = load_config(child_config)
-
-        # cpu overridden by child
-        assert config.defaults["cpu"] == 4
-        # mem inherited from base
-        assert config.defaults["mem"] == "4G"
-        # scheduler from base
-        assert config.schedulers["sge"]["parallel_environment"] == "smp"
-        # tools from child
-        assert config.tools["python"]["modules"] == ["python/3.11"]
+class TestConfigDiscovery:
+    """Which files are read: the project file, then the local file."""
 
     @staticmethod
     def _repo(temp_dir):
@@ -416,7 +195,7 @@ class TestConfigMerging:
         (temp_dir / "plain").mkdir()
         local_dir = temp_dir / "override"
         local_dir.mkdir()
-        (local_dir / "hpc-runner.toml").write_text('config_version = 1\n[defaults]\nmem = "16G"\n')
+        (local_dir / "hpc-runner.toml").write_text("config_version = 1\n[tools.make]\ncpu = 4\n")
         return root_config
 
     def test_git_root_config_found_from_a_subdirectory(self, temp_dir, monkeypatch):
@@ -436,7 +215,9 @@ class TestConfigMerging:
             root_config.resolve(),
             (temp_dir / "override" / "hpc-runner.toml").resolve(),
         ]
-        assert load_config().defaults == {"cpu": 1, "mem": "16G"}
+        config = load_config()
+        assert config.defaults == {"cpu": 1}
+        assert config.tools == {"make": {"cpu": 4}}
 
     def test_find_config_files_from_env_var(self, temp_dir, monkeypatch):
         """HPC_RUNNER_CONFIG replaces the git-root config (mutually exclusive)."""
@@ -747,27 +528,6 @@ class TestConfigVersion:
         assert err.line == 1
         assert "unsupported version 2" in str(err)
 
-    def test_required_in_extends_parent(self, tmp_path):
-        _write(tmp_path, "[defaults]\ncpu = 1\n", name="base.toml")
-        child = _write(tmp_path, 'config_version = 1\nextends = "base.toml"\n')
-        (err,) = _errors(child)
-        assert err.path == (tmp_path / "base.toml").resolve()
-        assert "missing config_version" in str(err)
-
-
-class TestExtendsErrors:
-    def test_missing_file_is_error(self, tmp_path):
-        path = _write(tmp_path, 'config_version = 1\n\nextends = "nope.toml"\n')
-        with pytest.raises(ConfigError, match="extends: file not found") as info:
-            load_config(path)
-        assert info.value.line == 3
-
-    def test_cycle_is_config_error(self, tmp_path):
-        _write(tmp_path, 'config_version = 1\nextends = "b.toml"\n', name="a.toml")
-        _write(tmp_path, 'config_version = 1\nextends = "a.toml"\n', name="b.toml")
-        with pytest.raises(ConfigError, match="extends cycle"):
-            load_config(tmp_path / "a.toml")
-
 
 class TestModuleInitScriptKey:
     """The top-level ``module_init_script`` key: the script every job sources."""
@@ -778,13 +538,6 @@ class TestModuleInitScriptKey:
 
     def test_absent_is_empty(self, tmp_path):
         assert load_config(_write(tmp_path, "config_version = 1\n")).module_init_script == ""
-
-    def test_later_file_wins(self, tmp_path):
-        base = _write(tmp_path, 'config_version = 1\nmodule_init_script = "/a"\n', name="base.toml")
-        child = _write(
-            tmp_path, f'config_version = 1\nextends = "{base}"\nmodule_init_script = "/b"\n'
-        )
-        assert load_config(child).module_init_script == "/b"
 
     @pytest.mark.parametrize("value", ["1", "true", '["/a"]'])
     def test_not_a_path_is_error(self, tmp_path, value):
@@ -814,16 +567,6 @@ class TestSchedulerKey:
 
     def test_absent_is_none(self, tmp_path):
         assert load_config(_write(tmp_path, "config_version = 1\n")).scheduler is None
-
-    def test_later_file_wins(self, tmp_path):
-        base = _write(tmp_path, 'config_version = 1\nscheduler = "sge"\n', name="base.toml")
-        child = _write(tmp_path, f'config_version = 1\nextends = "{base}"\nscheduler = "local"\n')
-        assert load_config(child).scheduler == "local"
-
-    def test_inherited_from_base(self, tmp_path):
-        base = _write(tmp_path, 'config_version = 1\nscheduler = "sge"\n', name="base.toml")
-        child = _write(tmp_path, f'config_version = 1\nextends = "{base}"\n')
-        assert load_config(child).scheduler == "sge"
 
     @pytest.mark.parametrize("value", ["1", '""', '["sge"]'])
     def test_not_a_name_is_error(self, tmp_path, value):
@@ -998,44 +741,60 @@ class TestSchema:
         (err,) = _errors(path)
         assert "not a valid environment variable name" in str(err)
 
-    def test_env_passthrough_is_a_d1_list(self, tmp_path):
-        path = _write(
-            tmp_path,
-            'config_version = 1\n[defaults]\nenv_passthrough = ["DISPLAY"]\n'
-            '[types.t]\nenv_passthrough = { set = ["LM_LICENSE_FILE"] }\n',
-        )
-        config = load_config(path)
-        assert config.defaults["env_passthrough"] == ["DISPLAY"]
-        assert config.types["t"]["env_passthrough"] == Set(["LM_LICENSE_FILE"])
-
-    def test_verbs_converted(self, tmp_path):
-        path = _write(
-            tmp_path,
-            "config_version = 1\n"
-            "[defaults]\n"
-            'modules = { set = ["a"] }\n'
-            'env_unset = { remove = ["X"], add = ["Y"] }\n'
-            'scheduler_args = { sge = ["-binding", "linear:1"], slurm = { add = ["--x"] } }\n',
-        )
-        config = load_config(path)
-        assert config.defaults["modules"] == Set(["a"])
-        assert config.defaults["env_unset"] == Edit(remove=["X"], add=["Y"])
-        assert config.defaults["scheduler_args"] == {
-            "sge": ["-binding", "linear:1"],
-            "slurm": Edit(add=["--x"]),
-        }
-
-    def test_unknown_verb_rejected(self, tmp_path):
-        path = _write(tmp_path, 'config_version = 1\n[defaults]\nmodules = { replace = ["a"] }\n')
+    @pytest.mark.parametrize(
+        ("line", "message"),
+        [
+            ('modules = { set = ["a"] }', "modules: expected a list of strings, got a table"),
+            (
+                'env_unset = { remove = ["X"], add = ["Y"] }',
+                "env_unset: expected a list of environment variable names, got a table",
+            ),
+            (
+                'scheduler_args = { sge = ["-binding", "linear:1"] }',
+                "scheduler_args: expected a list of strings, got a table",
+            ),
+        ],
+    )
+    def test_a_table_for_a_list_key_is_an_ordinary_type_error(self, tmp_path, line, message):
+        path = _write(tmp_path, f"config_version = 1\n[defaults]\n{line}\n")
         (err,) = _errors(path)
-        assert "unknown list verb 'replace'" in str(err)
+        assert str(err) == f"{path}:3: [defaults] {message}"
 
-    def test_set_with_add_rejected(self, tmp_path):
-        path = _write(
-            tmp_path, 'config_version = 1\n[defaults]\nmodules = { set = ["a"], add = ["b"] }\n'
-        )
+    def test_scheduler_args_is_a_list_of_strings(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\n[defaults]\nscheduler_args = ["-p", "-500"]\n')
+        assert load_config(path).defaults["scheduler_args"] == ["-p", "-500"]
+
+    def test_extends_is_an_ordinary_unknown_key(self, tmp_path):
+        path = _write(tmp_path, 'config_version = 1\nextends = "base.toml"\n')
         (err,) = _errors(path)
-        assert "'set' cannot be combined" in str(err)
+        assert str(err) == f"{path}:2: extends: unknown key"
+
+    @pytest.mark.parametrize("key", ["modules_path", "modules_path_append"])
+    def test_module_paths_are_set_in_defaults(self, tmp_path, key):
+        path = _write(tmp_path, f'config_version = 1\n[defaults]\n{key} = ["/site/mf"]\n')
+        assert load_config(path).defaults[key] == ["/site/mf"]
+
+    @pytest.mark.parametrize(
+        ("key", "message"),
+        [
+            ("modules_path", "unknown key; did you mean 'modules'?"),
+            ("modules_path_append", "unknown key"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("header", "label"),
+        [
+            ("tools.sim", "tools.sim"),
+            ('tools.sim.options."-gui"', "tools.sim.options.-gui"),
+            ("types.regress", "types.regress"),
+        ],
+    )
+    def test_module_paths_are_unknown_keys_outside_defaults(
+        self, tmp_path, key, message, header, label
+    ):
+        path = _write(tmp_path, f'config_version = 1\n[{header}]\n{key} = ["/site/mf"]\n')
+        (err,) = _errors(path)
+        assert str(err) == f"{path}:3: [{label}] {key}: {message}"
 
     def test_type_missing_tool(self, tmp_path):
         path = _write(
@@ -1045,32 +804,6 @@ class TestSchema:
         (err,) = _errors(path)
         assert (err.path, err.line) == (path.resolve(), 5)
         assert "[types.lint] tools: no tool 'slang'" in str(err)
-
-    def test_type_tool_defined_in_other_file(self, tmp_path):
-        _write(tmp_path, "config_version = 1\n[tools.slang]\ncpu = 1\n", name="base.toml")
-        path = _write(
-            tmp_path, 'config_version = 1\nextends = "base.toml"\n[types.lint]\ntools = ["slang"]\n'
-        )
-        assert load_config(path).types["lint"]["tools"] == ["slang"]
-
-    def test_three_maps_merge_across_files(self, tmp_path):
-        """Two files both setting the maps: counts merge by name, features append."""
-        _write(
-            tmp_path,
-            "config_version = 1\n[defaults]\n"
-            'licenses = { xcelium = 1 }\ndevices = { gpu = 1 }\nfeatures = ["bigmem"]\n',
-            name="base.toml",
-        )
-        path = _write(
-            tmp_path,
-            'config_version = 1\nextends = "base.toml"\n[defaults]\n'
-            "licenses = { xcelium = 2, vcs = 1 }\ndevices = { fpga = 1 }\n"
-            'features = ["avx2", "bigmem"]\n',
-        )
-        defaults = load_config(path).defaults
-        assert defaults["licenses"] == {"xcelium": 2, "vcs": 1}
-        assert defaults["devices"] == {"gpu": 1, "fpga": 1}
-        assert defaults["features"] == ["bigmem", "avx2"]
 
     def test_schema_covers_exactly_the_config_settable_jobspec_fields(self):
         """A new JobSpec field must be added to the config schema (or excluded)."""
@@ -1272,16 +1005,6 @@ class TestToolCommands:
         assert config.tools["xcelium"]["commands"] == ["xrun", "xmvlog"]
         assert config.tool_for("xmvlog") == "xcelium"
 
-    def test_commands_merge_across_files(self, tmp_path):
-        _write(
-            tmp_path, 'config_version = 1\n[tools.xcelium]\ncommands = ["xrun"]\n', name="base.toml"
-        )
-        path = _write(
-            tmp_path,
-            'config_version = 1\nextends = "base.toml"\n[tools.xcelium]\ncommands = ["xmvlog"]\n',
-        )
-        assert load_config(path).tools["xcelium"]["commands"] == ["xrun", "xmvlog"]
-
     def test_commands_under_type_rejected(self, tmp_path):
         path = _write(tmp_path, 'config_version = 1\n[types.t]\ncommands = ["xrun"]\n')
         (err,) = _errors(path)
@@ -1323,11 +1046,129 @@ class TestToolCommands:
         assert "[tools.xcelium] commands: 'xrun' is also [tools.xrun]" in str(err)
         assert err.line == (5 if section_first else 3)
 
-    def test_clash_across_files_points_at_the_listing_file(self, tmp_path):
-        _write(tmp_path, "config_version = 1\n[tools.xrun]\ncpu = 1\n", name="base.toml")
-        path = _write(
-            tmp_path,
-            'config_version = 1\nextends = "base.toml"\n[tools.xcelium]\ncommands = ["xrun"]\n',
+
+@pytest.fixture
+def two_files(tmp_path, monkeypatch):
+    """Write a project file at a git root and a local file in a directory
+    below it, and submit from that directory. Returns the two paths."""
+
+    def write(project: str, local: str) -> tuple[Path, Path]:
+        (tmp_path / ".git").mkdir()
+        project_path = _write(tmp_path, project)
+        below = tmp_path / "below"
+        below.mkdir()
+        local_path = _write(below, local)
+        monkeypatch.delenv(HPC_CONFIG_ENV_VAR, raising=False)
+        monkeypatch.chdir(below)
+        return project_path.resolve(), local_path.resolve()
+
+    return write
+
+
+def _discovered_errors():
+    with pytest.raises(ConfigError) as info:
+        load_config()
+    return info.value.errors
+
+
+class TestLocalFile:
+    """``./hpc-runner.toml`` read after a project file: tools and types only."""
+
+    PROJECT = (
+        "config_version = 1\n"
+        'scheduler = "sge"\n'
+        "[defaults]\n"
+        'modules = ["site/1"]\n'
+        "[tools.xrun]\n"
+        "cpu = 2\n"
+        'modules = ["xcelium/23", "gcc/12"]\n'
+        "licenses = { xcelium = 1, vcs = 1 }\n"
+        "devices = { gpu = 1 }\n"
+        'features = ["bigmem"]\n'
+        'env_vars = { A = "1", B = "2" }\n'
+        '[tools.xrun.options."-gui"]\n'
+        'queue = "interactive"\n'
+        'modules = ["gui/1"]\n'
+        "[types.sim]\n"
+        'tools = ["xrun"]\n'
+        'queue = "sim.q"\n'
+        'env_unset = ["http_proxy"]\n'
+    )
+
+    @pytest.mark.parametrize(
+        ("body", "key", "line"),
+        [
+            ("[defaults]\ncpu = 4\n", "defaults", 2),
+            ('scheduler = "local"\n', "scheduler", 2),
+            ('[schedulers.sge]\nparallel_environment = "mpi"\n', "schedulers", 2),
+            ('module_init_script = "/init.sh"\n', "module_init_script", 2),
+            ("[trace]\nenabled = true\n", "trace", 2),
+        ],
+    )
+    def test_anything_but_tools_and_types_is_refused(self, two_files, body, key, line):
+        _, local = two_files(self.PROJECT, "config_version = 1\n" + body)
+        (err,) = _discovered_errors()
+        assert str(err) == (
+            f"{local}:{line}: {key}: not allowed in a local file, which holds "
+            "[tools.*] and [types.*] only; set it in the project file"
         )
-        (err,) = _errors(path)
-        assert (err.path, err.line) == (path.resolve(), 4)
+
+    def test_a_refused_section_is_not_read(self, two_files):
+        two_files(self.PROJECT, "config_version = 1\n[defaults]\ncpu = 4\n")
+        config, errors = check_config()
+        assert len(errors) == 1
+        assert config.defaults == {"modules": ["site/1"]}
+
+    def test_the_project_file_keeps_its_setup(self, two_files):
+        two_files(self.PROJECT, "config_version = 1\n[tools.make]\ncpu = 8\n")
+        config = load_config()
+        assert config.scheduler == "sge"
+        assert config.defaults == {"modules": ["site/1"]}
+        assert config.tools["make"] == {"cpu": 8}
+
+    def test_a_tool_in_both_files_combines_per_key(self, two_files):
+        """modules, licenses and devices add; every other key is the local file's."""
+        two_files(
+            self.PROJECT,
+            "config_version = 1\n"
+            "[tools.xrun]\n"
+            'modules = ["gcc/12", "debug/1"]\n'
+            "licenses = { xcelium = 2 }\n"
+            "devices = { fpga = 1 }\n"
+            'features = ["avx2"]\n'
+            'env_vars = { C = "3" }\n'
+            '[tools.xrun.options."-gui"]\n'
+            'modules = ["gui/2"]\n',
+        )
+        assert load_config().tools["xrun"] == {
+            "cpu": 2,
+            "modules": ["xcelium/23", "gcc/12", "debug/1"],
+            "licenses": {"xcelium": 2, "vcs": 1},
+            "devices": {"gpu": 1, "fpga": 1},
+            "features": ["avx2"],
+            "env_vars": {"C": "3"},
+            "options": {"-gui": {"queue": "interactive", "modules": ["gui/1", "gui/2"]}},
+        }
+
+    def test_a_type_in_both_files_combines_per_key(self, two_files):
+        two_files(
+            self.PROJECT,
+            'config_version = 1\n[types.sim]\nqueue = "debug.q"\nenv_unset = []\n',
+        )
+        assert load_config().types["sim"] == {
+            "tools": ["xrun"],
+            "queue": "debug.q",
+            "env_unset": [],
+        }
+
+    def test_a_local_type_may_name_a_project_tool(self, two_files):
+        two_files(self.PROJECT, 'config_version = 1\n[types.lint]\ntools = ["xrun"]\ncpu = 4\n')
+        assert load_config().types["lint"] == {"tools": ["xrun"], "cpu": 4}
+
+    def test_a_command_clash_points_at_the_listing_file(self, two_files):
+        _, local = two_files(
+            self.PROJECT, 'config_version = 1\n[tools.xcelium]\ncommands = ["xrun"]\n'
+        )
+        (err,) = _discovered_errors()
+        assert (err.path, err.line) == (local, 3)
+        assert "[tools.xcelium] commands: 'xrun' is also [tools.xrun]" in str(err)

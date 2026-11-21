@@ -387,8 +387,8 @@ class BaseScheduler(ABC):
         return getattr(job, attr_name)
 
     def _passthrough_args(self, job: Job) -> tuple[str, ...]:
-        """The job's raw scheduler arguments for this scheduler."""
-        return job.scheduler_args.get(self.name, ())
+        """The job's raw scheduler arguments."""
+        return job.scheduler_args
 
     # =========================================================================
     # Abstract Methods - Subclasses must implement

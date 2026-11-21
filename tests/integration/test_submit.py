@@ -52,7 +52,7 @@ def test_batch_echo(cluster: Cluster) -> None:
 
 def test_passthrough(cluster: Cluster) -> None:
     """B1: scheduler_args land as one ``#$`` line and qstat -j shows the hard resource."""
-    spec = JobSpec("sleep 10", name="passthrough", scheduler_args={"sge": ["-l", "gpu=1"]})
+    spec = JobSpec("sleep 10", name="passthrough", scheduler_args=["-l", "gpu=1"])
     job = _job(cluster, spec)
     directives = [line for line in cluster.scheduler().preview(job).splitlines() if "gpu" in line]
     assert directives == ["#$ -l gpu=1"]
@@ -82,7 +82,7 @@ def test_rejected_resource(cluster: Cluster) -> None:
     (docs/dev/testbed/TESTBED_REVIEW.md D-T27).
     """
     with pytest.raises(SubmissionError) as excinfo:
-        _submit(cluster, JobSpec("true", name="badres", scheduler_args={"sge": ["-l", "nosuch=1"]}))
+        _submit(cluster, JobSpec("true", name="badres", scheduler_args=["-l", "nosuch=1"]))
     assert "nosuch" in excinfo.value.stderr
 
 

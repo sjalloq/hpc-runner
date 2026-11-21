@@ -79,13 +79,11 @@ def test_flag_records_a_session(cluster: Cluster, workdir: Path) -> None:
 
 
 def test_config_enabled_trace(cluster: Cluster, workdir: Path) -> None:
-    """``[trace] enabled`` records without the flag (a config extending the testbed's)."""
+    """``[trace] enabled`` records without the flag (the testbed's config plus the section)."""
     trace = workdir / "trace"
     config = workdir / "hpc-runner.toml"
     config.write_text(
-        "config_version = 1\n"
-        f'extends = "{cluster.config_path}"\n\n'
-        f'[trace]\nenabled = true\ndir = "{trace}"\n'
+        Path(cluster.config_path).read_text() + f'\n[trace]\nenabled = true\ndir = "{trace}"\n'
     )
     _hpc(cluster, "--config", str(config), "status")
     _hpc(cluster, "--config", str(config), "status")  # identical: written again

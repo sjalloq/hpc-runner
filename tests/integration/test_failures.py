@@ -49,7 +49,7 @@ def _job_id(result: JobResult) -> str:
 def test_node_killed(cluster: Cluster) -> None:
     """D-T24: a job on a killed node ends FAILED, no exception, qacct ``failed 19`` (BUG-T3)."""
     scheduler = cluster.scheduler()
-    spec = JobSpec("sleep 30", name="doomed", scheduler_args={"sge": ["-l", "hostname=exec1"]})
+    spec = JobSpec("sleep 30", name="doomed", scheduler_args=["-l", "hostname=exec1"])
     job_id = _job_id(_submit(cluster, spec))
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING
     _, details = scheduler.get_job_details(job_id)

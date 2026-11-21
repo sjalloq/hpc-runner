@@ -80,7 +80,7 @@ console = Console()
     "scheduler_args",
     multiple=True,
     metavar="'FLAGS'",
-    help="Raw flags for the active scheduler, one quoted string (repeatable), "
+    help="Raw flags for the scheduler, one quoted string (repeatable), "
     "e.g. -S '-l gpu=2 -P proj' or -S '--gres=gpu:2'",
 )
 @click.option(
@@ -188,7 +188,7 @@ def run(
         devices=devices or None,
         features=list(feature) or None,
         dependencies=dependencies,
-        scheduler_args={scheduler.name: passthrough} if passthrough else None,
+        scheduler_args=passthrough or None,
         interactive=not batch and not array,
     )
     job = resolve(spec, ctx.config, Host.capture())
@@ -336,7 +336,7 @@ def _show_dry_run(job: "Job", scheduler: "BaseScheduler", *, verbose: bool = Fal
         lines.append(f"[bold]time:[/bold] {job.time}")
     if job.array is not None:
         lines.append(f"[bold]Array job:[/bold] {job.array.range_str} ({job.array.count} tasks)")
-    passthrough = job.scheduler_args.get(scheduler.name, ())
+    passthrough = job.scheduler_args
     if passthrough:
         lines.append(f"[bold]Scheduler passthrough:[/bold] {' '.join(passthrough)}")
     console.print(

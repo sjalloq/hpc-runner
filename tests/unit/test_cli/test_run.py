@@ -590,22 +590,47 @@ class TestEnvRequestWaitOptions:
         assert "#$ -l x=1" not in out
         assert "#$ -l y=1" in out
 
-    def test_command_line_name_replaces_the_same_name_from_config(
-        self, runner, sge_dirs, tmp_path, monkeypatch
-    ):
+    def test_the_command_line_is_one_more_layer(self, runner, sge_dirs, tmp_path, monkeypatch):
+        """--license and --device add to config's; -E, --feature and -S replace config's."""
         (tmp_path / "hpc-runner.toml").write_text(
             'config_version = 1\nscheduler = "sge"\n[defaults]\n'
             "licenses = { xcelium_lic = 1, vcs = 1 }\ndevices = { gpu = 1 }\n"
             'features = ["bigmem"]\n'
+            'env_vars = { A = "1", B = "2" }\n'
+            'scheduler_args = ["-p", "-500"]\n'
         )
         monkeypatch.chdir(tmp_path)
         out = self._dry(
             runner,
-            *("--license", "xcelium_lic=2", "--device", "gpu=4", "--feature", "avx2"),
+            *("--license", "xcelium_lic=2", "--device", "gpu=4"),
+            *("--feature", "avx2", "--feature", "fast"),
+            *("-E", "C=3", "-E", "D=4"),
+            *("-S", "-binding linear:1", "-S", "-masterq a.q"),
             "echo",
         )
-        requests = [line.split("-l ")[1].strip() for line in out.splitlines() if "#$ -l " in line]
-        assert requests == ["xcelium_lic=2", "vcs=1", "gpu=4", "bigmem=1", "avx2=1"]
+        lines = out.split("Generated script:")[1].splitlines()
+        requests = [line.split("-l ")[1].strip() for line in lines if "#$ -l " in line]
+        assert requests == ["xcelium_lic=2", "vcs=1", "gpu=4", "avx2=1", "fast=1"]
+        exports = [line.split("export ")[1].strip() for line in lines if "export " in line]
+        assert [e for e in exports if e[:2] in ("A=", "B=", "C=", "D=")] == ["C=3", "D=4"]
+        directives = [line.split("#$ ")[1].strip() for line in lines if "#$ " in line]
+        assert "-binding linear:1 -masterq a.q" in directives
+        assert not [d for d in directives if d.startswith("-p ")]
+
+    def test_without_the_options_the_config_values_stand(
+        self, runner, sge_dirs, tmp_path, monkeypatch
+    ):
+        (tmp_path / "hpc-runner.toml").write_text(
+            'config_version = 1\nscheduler = "sge"\n[defaults]\n'
+            'features = ["bigmem"]\nenv_vars = { A = "1" }\nscheduler_args = ["-p", "-500"]\n'
+        )
+        monkeypatch.chdir(tmp_path)
+        lines = self._dry(runner, "echo").split("Generated script:")[1].splitlines()
+        assert [line.split("#$ ")[1].strip() for line in lines if "#$ -l " in line] == [
+            "-l bigmem=1"
+        ]
+        assert [line.split("#$ ")[1].strip() for line in lines if "#$ -p " in line] == ["-p -500"]
+        assert [line.split("export ")[1].strip() for line in lines if "export A" in line] == ["A=1"]
 
     @pytest.mark.parametrize("option", ["--license", "--device"])
     @pytest.mark.parametrize(

@@ -80,6 +80,7 @@ class LocalScheduler(BaseScheduler):
         "features": _NO_SCHEDULER,
         "array": REJECTS,
         "dependencies": REJECTS,
+        "scheduler_args": _NO_SCHEDULER,
     }
     INTERACTIVE_OPTIONS: ClassVar[Mapping[str, Support]] = {
         **BATCH_OPTIONS,

@@ -37,9 +37,8 @@ SCRIPT_OPTIONS = {
     "modules_path",
     "modules_path_append",
 }
-#: Not options: what to run, which config entry, which kind of job, and the
-#: raw flags that are the way out of this table.
-NOT_OPTIONS = {"command", "type", "interactive", "scheduler_args"}
+#: Not options: what to run, which config entry and which kind of job.
+NOT_OPTIONS = {"command", "type", "interactive"}
 IMPLEMENTED = sorted(
     name for name, path in _SCHEDULERS.items() if importlib.util.find_spec(path.split(":")[0])
 )
@@ -64,6 +63,7 @@ SAMPLES: dict[str, dict[str, Any]] = {
     "features": {"features": ["sample_feat"]},
     "array": {"array": "1-3"},
     "dependencies": {"dependencies": [Dependency("7", DependencyType.AFTERANY)]},
+    "scheduler_args": {"scheduler_args": ["-l", "sample_arg=1", "-binding", "linear:1"]},
 }
 #: What the job is compared with: the sample minus the option itself.
 BASELINES: dict[str, dict[str, Any]] = {"env_passthrough": {"inherit_env": False}}
@@ -199,6 +199,7 @@ SGE_BATCH: dict[str, tuple[list[str], list[str]]] = {
         ["#$ -o /work/$JOB_NAME.$JOB_ID.out"],
     ),
     "dependencies": (["#$ -hold_jid 7"], []),
+    "scheduler_args": (["#$ -l sample_arg=1 -binding linear:1"], []),
 }
 #: SGE interactive: qrsh's arguments with the option set as in SAMPLES.
 #: With nothing set they are ``-cwd -V -N alice_echo``.
@@ -214,6 +215,7 @@ SGE_INTERACTIVE: dict[str, str] = {
     "licenses": "-cwd -V -N alice_echo -l sample_lic=2",
     "devices": "-cwd -V -N alice_echo -l sample_dev=2",
     "features": "-cwd -V -N alice_echo -l sample_feat=1",
+    "scheduler_args": "-cwd -V -N alice_echo -l sample_arg=1 -binding linear:1",
 }
 #: Local batch: (lines the script gains, lines it loses).
 LOCAL_BATCH: dict[str, tuple[list[str], list[str]]] = {

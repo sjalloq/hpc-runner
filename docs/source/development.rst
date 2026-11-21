@@ -39,8 +39,9 @@ Core (``src/hpc_runner/core/``)
 - ``JobSpec`` (``spec.py``): what the caller asked for, ``None`` meaning
   unspecified; it reads no config and no environment. ``after()`` appends
   per-parent dependencies.
-- ``resolve()`` (``resolve.py``): the only place the merge rules live: the
-  fixed layer chain, the list rule (``merge.py``: append, ``Set``, ``Edit``),
+- ``resolve()`` (``resolve.py``): the only place the layer rules live: the
+  fixed layer chain, which keys add up (``modules``, ``licenses``,
+  ``devices``) and that every other key overrides,
   ``$VAR`` and ``${hpc.*}`` expansion (``expand.py``), ``mem`` and ``time``
   parsing (``units.py``), and the provenance of every value.
 - ``Job`` (``job.py``): frozen and fully resolved; schedulers render it and
@@ -58,7 +59,8 @@ Core (``src/hpc_runner/core/``)
 - ``HPCConfig`` (``config.py``, schema in ``schema.py``): typed, validated
   TOML (``config_version = 1``; unknown keys are errors) with two-level
   discovery, ``$HPC_RUNNER_CONFIG`` or ``<git-root>/hpc-runner.toml`` then
-  ``./hpc-runner.toml`` as a local override. Always passed explicitly; there
+  ``./hpc-runner.toml`` as a local file holding tools and types only. Always
+  passed explicitly; there
   is no global cache.
 
 Schedulers (``src/hpc_runner/schedulers/``)
@@ -102,7 +104,7 @@ One entry point, ``hpc``, with ``run``, ``status``, ``cancel``, ``kill``,
   arrays are always batch; ``--wait`` needs ``--batch``.
 - Every short letter belongs to ``hpc run``. Raw scheduler flags travel in
   ``-S/--scheduler-args 'FLAGS'`` (repeatable, split with ``shlex``) and land
-  on ``JobSpec.scheduler_args[<scheduler>]``; a flag ``hpc run`` does not
+  on ``JobSpec.scheduler_args``; a flag ``hpc run`` does not
   define is a usage error. Options stop at the first plain word
   (``allow_interspersed_args=False``), so the command's own flags pass
   untouched; a command that starts with a dash needs ``--`` first. How the
