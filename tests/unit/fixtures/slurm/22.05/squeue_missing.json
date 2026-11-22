@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "squeue",
+    "-h",
+    "-j",
+    "999999",
+    "-o",
+    "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "slurm_load_jobs error: Invalid job id specified\n"
+}

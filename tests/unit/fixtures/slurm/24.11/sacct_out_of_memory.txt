@@ -1,0 +1,2 @@
+81|81|tester|proj|all|OUT_OF_MEMORY|0:125|None|2026-11-22T16:57:35|2026-11-22T16:57:38|2026-11-22T16:57:39|00:00:01|UNLIMITED|exec2|1|1|50M||billing=1,cpu=1,mem=50M,node=1|billing=1,cpu=1,mem=50M,node=1|/work/capture-jobs|out_of_memory
+81.batch|81.batch||proj||OUT_OF_MEMORY|0:125||2026-11-22T16:57:38|2026-11-22T16:57:38|2026-11-22T16:57:39|00:00:01||exec2|1|1||3816K||cpu=1,mem=50M,node=1||batch

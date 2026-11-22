@@ -1,0 +1,1 @@
+66|66|tester|proj|all|CANCELLED by 1003|0:0|JobHeldUser|2026-11-22T16:59:42|None|2026-11-22T16:59:47|00:00:00|Partition_Limit|None assigned|1|1|100M||billing=1,cpu=1,mem=100M,node=1||/work/capture-jobs|cancelled_pending

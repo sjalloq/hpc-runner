@@ -15,7 +15,7 @@ stack that is up.
 hpc-runner has no Slurm backend yet (`docs/dev/slurm/PLAN.md`, "Order of
 work"), so the integration suite cannot run here. The stacks are used to
 run and record Slurm behaviour (`docs/dev/slurm/runs/`) and to take
-captures.
+captures ("Captures" below).
 
 ## Bringing a flavour up
 
@@ -29,6 +29,74 @@ hpc-testbed --scheduler slurm --flavour 22.05 down
 
 Both stacks can be up together: containers carry the compose project as a
 prefix (`hpc-testbed-slurm-22-05-master`) and the subnets differ.
+
+## Captures
+
+`hpc-testbed --scheduler slurm --flavour <name> capture` runs
+`tests/integration/capture_slurm.py` in `login` and replaces
+`tests/unit/fixtures/slurm/<name>/` with what it wrote. A run takes about
+three minutes, kills and restarts `exec1`, and leaves the stack clean. Job
+ids, timestamps and host names change with every run.
+
+Every job is submitted with plain `sbatch`. For each scenario the module
+keeps what a backend reads:
+
+| File | Command |
+|---|---|
+| `sbatch_<scenario>.json` | the submission: argv, exit status, stdout, stderr |
+| `sacct_<scenario>[_<stage>].txt` | `sacct -P -n -j <id> --format=<SACCT_FORMAT>` (no `-X`) |
+| `sacct_..._duplicates.txt` | the same with `-D` |
+| `squeue_<scenario>[_<stage>].txt` | `squeue -h -j <id> -o <SQUEUE_FORMAT>`, while the job is live |
+| `squeue_..._tasks.txt` | the same with `-r`, one line per array task |
+| `scontrol_<scenario>[_<stage>].txt` | `scontrol show job <id>` |
+| `scancel_<scenario>.json` | `scancel <id>`, where the scenario cancels |
+
+The two field lists are the constants `SACCT_FIELDS` and `SQUEUE_FIELDS` of
+the module, the job name last in both. Both Slurm versions accept every
+name in them. `manifest.json` records the two lists, the job id of every
+scenario, and for each file what it is and its argv.
+
+| Scenario | What it is | Stages |
+|---|---|---|
+| `ok`, `exit1` | exit 0, exit 1 | |
+| `signal` | the batch shell kills itself with SIGKILL | |
+| `exit137` | the script exits 137 | |
+| `timeout` | `--time=1`, killed at the limit | |
+| `out_of_memory` | 200 MB allocated under `--mem=50M` | |
+| `out_of_memory_step` | the same inside an `srun` step, script exits 0 | |
+| `cancelled_pending`, `cancelled_running` | `scancel` of a held and of a running job | |
+| `held` | `--hold` | |
+| `dependent_ok` | `afterok`, parent exits 0 | `before` (parent not yet run), end |
+| `dependent_skipped` | `afterok --kill-on-invalid-dep=yes`, parent exits 1 | `before`, end |
+| `dependent_pending` | `afterok --kill-on-invalid-dep=no`, parent exits 1 | `before`, pending for ever, `cancelled` |
+| `array` | four tasks | `pending` (held), end |
+| `array_partial` | three tasks, task 3 exits 1 | |
+| `array_throttled` | `--array=1-4%2` | two running and two pending, `cancelled` |
+| `array_cancelled_pending` | a held array cancelled before any task ran | |
+| `suspended` | `scontrol suspend` as root | |
+| `requeued` | `scontrol requeue` of a running job | pending again, `running` a second time |
+| `node_fail` | `--no-requeue`, `exec1` killed | |
+| `node_fail_requeued` | the same without `--no-requeue`: the controller requeues it | |
+| `running` | a running job | |
+| `pending_resources` | two CPUs asked while no node has two free | |
+| `bad_partition`, `bad_account` | rejected by `sbatch` and by `srun` (`srun_<scenario>.json`) | |
+| `missing` | `sacct`, `squeue`, `scontrol show job` of an id that never existed (JSON) | |
+
+Also `squeue_empty.txt` (nothing queued), `squeue_all.txt` (running,
+suspended, held and pending-for-resources jobs together) and
+`sacct_several.txt` (`-j` with three ids).
+
+Both flavours give the same files, with one difference. On 22.05 the first
+`sacct` row of a new job can be an early one, with the name `allocation`
+and no partition. The module hunts for it and keeps it as
+`sacct_ok_stub.txt` (a finished job) and `sacct_running_stub.txt` (a running
+job, whose own row says `PENDING`). 24.11 has never shown such a row, so
+those two files exist for 22.05 only. Every other `sacct` capture waits
+for the whole row.
+
+`node_fail` depends on `SlurmdTimeout=20` in `common/conf/slurm.conf`: the
+controller gives a silent node up after 20 s. `ReturnToService=2` puts
+`exec1` back in service when its slurmd registers again.
 
 ## What a stack contains
 

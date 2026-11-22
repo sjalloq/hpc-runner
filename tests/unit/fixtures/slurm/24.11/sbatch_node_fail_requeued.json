@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "node_fail_requeued",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "-w",
+    "exec1",
+    "/work/capture-jobs/node_fail_requeued.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 103\n",
+  "stderr": ""
+}

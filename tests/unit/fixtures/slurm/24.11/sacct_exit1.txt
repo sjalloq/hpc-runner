@@ -1,0 +1,2 @@
+78|78|tester|proj|all|FAILED|1:0|None|2026-11-22T16:57:35|2026-11-22T16:57:35|2026-11-22T16:57:35|00:00:00|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|exit1
+78.batch|78.batch||proj||FAILED|1:0||2026-11-22T16:57:35|2026-11-22T16:57:35|2026-11-22T16:57:35|00:00:00||exec2|1|1||3736K||cpu=1,mem=100M,node=1||batch

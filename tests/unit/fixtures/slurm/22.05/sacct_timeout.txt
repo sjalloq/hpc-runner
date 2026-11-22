@@ -1,0 +1,2 @@
+53|53|tester|proj|all|TIMEOUT|0:0|None|2026-11-22T16:59:20|2026-11-22T16:59:21|2026-11-22T17:00:26|00:01:05|00:01:00|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|timeout
+53.batch|53.batch||proj||CANCELLED|0:15||2026-11-22T16:59:21|2026-11-22T16:59:21|2026-11-22T17:00:26|00:01:05||exec2|1|1||4604K||cpu=1,mem=100M,node=1||batch

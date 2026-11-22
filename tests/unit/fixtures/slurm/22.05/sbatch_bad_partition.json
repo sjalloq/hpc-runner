@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "bad_partition",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--partition=nosuch",
+    "/work/capture-jobs/rejected.sh"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "sbatch: error: invalid partition specified: nosuch\nsbatch: error: Batch job submission failed: Invalid partition name specified\n"
+}

@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "scontrol",
+    "suspend",
+    "86"
+  ],
+  "returncode": 0,
+  "stdout": "",
+  "stderr": ""
+}

@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "srun",
+    "-J",
+    "bad_account",
+    "--chdir=/work/capture-jobs",
+    "--account=nosuch",
+    "/work/capture-jobs/rejected.sh"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "srun: error: Unable to allocate resources: Invalid account or account/partition combination specified\n"
+}

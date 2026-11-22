@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "bad_account",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--account=nosuch",
+    "/work/capture-jobs/rejected.sh"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified\n"
+}

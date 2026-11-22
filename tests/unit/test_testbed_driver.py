@@ -244,6 +244,13 @@ class TestCommands:
         )
         assert (repo / "tests/unit/fixtures/sge/soge").is_dir()
 
+    def test_capture_removes_the_fixture_files_of_an_earlier_capture(self, repo, calls):
+        dest = repo / "tests/unit/fixtures/slurm/24.11"
+        dest.mkdir(parents=True)
+        (dest / "sbatch.txt").write_text("Submitted batch job 1\n")
+        main(["--scheduler", "slurm", "capture"])
+        assert list(dest.iterdir()) == []
+
     @pytest.mark.parametrize("argv", [["up", "--slow-accounting"], ["pytest", "--slow-accounting"]])
     def test_slow_accounting_is_refused_on_other_schedulers(self, repo, calls, capsys, argv):
         assert main(["--scheduler", "slurm", *argv]) == 2

@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "signal",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "/work/capture-jobs/signal.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 59\n",
+  "stderr": ""
+}

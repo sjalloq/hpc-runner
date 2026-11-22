@@ -241,7 +241,8 @@ def cmd_capture(stack: Stack, *, py: str) -> None:
 
     Runs the scheduler's capture module (``CAPTURE_MODULES``) inside ``login``
     (SGE's submits the scenario jobs, kills a node and stops the master) and
-    copies its output to ``tests/unit/fixtures/<scheduler>/<flavour>/``.
+    copies its output to ``tests/unit/fixtures/<scheduler>/<flavour>/``, which
+    then holds that output and nothing else.
     """
     module = CAPTURE_MODULES.get(stack.scheduler)
     if module is None:
@@ -264,6 +265,10 @@ def cmd_capture(stack: Stack, *, py: str) -> None:
     )
     dest = stack.root / FIXTURES_DIR / stack.scheduler / stack.flavour
     dest.mkdir(parents=True, exist_ok=True)
+    # The copy adds and replaces; a file the module no longer writes must go.
+    for old in dest.iterdir():
+        if old.is_file():
+            old.unlink()
     run(stack.compose("cp", f"login:{CAPTURE_DIR}/.", str(dest)))
 
 

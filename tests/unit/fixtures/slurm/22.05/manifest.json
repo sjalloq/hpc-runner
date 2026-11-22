@@ -1,39 +1,1330 @@
 {
-  "captured": "2026-11-22T16:30:22Z",
+  "captured": "2026-11-22T17:01:37Z",
   "flavour": "22.05",
   "scheduler": "slurm-wlm 22.05.8",
-  "sacct_format": "JobID,JobName,User,Partition,State,ExitCode,Submit,Start,End,Elapsed,NodeList",
+  "sacct_format": "JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName",
+  "squeue_format": "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j",
   "jobs": {
-    "ok": "35"
+    "timeout": "53",
+    "requeued": "54",
+    "ok_stub": "55",
+    "running_stub": "56",
+    "ok": "57",
+    "exit1": "58",
+    "signal": "59",
+    "exit137": "60",
+    "out_of_memory": "61",
+    "out_of_memory_step": "62",
+    "array_partial": "63",
+    "cancelled_pending": "66",
+    "cancelled_running": "67",
+    "array_cancelled_pending": "68",
+    "dependent_ok_parent": "69",
+    "dependent_ok": "70",
+    "dependent_skipped_parent": "71",
+    "dependent_skipped": "72",
+    "dependent_pending_parent": "73",
+    "dependent_pending": "74",
+    "array": "75",
+    "array_throttled": "76",
+    "node_fail": "82",
+    "node_fail_requeued": "83",
+    "running": "85",
+    "suspended": "86",
+    "filler": "87",
+    "held": "88",
+    "pending_resources": "89"
   },
   "files": {
-    "sbatch.txt": {
-      "what": "sbatch stdout for the ok job",
+    "squeue_empty.txt": {
+      "what": "squeue with nothing queued",
       "argv": [
-        "sbatch",
-        "-J",
-        "ok",
-        "/work/capture/ok.sh"
+        "squeue",
+        "-h",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
     },
-    "scontrol_ok.txt": {
-      "what": "scontrol show job of a job that exited 0, the controller still holding it",
-      "argv": [
-        "scontrol",
-        "show",
-        "job",
-        "35"
-      ]
-    },
-    "sacct_ok.txt": {
-      "what": "sacct of a job that exited 0",
+    "sacct_missing.json": {
+      "what": "sacct of an id that never existed (JSON)",
       "argv": [
         "sacct",
         "-P",
         "-n",
         "-j",
-        "35",
-        "--format=JobID,JobName,User,Partition,State,ExitCode,Submit,Start,End,Elapsed,NodeList"
+        "999999",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_missing.json": {
+      "what": "squeue of an id that never existed (JSON)",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "999999",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_missing.json": {
+      "what": "scontrol of an id that never existed (JSON)",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "999999"
+      ]
+    },
+    "sbatch_timeout.json": {
+      "what": "sbatch of the timeout job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "timeout",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--time=1",
+        "-w",
+        "exec2",
+        "/work/capture-jobs/timeout.sh"
+      ]
+    },
+    "sbatch_requeued.json": {
+      "what": "sbatch of the requeued job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "requeued",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "-w",
+        "exec2",
+        "/work/capture-jobs/requeued.sh"
+      ]
+    },
+    "scontrol_requeue.json": {
+      "what": "scontrol requeue of the running requeued job (JSON)",
+      "argv": [
+        "scontrol",
+        "requeue",
+        "54"
+      ]
+    },
+    "sacct_requeued.txt": {
+      "what": "sacct of the requeued job: requeued while running, pending again",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "54",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sacct_requeued_duplicates.txt": {
+      "what": "sacct -D of the requeued job: requeued while running, pending again",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-D",
+        "-j",
+        "54",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_requeued.txt": {
+      "what": "squeue of the requeued job: requeued while running, pending again",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "54",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_requeued.txt": {
+      "what": "scontrol show job of the requeued job: requeued while running, pending again",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "54"
+      ]
+    },
+    "sacct_ok_stub.txt": {
+      "what": "sacct of the ok_stub job: the early row, before the whole record",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "55",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sacct_running_stub.txt": {
+      "what": "sacct of the running_stub job: the early row, before the whole record",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "56",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sbatch_ok.json": {
+      "what": "sbatch of the ok job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "ok",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "/work/capture-jobs/ok.sh"
+      ]
+    },
+    "sbatch_exit1.json": {
+      "what": "sbatch of the exit1 job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "exit1",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "/work/capture-jobs/exit1.sh"
+      ]
+    },
+    "sbatch_signal.json": {
+      "what": "sbatch of the signal job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "signal",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "/work/capture-jobs/signal.sh"
+      ]
+    },
+    "sbatch_exit137.json": {
+      "what": "sbatch of the exit137 job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "exit137",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "/work/capture-jobs/exit137.sh"
+      ]
+    },
+    "sbatch_out_of_memory.json": {
+      "what": "sbatch of the out_of_memory job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "out_of_memory",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--mem=50M",
+        "/work/capture-jobs/out_of_memory.sh"
+      ]
+    },
+    "sbatch_out_of_memory_step.json": {
+      "what": "sbatch of the out_of_memory_step job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "out_of_memory_step",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--mem=50M",
+        "/work/capture-jobs/out_of_memory_step.sh"
+      ]
+    },
+    "sbatch_array_partial.json": {
+      "what": "sbatch of the array_partial job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "array_partial",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%A.%a.out",
+        "--array=1-3",
+        "/work/capture-jobs/array_partial.sh"
+      ]
+    },
+    "sacct_ok.txt": {
+      "what": "sacct of the ok job: exited 0",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "57",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_ok.txt": {
+      "what": "scontrol show job of the ok job: exited 0",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "57"
+      ]
+    },
+    "sacct_exit1.txt": {
+      "what": "sacct of the exit1 job: exited 1",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "58",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_exit1.txt": {
+      "what": "scontrol show job of the exit1 job: exited 1",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "58"
+      ]
+    },
+    "sacct_signal.txt": {
+      "what": "sacct of the signal job: the batch shell killed itself with SIGKILL",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "59",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_signal.txt": {
+      "what": "scontrol show job of the signal job: the batch shell killed itself with SIGKILL",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "59"
+      ]
+    },
+    "sacct_exit137.txt": {
+      "what": "sacct of the exit137 job: the script exited 137",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "60",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_exit137.txt": {
+      "what": "scontrol show job of the exit137 job: the script exited 137",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "60"
+      ]
+    },
+    "sacct_out_of_memory.txt": {
+      "what": "sacct of the out_of_memory job: 200 MB allocated under --mem=50M",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "61",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_out_of_memory.txt": {
+      "what": "scontrol show job of the out_of_memory job: 200 MB allocated under --mem=50M",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "61"
+      ]
+    },
+    "sacct_out_of_memory_step.txt": {
+      "what": "sacct of the out_of_memory_step job: 200 MB allocated under --mem=50M inside an srun step, then exit 0",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "62",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_out_of_memory_step.txt": {
+      "what": "scontrol show job of the out_of_memory_step job: 200 MB allocated under --mem=50M inside an srun step, then exit 0",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "62"
+      ]
+    },
+    "sacct_array_partial.txt": {
+      "what": "sacct of the array_partial job: three tasks finished, task 3 exited 1",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "63",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_array_partial.txt": {
+      "what": "scontrol show job of the array_partial job: three tasks finished, task 3 exited 1",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "63"
+      ]
+    },
+    "sacct_several.txt": {
+      "what": "sacct -j of three ids at once: the ok, exit1 and array_partial jobs",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "57,58,63",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sbatch_cancelled_pending.json": {
+      "what": "sbatch of the cancelled_pending job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "cancelled_pending",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--hold",
+        "/work/capture-jobs/cancelled_pending.sh"
+      ]
+    },
+    "sbatch_cancelled_running.json": {
+      "what": "sbatch of the cancelled_running job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "cancelled_running",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "/work/capture-jobs/cancelled_running.sh"
+      ]
+    },
+    "sbatch_array_cancelled_pending.json": {
+      "what": "sbatch of the array_cancelled_pending job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "array_cancelled_pending",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%A.%a.out",
+        "--hold",
+        "--array=1-4",
+        "/work/capture-jobs/array_cancelled_pending.sh"
+      ]
+    },
+    "scancel_cancelled_pending.json": {
+      "what": "scancel of the cancelled_pending job (JSON)",
+      "argv": [
+        "scancel",
+        "66"
+      ]
+    },
+    "sacct_cancelled_pending.txt": {
+      "what": "sacct of the cancelled_pending job: held, then cancelled before it ran",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "66",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_cancelled_pending.txt": {
+      "what": "scontrol show job of the cancelled_pending job: held, then cancelled before it ran",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "66"
+      ]
+    },
+    "scancel_cancelled_running.json": {
+      "what": "scancel of the cancelled_running job (JSON)",
+      "argv": [
+        "scancel",
+        "67"
+      ]
+    },
+    "sacct_cancelled_running.txt": {
+      "what": "sacct of the cancelled_running job: cancelled while running",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "67",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_cancelled_running.txt": {
+      "what": "scontrol show job of the cancelled_running job: cancelled while running",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "67"
+      ]
+    },
+    "scancel_array_cancelled_pending.json": {
+      "what": "scancel of the array_cancelled_pending job (JSON)",
+      "argv": [
+        "scancel",
+        "68"
+      ]
+    },
+    "sacct_array_cancelled_pending.txt": {
+      "what": "sacct of the array_cancelled_pending job: a held array cancelled before any task ran",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "68",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_array_cancelled_pending.txt": {
+      "what": "scontrol show job of the array_cancelled_pending job: a held array cancelled before any task ran",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "68"
+      ]
+    },
+    "sbatch_dependent_ok.json": {
+      "what": "sbatch of the dependent_ok job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "dependent_ok",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--dependency=afterok:69",
+        "/work/capture-jobs/dependent_ok.sh"
+      ]
+    },
+    "sbatch_dependent_skipped.json": {
+      "what": "sbatch of the dependent_skipped job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "dependent_skipped",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--dependency=afterok:71",
+        "--kill-on-invalid-dep=yes",
+        "/work/capture-jobs/dependent_skipped.sh"
+      ]
+    },
+    "sbatch_dependent_pending.json": {
+      "what": "sbatch of the dependent_pending job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "dependent_pending",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--dependency=afterok:73",
+        "--kill-on-invalid-dep=no",
+        "/work/capture-jobs/dependent_pending.sh"
+      ]
+    },
+    "sacct_dependent_ok_before.txt": {
+      "what": "sacct of the dependent_ok job: its parent held, not yet run",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "70",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_dependent_ok_before.txt": {
+      "what": "squeue of the dependent_ok job: its parent held, not yet run",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "70",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_dependent_ok_before.txt": {
+      "what": "scontrol show job of the dependent_ok job: its parent held, not yet run",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "70"
+      ]
+    },
+    "sacct_dependent_skipped_before.txt": {
+      "what": "sacct of the dependent_skipped job: its parent held, not yet run",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "72",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_dependent_skipped_before.txt": {
+      "what": "squeue of the dependent_skipped job: its parent held, not yet run",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "72",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_dependent_skipped_before.txt": {
+      "what": "scontrol show job of the dependent_skipped job: its parent held, not yet run",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "72"
+      ]
+    },
+    "sacct_dependent_pending_before.txt": {
+      "what": "sacct of the dependent_pending job: its parent held, not yet run",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "74",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_dependent_pending_before.txt": {
+      "what": "squeue of the dependent_pending job: its parent held, not yet run",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "74",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_dependent_pending_before.txt": {
+      "what": "scontrol show job of the dependent_pending job: its parent held, not yet run",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "74"
+      ]
+    },
+    "sacct_dependent_ok.txt": {
+      "what": "sacct of the dependent_ok job: its parent exited 0, then it ran",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "70",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_dependent_ok.txt": {
+      "what": "scontrol show job of the dependent_ok job: its parent exited 0, then it ran",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "70"
+      ]
+    },
+    "sacct_dependent_skipped.txt": {
+      "what": "sacct of the dependent_skipped job: its parent exited 1; cancelled by --kill-on-invalid-dep=yes",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "72",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_dependent_skipped.txt": {
+      "what": "scontrol show job of the dependent_skipped job: its parent exited 1; cancelled by --kill-on-invalid-dep=yes",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "72"
+      ]
+    },
+    "sacct_dependent_pending.txt": {
+      "what": "sacct of the dependent_pending job: its parent exited 1; --kill-on-invalid-dep=no, so it pends for ever",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "74",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_dependent_pending.txt": {
+      "what": "squeue of the dependent_pending job: its parent exited 1; --kill-on-invalid-dep=no, so it pends for ever",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "74",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_dependent_pending.txt": {
+      "what": "scontrol show job of the dependent_pending job: its parent exited 1; --kill-on-invalid-dep=no, so it pends for ever",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "74"
+      ]
+    },
+    "scancel_dependent_pending.json": {
+      "what": "scancel of the dependent_pending job (JSON)",
+      "argv": [
+        "scancel",
+        "74"
+      ]
+    },
+    "sacct_dependent_pending_cancelled.txt": {
+      "what": "sacct of the dependent_pending job: then cancelled with scancel",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "74",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_dependent_pending_cancelled.txt": {
+      "what": "scontrol show job of the dependent_pending job: then cancelled with scancel",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "74"
+      ]
+    },
+    "sbatch_array.json": {
+      "what": "sbatch of the array job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "array",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%A.%a.out",
+        "--hold",
+        "--array=1-4",
+        "/work/capture-jobs/array.sh"
+      ]
+    },
+    "sbatch_array_throttled.json": {
+      "what": "sbatch of the array_throttled job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "array_throttled",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%A.%a.out",
+        "--array=1-4%2",
+        "/work/capture-jobs/array_throttled.sh"
+      ]
+    },
+    "sacct_array_pending.txt": {
+      "what": "sacct of the array job: four tasks, held",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "75",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_array_pending.txt": {
+      "what": "squeue of the array job: four tasks, held",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "75",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "squeue_array_pending_tasks.txt": {
+      "what": "squeue -r of the array job: four tasks, held",
+      "argv": [
+        "squeue",
+        "-h",
+        "-r",
+        "-j",
+        "75",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_array_pending.txt": {
+      "what": "scontrol show job of the array job: four tasks, held",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "75"
+      ]
+    },
+    "sacct_array_throttled.txt": {
+      "what": "sacct of the array_throttled job: --array=1-4%2, two tasks running and two pending",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "76",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_array_throttled.txt": {
+      "what": "squeue of the array_throttled job: --array=1-4%2, two tasks running and two pending",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "76",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "squeue_array_throttled_tasks.txt": {
+      "what": "squeue -r of the array_throttled job: --array=1-4%2, two tasks running and two pending",
+      "argv": [
+        "squeue",
+        "-h",
+        "-r",
+        "-j",
+        "76",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_array_throttled.txt": {
+      "what": "scontrol show job of the array_throttled job: --array=1-4%2, two tasks running and two pending",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "76"
+      ]
+    },
+    "scancel_array_throttled.json": {
+      "what": "scancel of the array_throttled job (JSON)",
+      "argv": [
+        "scancel",
+        "76"
+      ]
+    },
+    "sacct_array_throttled_cancelled.txt": {
+      "what": "sacct of the array_throttled job: then cancelled with scancel",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "76",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_array_throttled_cancelled.txt": {
+      "what": "scontrol show job of the array_throttled job: then cancelled with scancel",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "76"
+      ]
+    },
+    "sacct_array.txt": {
+      "what": "sacct of the array job: four tasks finished",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "75",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_array.txt": {
+      "what": "scontrol show job of the array job: four tasks finished",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "75"
+      ]
+    },
+    "sbatch_node_fail.json": {
+      "what": "sbatch of the node_fail job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "node_fail",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--no-requeue",
+        "-w",
+        "exec1",
+        "/work/capture-jobs/node_fail.sh"
+      ]
+    },
+    "sbatch_node_fail_requeued.json": {
+      "what": "sbatch of the node_fail_requeued job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "node_fail_requeued",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "-w",
+        "exec1",
+        "/work/capture-jobs/node_fail_requeued.sh"
+      ]
+    },
+    "sacct_node_fail.txt": {
+      "what": "sacct of the node_fail job: --no-requeue, its node killed",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "82",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_node_fail.txt": {
+      "what": "scontrol show job of the node_fail job: --no-requeue, its node killed",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "82"
+      ]
+    },
+    "sacct_node_fail_requeued.txt": {
+      "what": "sacct of the node_fail_requeued job: its node killed; the controller requeued it",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "83",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sacct_node_fail_requeued_duplicates.txt": {
+      "what": "sacct -D of the node_fail_requeued job: its node killed; the controller requeued it",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-D",
+        "-j",
+        "83",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_node_fail_requeued.txt": {
+      "what": "squeue of the node_fail_requeued job: its node killed; the controller requeued it",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "83",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_node_fail_requeued.txt": {
+      "what": "scontrol show job of the node_fail_requeued job: its node killed; the controller requeued it",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "83"
+      ]
+    },
+    "sacct_timeout.txt": {
+      "what": "sacct of the timeout job: --time=1, killed at the limit",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "53",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_timeout.txt": {
+      "what": "scontrol show job of the timeout job: --time=1, killed at the limit",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "53"
+      ]
+    },
+    "sacct_requeued_running.txt": {
+      "what": "sacct of the requeued job: requeued while running, now running a second time",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "54",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sacct_requeued_running_duplicates.txt": {
+      "what": "sacct -D of the requeued job: requeued while running, now running a second time",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-D",
+        "-j",
+        "54",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_requeued_running.txt": {
+      "what": "squeue of the requeued job: requeued while running, now running a second time",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "54",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_requeued_running.txt": {
+      "what": "scontrol show job of the requeued job: requeued while running, now running a second time",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "54"
+      ]
+    },
+    "sbatch_running.json": {
+      "what": "sbatch of the running job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "running",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "-w",
+        "exec1",
+        "/work/capture-jobs/running.sh"
+      ]
+    },
+    "sbatch_suspended.json": {
+      "what": "sbatch of the suspended job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "suspended",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "-w",
+        "exec1",
+        "/work/capture-jobs/suspended.sh"
+      ]
+    },
+    "sbatch_held.json": {
+      "what": "sbatch of the held job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "held",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--hold",
+        "/work/capture-jobs/held.sh"
+      ]
+    },
+    "sbatch_pending_resources.json": {
+      "what": "sbatch of the pending_resources job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "pending_resources",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "-c",
+        "2",
+        "/work/capture-jobs/pending_resources.sh"
+      ]
+    },
+    "scontrol_suspend.json": {
+      "what": "scontrol suspend, as root, of the running suspended job (JSON)",
+      "argv": [
+        "scontrol",
+        "suspend",
+        "86"
+      ]
+    },
+    "sacct_running.txt": {
+      "what": "sacct of the running job: running",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "85",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_running.txt": {
+      "what": "squeue of the running job: running",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "85",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_running.txt": {
+      "what": "scontrol show job of the running job: running",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "85"
+      ]
+    },
+    "sacct_suspended.txt": {
+      "what": "sacct of the suspended job: suspended with scontrol suspend",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "86",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_suspended.txt": {
+      "what": "squeue of the suspended job: suspended with scontrol suspend",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "86",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_suspended.txt": {
+      "what": "scontrol show job of the suspended job: suspended with scontrol suspend",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "86"
+      ]
+    },
+    "sacct_held.txt": {
+      "what": "sacct of the held job: submitted with --hold",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "88",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_held.txt": {
+      "what": "squeue of the held job: submitted with --hold",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "88",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_held.txt": {
+      "what": "scontrol show job of the held job: submitted with --hold",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "88"
+      ]
+    },
+    "sacct_pending_resources.txt": {
+      "what": "sacct of the pending_resources job: two CPUs asked, no node has two free",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "89",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "squeue_pending_resources.txt": {
+      "what": "squeue of the pending_resources job: two CPUs asked, no node has two free",
+      "argv": [
+        "squeue",
+        "-h",
+        "-j",
+        "89",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "scontrol_pending_resources.txt": {
+      "what": "scontrol show job of the pending_resources job: two CPUs asked, no node has two free",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "89"
+      ]
+    },
+    "squeue_all.txt": {
+      "what": "squeue of every job: running, suspended, held, pending for resources, and a filler",
+      "argv": [
+        "squeue",
+        "-h",
+        "-o",
+        "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
+      ]
+    },
+    "sbatch_bad_partition.json": {
+      "what": "sbatch of a job with --partition=nosuch (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "bad_partition",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--partition=nosuch",
+        "/work/capture-jobs/rejected.sh"
+      ]
+    },
+    "srun_bad_partition.json": {
+      "what": "srun of a job with --partition=nosuch (JSON)",
+      "argv": [
+        "srun",
+        "-J",
+        "bad_partition",
+        "--chdir=/work/capture-jobs",
+        "--partition=nosuch",
+        "/work/capture-jobs/rejected.sh"
+      ]
+    },
+    "sbatch_bad_account.json": {
+      "what": "sbatch of a job with --account=nosuch (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "bad_account",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "--account=nosuch",
+        "/work/capture-jobs/rejected.sh"
+      ]
+    },
+    "srun_bad_account.json": {
+      "what": "srun of a job with --account=nosuch (JSON)",
+      "argv": [
+        "srun",
+        "-J",
+        "bad_account",
+        "--chdir=/work/capture-jobs",
+        "--account=nosuch",
+        "/work/capture-jobs/rejected.sh"
       ]
     }
   }

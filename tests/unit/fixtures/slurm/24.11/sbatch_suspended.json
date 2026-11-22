@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "suspended",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "-w",
+    "exec1",
+    "/work/capture-jobs/suspended.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 106\n",
+  "stderr": ""
+}

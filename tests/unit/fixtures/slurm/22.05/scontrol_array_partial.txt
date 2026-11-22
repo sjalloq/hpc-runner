@@ -1,0 +1,84 @@
+JobId=63 ArrayJobId=63 ArrayTaskId=3 JobName=array_partial
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=4294901708 Nice=0 Account=proj QOS=normal
+   JobState=FAILED Reason=NonZeroExitCode Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=1:0
+   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-22T16:59:32 EligibleTime=2026-11-22T16:59:35
+   AccrueTime=2026-11-22T16:59:35
+   StartTime=2026-11-22T16:59:38 EndTime=2026-11-22T16:59:38 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T16:59:38 Scheduler=Main
+   Partition=all AllocNode:Sid=login:9532
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=exec1
+   BatchHost=exec1
+   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   TRES=cpu=1,mem=100M,node=1,billing=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/work/capture-jobs/array_partial.sh
+   WorkDir=/work/capture-jobs
+   StdErr=/work/capture-jobs/array_partial.63.3.out
+   StdIn=/dev/null
+   StdOut=/work/capture-jobs/array_partial.63.3.out
+   Power=
+   
+
+JobId=65 ArrayJobId=63 ArrayTaskId=2 JobName=array_partial
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=4294901708 Nice=0 Account=proj QOS=normal
+   JobState=COMPLETED Reason=None Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-22T16:59:32 EligibleTime=2026-11-22T16:59:35
+   AccrueTime=2026-11-22T16:59:35
+   StartTime=2026-11-22T16:59:38 EndTime=2026-11-22T16:59:38 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T16:59:38 Scheduler=Main
+   Partition=all AllocNode:Sid=login:9532
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=exec1
+   BatchHost=exec1
+   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   TRES=cpu=1,mem=100M,node=1,billing=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/work/capture-jobs/array_partial.sh
+   WorkDir=/work/capture-jobs
+   StdErr=/work/capture-jobs/array_partial.63.2.out
+   StdIn=/dev/null
+   StdOut=/work/capture-jobs/array_partial.63.2.out
+   Power=
+   
+
+JobId=64 ArrayJobId=63 ArrayTaskId=1 JobName=array_partial
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=4294901708 Nice=0 Account=proj QOS=normal
+   JobState=COMPLETED Reason=None Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-22T16:59:32 EligibleTime=2026-11-22T16:59:35
+   AccrueTime=2026-11-22T16:59:35
+   StartTime=2026-11-22T16:59:38 EndTime=2026-11-22T16:59:38 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T16:59:38 Scheduler=Main
+   Partition=all AllocNode:Sid=login:9532
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=exec2
+   BatchHost=exec2
+   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   TRES=cpu=1,mem=100M,node=1,billing=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/work/capture-jobs/array_partial.sh
+   WorkDir=/work/capture-jobs
+   StdErr=/work/capture-jobs/array_partial.63.1.out
+   StdIn=/dev/null
+   StdOut=/work/capture-jobs/array_partial.63.1.out
+   Power=
+   
+

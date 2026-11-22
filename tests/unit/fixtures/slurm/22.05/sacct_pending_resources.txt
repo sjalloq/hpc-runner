@@ -1,0 +1,1 @@
+89|89|tester|proj|all|PENDING|0:0|None|2026-11-22T17:01:28|Unknown|Unknown|00:00:00|Partition_Limit|None assigned|2|2|200M||billing=2,cpu=2,mem=200M,node=1||/work/capture-jobs|pending_resources

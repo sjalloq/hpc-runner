@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "held",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--hold",
+    "/work/capture-jobs/held.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 108\n",
+  "stderr": ""
+}

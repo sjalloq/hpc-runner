@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "sacct",
+    "-P",
+    "-n",
+    "-j",
+    "999999",
+    "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+  ],
+  "returncode": 0,
+  "stdout": "",
+  "stderr": ""
+}

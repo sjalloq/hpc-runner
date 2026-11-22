@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "pending_resources",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "-c",
+    "2",
+    "/work/capture-jobs/pending_resources.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 89\n",
+  "stderr": ""
+}

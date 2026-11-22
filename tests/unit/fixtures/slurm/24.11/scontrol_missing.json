@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "scontrol",
+    "show",
+    "job",
+    "999999"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "slurm_load_jobs error: Invalid job id specified\n"
+}

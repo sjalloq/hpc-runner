@@ -1,0 +1,1 @@
+54|54|N/A|tester|proj|all|RUNNING|None|2026-11-22T16:59:22|2026-11-22T17:01:26|NONE|0:00|UNLIMITED|1|100M|exec2|(null)|N/A|/work/capture-jobs|requeued

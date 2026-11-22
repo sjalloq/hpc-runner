@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "srun",
+    "-J",
+    "bad_partition",
+    "--chdir=/work/capture-jobs",
+    "--partition=nosuch",
+    "/work/capture-jobs/rejected.sh"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "srun: error: invalid partition specified: nosuch\nsrun: error: Unable to allocate resources: Invalid partition name specified\n"
+}

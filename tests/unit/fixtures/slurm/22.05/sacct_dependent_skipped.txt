@@ -1,0 +1,1 @@
+72|72|tester|proj|all|CANCELLED|0:0|Dependency|2026-11-22T16:59:49|None|2026-11-22T16:59:56|00:00:00|Partition_Limit|None assigned|1|1|100M||billing=1,cpu=1,mem=100M,node=1||/work/capture-jobs|dependent_skipped

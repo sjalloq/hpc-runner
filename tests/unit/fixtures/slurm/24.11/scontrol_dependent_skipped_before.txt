@@ -1,0 +1,28 @@
+JobId=92 JobName=dependent_skipped
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=1 Nice=0 Account=proj QOS=normal
+   JobState=PENDING Reason=Dependency Dependency=afterok:91(unfulfilled)
+   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-22T16:57:44 EligibleTime=Unknown
+   AccrueTime=Unknown
+   StartTime=Unknown EndTime=Unknown Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T16:57:44 Scheduler=Main
+   Partition=all AllocNode:Sid=login:14461
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=
+   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=1,mem=100M,node=1,billing=1
+   AllocTRES=(null)
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/work/capture-jobs/dependent_skipped.sh
+   WorkDir=/work/capture-jobs
+   StdErr=/work/capture-jobs/dependent_skipped.92.out
+   StdIn=/dev/null
+   StdOut=/work/capture-jobs/dependent_skipped.92.out
+   KillOInInvalidDependent=Yes
+   
+

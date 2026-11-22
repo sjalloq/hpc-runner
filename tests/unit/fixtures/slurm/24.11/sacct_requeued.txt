@@ -1,0 +1,1 @@
+64|64|tester|proj|all|PENDING|0:0|None|2026-11-22T16:57:12|Unknown|Unknown|00:00:00|Partition_Limit|None assigned|0|1|100M||billing=1,cpu=1,mem=100M,node=1||/work/capture-jobs|requeued

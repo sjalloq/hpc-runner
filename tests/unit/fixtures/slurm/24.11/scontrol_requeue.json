@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "scontrol",
+    "requeue",
+    "64"
+  ],
+  "returncode": 0,
+  "stdout": "",
+  "stderr": ""
+}

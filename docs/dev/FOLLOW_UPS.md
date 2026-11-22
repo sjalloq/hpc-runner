@@ -21,7 +21,7 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is step 4 of `slurm/PLAN.md`, "Order of
+For Slurm that work is step 3 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -59,11 +59,18 @@ work". For PBS nothing is planned.
 - `hpc-testbed capture` works for SGE and Slurm (`CAPTURE_MODULES`,
   `_testbed.py`). `tests/integration/capture.py` is one 600-line SGE
   script; nothing in it is shared with `tests/integration/capture_slurm.py`.
-  - Slurm: the module takes one scenario (`ok`); the rest of the list is
-    planned (`slurm/PLAN.md`, "Order of work" step 1).
+  - Slurm: the module takes every scenario of `slurm/PLAN.md`, "Captures
+    to take", on both flavours (`testbed/slurm/README.md`, "Captures").
   - PBS: not planned anywhere.
-- `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
-  and `slurm/24.11` and `slurm/22.05` (4 files each, read by no test yet).
+- `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each),
+  `slurm/24.11` (119 files) and `slurm/22.05` (121 files). No parser reads
+  the Slurm ones yet; `test_slurm_capture_files.py` checks the file set.
+- Slurm texts no capture provides:
+  - A completed-jobs listing (`sacct` by user and start time, what
+    `hpc status --history` will ask). The argv is the backend's to choose;
+    the capture follows it.
+- `hpc-testbed capture` now empties the fixture folder before it copies.
+  Not run on SGE since that change.
 - The helpers that serve fixtures are SGE by name and by content:
   `SGEFixtures`, `make_sge_responder` (`tests/fakes.py`), the
   `sge_fixtures` and `mock_sge_commands` fixtures (`tests/conftest.py`).
@@ -114,8 +121,6 @@ work". For PBS nothing is planned.
     `display_win_gui` set, so `-P`, licence counting and features ran on
     `ocs` only (with a config change put back). A request for one of them
     on `soge` pends for ever.
-  - Slurm has no cgroups (`TaskPlugin=task/none`), so `--mem` is never
-    enforced.
   - OpenPBS: the GPU node exec1 is also every job's default node, so a GPU
     request cannot be seen moving a job; `qstat` is not on `PATH` inside a
     `qsub -I -- script` job; `qsub -I` needs a terminal (`script -qec`
@@ -159,8 +164,40 @@ is decided.
   runs without a pty.
 - 22.05 `srun` does not set `SLURM_MEM_PER_NODE` or `SLURM_MEM_PER_CPU` in
   the task; 24.11 does.
-- Not shown on the testbed: memory enforcement (no cgroups), an array
-  throttle holding a task back, `--mem-per-cpu` against `MaxMemPerCPU`.
+- Not shown on the testbed: `--mem-per-cpu` against `MaxMemPerCPU`.
+
+## Slurm: facts from the captures (2026-11-22)
+
+Read from `tests/unit/fixtures/slurm/`, both flavours unless one is named.
+Each bears on a line of `slurm/PLAN.md`; nothing is decided.
+
+- `sacct` prints an exit status above 128 less 128: a script that exits 137
+  is `ExitCode 9:0` (`sacct_exit137.txt`); `scontrol show job` says
+  `137:0`. A batch shell killed by SIGKILL is `0:9` in both. The plan's
+  rule gives 9 for the first and 137 for the second.
+- A job whose node dies is requeued by default (`JobRequeue=1`): its
+  `sacct` row is `PENDING` again, and `NODE_FAIL` is seen only with `-D`
+  (`sacct_node_fail_requeued*.txt`). It ends `NODE_FAIL` only when
+  submitted with `--no-requeue`.
+- `NODE_FAIL` has `ExitCode 1:0` on 24.11 and `0:0` on 22.05 on the job's
+  own row; the `.batch` row is `CANCELLED` with an empty `ExitCode`.
+- On 22.05 the early `sacct` row of a running job says `PENDING` while its
+  `.batch` row says `RUNNING` (`sacct_running_stub.txt`). The plan says
+  the state in that row is right.
+- On 22.05 a held array cancelled before it starts is one row named
+  `<id>_[1-4]` (`sacct_array_cancelled_pending.txt`). The plan says the bare
+  id.
+- The `sacct` Reason column differs between the versions for more than
+  dependencies: a held job is `None` on 24.11 and `JobHeldUser` on 22.05;
+  the finished `dependent_ok` job is `Dependency` on both.
+- `scontrol show job` of a pending array gives `StdOut` with the task id
+  unfilled (`array.<id>.4294967294.out`); each started task has its own
+  record with the path filled in.
+- `sacct` Timelimit is `Partition_Limit` for a job that has not started
+  and, on some rows of jobs that started, `365-00:00:00` where the
+  submission set no limit. Which rows changes from run to run.
+- `sacct` AllocCPUS of a pending job is 0 on 24.11 and the CPUs asked for
+  on 22.05.
 
 ## Trace
 

@@ -1,0 +1,2 @@
+64|64|tester|proj|all|RUNNING|0:0|BeginTime|2026-11-22T16:57:12|2026-11-22T16:59:14|Unknown|00:00:00|365-00:00:00|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|requeued
+64.batch|64.batch||proj||RUNNING|0:0||2026-11-22T16:59:14|2026-11-22T16:59:14|Unknown|00:00:00||exec2|1|1||||cpu=1,mem=100M,node=1||batch

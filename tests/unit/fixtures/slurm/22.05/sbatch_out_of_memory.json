@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "out_of_memory",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--mem=50M",
+    "/work/capture-jobs/out_of_memory.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 61\n",
+  "stderr": ""
+}

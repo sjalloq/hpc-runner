@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "array_partial",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%A.%a.out",
+    "--array=1-3",
+    "/work/capture-jobs/array_partial.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 63\n",
+  "stderr": ""
+}

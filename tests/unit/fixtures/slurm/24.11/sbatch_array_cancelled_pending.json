@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "array_cancelled_pending",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%A.%a.out",
+    "--hold",
+    "--array=1-4",
+    "/work/capture-jobs/array_cancelled_pending.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 88\n",
+  "stderr": ""
+}

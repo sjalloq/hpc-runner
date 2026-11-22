@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "timeout",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--time=1",
+    "-w",
+    "exec2",
+    "/work/capture-jobs/timeout.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 53\n",
+  "stderr": ""
+}

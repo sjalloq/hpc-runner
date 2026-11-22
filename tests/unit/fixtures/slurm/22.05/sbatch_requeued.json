@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "requeued",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "-w",
+    "exec2",
+    "/work/capture-jobs/requeued.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 54\n",
+  "stderr": ""
+}
