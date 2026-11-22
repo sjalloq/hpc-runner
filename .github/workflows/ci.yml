@@ -59,33 +59,48 @@ jobs:
       - name: Run tests
         run: pytest -v
 
-  # End-to-end tests against a real SGE cluster: the Docker Compose stacks in
-  # testbed/sge/<flavour> (docs/dev/testbed/TESTBED_PLAN.md section 7, testbed/README.md "CI").
-  # soge (gridengine 8.1.9) runs at every Python; ocs (Open Cluster
+  # End-to-end tests against a real scheduler: the Docker Compose stacks in
+  # testbed/<scheduler>/<flavour> (docs/dev/testbed/TESTBED_PLAN.md section 7,
+  # testbed/README.md "CI").
+  # SGE: soge (gridengine 8.1.9) runs at every Python; ocs (Open Cluster
   # Scheduler 9.1.7) at 3.12 only, since its differences are in what the
   # scheduler writes, not in the Python that reads it.
+  # Slurm: 24.11 and 22.05 at 3.12 only, for the same reason. Their exec
+  # containers are privileged (slurmd runs jobs in cgroups).
   # The image is built in the job; there is no registry. If the build ever
   # hurts, the first step up is docker/build-push-action with
   # cache-from/to: type=gha, still with no registry.
   #
   # Pull requests run soge at Python 3.12 only; pushes to main run soge at
-  # 3.10-3.12. Each cell runs the suite twice: once on the default
+  # 3.10-3.12. Each SGE cell runs the suite twice: once on the default
   # stack and once with --slow-accounting for the one test that needs it
-  # (docs/dev/testbed/TESTBED_REVIEW.md D-T22). The tests run inside the login
-  # container; the runner only needs Python for the hpc-testbed driver
-  # (src/hpc_runner/_testbed.py, stdlib only), which wraps docker compose.
+  # (docs/dev/testbed/TESTBED_REVIEW.md D-T22); Slurm has no such variant.
+  # The tests run inside the login container; the runner only needs Python
+  # for the hpc-testbed driver (src/hpc_runner/_testbed.py, stdlib only),
+  # which wraps docker compose.
   integration:
     needs: [lint, test]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The Slurm suite waits out two time limits and a requeue, each over a minute.
+    timeout-minutes: ${{ matrix.scheduler == 'slurm' && 30 || 20 }}
     strategy:
       fail-fast: false
       matrix:
         python: ${{ fromJSON((github.event_name == 'push' && github.ref == 'refs/heads/main') && '["3.10", "3.11", "3.12"]' || '["3.12"]') }}
+        scheduler: [sge]
         flavour: [soge]
         include:
           - python: "3.12"
+            scheduler: sge
             flavour: ocs
+          - python: "3.12"
+            scheduler: slurm
+            flavour: "24.11"
+          - python: "3.12"
+            scheduler: slurm
+            flavour: "22.05"
+    env:
+      TESTBED: hpc-testbed --scheduler ${{ matrix.scheduler }} --flavour ${{ matrix.flavour }}
 
     steps:
       - uses: actions/checkout@v4
@@ -99,21 +114,23 @@ jobs:
       - name: Install the testbed driver
         run: pip install -e .
 
-      - name: Start the ${{ matrix.flavour }} stack
-        run: hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} up
+      - name: Start the ${{ matrix.scheduler }} ${{ matrix.flavour }} stack
+        run: $TESTBED up
 
-      - name: Integration tests (${{ matrix.flavour }}, Python ${{ matrix.python }})
+      - name: Integration tests (${{ matrix.scheduler }} ${{ matrix.flavour }}, Python ${{ matrix.python }})
         run: >
-          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }}
+          $TESTBED pytest --py ${{ matrix.python }}
           --junit testbed/junit-${{ matrix.python }}-default.xml
 
       - name: Restart the stack with slow accounting
+        if: matrix.scheduler == 'sge'
         run: |
-          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} down
-          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} up --slow-accounting
+          $TESTBED down
+          $TESTBED up --slow-accounting
 
       - name: Slow-accounting tests (${{ matrix.flavour }}, Python ${{ matrix.python }})
-        run: hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} pytest --py ${{ matrix.python }} --slow-accounting
+        if: matrix.scheduler == 'sge'
+        run: $TESTBED pytest --py ${{ matrix.python }} --slow-accounting
 
       - name: Upload JUnit reports
         if: always()
@@ -123,13 +140,16 @@ jobs:
           path: testbed/junit-*.xml
           if-no-files-found: ignore
 
+      # A container is <compose project>-<service>; the project has the
+      # flavour's dot as a dash (hpc-testbed-slurm-24-11). `db` is Slurm's only.
       - name: Collect cluster logs
         if: failure()
         run: |
           mkdir -p testbed-logs
-          hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} logs > testbed-logs/compose.log 2>&1 || true
+          $TESTBED logs > testbed-logs/compose.log 2>&1 || true
+          project="hpc-testbed-${{ matrix.scheduler }}-$(echo '${{ matrix.flavour }}' | tr . -)"
           for c in master exec1 exec2 login; do
-            docker cp "hpc-testbed-sge-${{ matrix.flavour }}-$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
+            docker cp "$project-$c:/var/log/testbed.log" "testbed-logs/$c-testbed.log" || true
           done
 
       - name: Upload cluster logs
@@ -142,4 +162,4 @@ jobs:
 
       - name: Tear down the stack
         if: always()
-        run: hpc-testbed --scheduler sge --flavour ${{ matrix.flavour }} down
+        run: $TESTBED down

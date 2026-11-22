@@ -188,11 +188,13 @@ guide compiles (those marked ``# doctest: local`` run against the local
 scheduler), every TOML snippet validates, and the configuration and CLI
 references must list every config key and every ``hpc run`` option.
 
-Integration tests against SGE
------------------------------
+Integration tests against SGE and Slurm
+---------------------------------------
 
-``tests/integration/`` runs against a real Grid Engine in Docker: a
-qmaster, two execution hosts and a login container, all in ``testbed/``.
+``tests/integration/`` runs against a real scheduler in Docker: a master,
+two execution hosts and a login container (Slurm adds a database), all in
+``testbed/``. The commands are shown for SGE; ``--scheduler slurm`` runs the
+same suite on Slurm.
 
 .. code-block:: bash
 
@@ -206,6 +208,8 @@ qmaster, two execution hosts and a login container, all in ``testbed/``.
 ``--py 3.11`` picks the Python the suite runs under. One directory per
 scheduler release lives under ``testbed/<scheduler>/<flavour>/`` (``sge/soge``
 is Debian trixie gridengine 8.1.9, ``sge/ocs`` is Open Cluster Scheduler).
+``slurm/24.11`` and ``slurm/22.05`` are Debian's ``slurm-wlm`` of those
+versions, with jobs in cgroups so that a memory limit is enforced.
 ``--scheduler`` is required and names the scheduler; ``--flavour`` names the
 release and defaults per scheduler (``soge``, Slurm ``24.11``, PBS
 ``openpbs``). A flavour never selects a scheduler.
@@ -216,10 +220,18 @@ test, and the folder says which. The modules in ``tests/integration/`` are
 generic: each checks what hpc-runner does by its outcome on the cluster,
 takes every scheduler word (a queue name, how to hold a job) from the
 ``cluster`` fixture, and runs on every scheduler. The modules in
-``tests/integration/sge/`` are SGE's own: they check that hpc-runner drives
-SGE correctly and that SGE does what hpc-runner says, and run only with
-``--scheduler sge``. CI runs the suite on every flavour for every push.
+``tests/integration/sge/`` and ``tests/integration/slurm/`` are that
+scheduler's own: they check that hpc-runner drives the scheduler correctly
+and that the scheduler does what hpc-runner says, so they call its commands
+(``qstat``, ``qacct``; ``scontrol``, ``sacct``, ``squeue``), and run only
+with ``--scheduler`` naming it. A generic test that compares a job's whole
+output compares what ``job_output`` (``tests/integration/helpers.py``)
+returns: the text less the lines the cluster is known to add, which only the
+Slurm 22.05 testbed does. CI runs the suite on every SGE and Slurm flavour
+for every push.
 ``testbed/README.md`` describes the stack and the fixture;
+``testbed/sge/README.md`` and ``testbed/slurm/README.md`` list every test
+against every flavour;
 ``docs/dev/testbed/`` has the design, the plan and the review, which logs
 every divergence and bug as a ``D-T`` item. Tests that pin a known bug are
 marked ``xfail`` with the bug's id. Nothing captured from a real work

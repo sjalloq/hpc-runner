@@ -275,6 +275,9 @@ class JobResult:
         """Get exit code (None if not complete)."""
         if self.exit_code is not None:
             return self.exit_code
+        if self.final_status is not None and self.final_status.is_terminal:
+            # A waited submission that ended with no exit code: nothing ran.
+            return None
         if self.job_id is None or not self.is_complete:
             return None
         return self.scheduler.get_exit_code(self.job_id)

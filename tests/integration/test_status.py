@@ -42,9 +42,8 @@ def test_queued_running_done(cluster: Cluster) -> None:
     with patch(SEAM, wraps=_subprocess.run_command) as seam:
         statuses = scheduler.get_statuses([job_id, *others])
     assert statuses == dict.fromkeys([job_id, *others], JobStatus.PENDING)
-    listing = list(cluster.listing_command)
-    listing_calls = [c for c in seam.call_args_list if list(c.args[0][: len(listing)]) == listing]
-    assert len(listing_calls) == 1, [c.args[0] for c in seam.call_args_list]
+    # One scheduler command answered for all three.
+    assert len(seam.call_args_list) == 1, [c.args[0] for c in seam.call_args_list]
 
     cluster.release_job(job_id)
     assert cluster.wait_for(job_id, JobStatus.RUNNING) is JobStatus.RUNNING

@@ -28,7 +28,7 @@ that hpc-runner drives SGE correctly and that SGE does what hpc-runner says,
 and run only with `--scheduler sge`.
 
 Each column is the result of `hpc-testbed --scheduler sge --flavour <name> pytest`
-on 2026-11-21. A test deselected for a flavour with
+on 2026-11-22. A test deselected for a flavour with
 `@pytest.mark.flavour("sge/<name>")` would show as such (none so far);
 nothing skips at run time.
 
@@ -70,7 +70,7 @@ nothing skips at run time.
 
 ### SGE's own tests (`tests/integration/sge/`)
 
-Four of these are built around how SGE finishes a job and will have no
+Three of these are built around how SGE finishes a job and have no
 counterpart on another scheduler; the reason is in the row.
 
 | File | Test | `soge` | `ocs` |
@@ -87,7 +87,7 @@ counterpart on another scheduler; the reason is in the row.
 | | test_memory_per_consumable[slot], [job] (h_vmem consumable, 8G per host; reads `qc:h_vmem` back). SGE only: measures SGE's per-slot booking | pass | pass |
 | | test_h_rt_kill (KILLED, exit 137) | pass (`failed 37`) | pass (`failed 100`, `deleted_by execd@`) |
 | | test_signal_exit_code (exit 137 of a signal death, BUG-T5 fixed) | pass | pass |
-| | test_h_vmem. SGE only until the Slurm testbed enforces memory | pass | pass |
+| | test_h_vmem (Slurm's is `slurm/test_resources.py` test_over_its_memory_is_killed) | pass | pass |
 | sge/test_listing.py | test_details_of_another_users_job_have_cwd_and_script_file (new) | pass | pass |
 | sge/test_cli.py | test_history_reports_failed_0_for_a_job_that_ran (new) | pass | pass |
 | | test_status_shows_the_schedulers_failure_reason (qdel: exit 137, `100: assumedly after job`) | pass | pass |

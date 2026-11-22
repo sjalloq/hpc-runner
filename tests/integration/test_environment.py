@@ -11,6 +11,7 @@ from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
+from tests.integration.helpers import job_output
 
 MODULES_PATH = "/opt/modulefiles"
 #: ``tests/modulefiles/dummy_tool/1.0`` sets these; ``dummy_lib/2.5`` sets DUMMY_LIB_*.
@@ -28,13 +29,11 @@ HOSTILE = HOSTILE_SPEC.replace("$$", "$")
 
 
 def _run(cluster: Cluster, spec: JobSpec) -> list[str]:
-    """Submit *spec*, wait for COMPLETED, return the job's stdout lines."""
+    """Submit *spec*, wait for COMPLETED, return the lines the job wrote."""
     result: JobResult = cluster.scheduler().submit(resolve(spec, cluster.config(), cluster.host()))
     assert result.job_id is not None
     assert cluster.wait_for(result.job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
-    stdout = result.read_stdout()
-    assert stdout is not None
-    return stdout.splitlines()
+    return job_output(cluster, result.read_stdout()).splitlines()
 
 
 def _module_shell_env(module: str) -> dict[str, str]:
@@ -133,8 +132,7 @@ def _check_cwd(cluster: Cluster, name: str) -> None:
     assert result.job_id is not None
     assert cluster.wait_for(result.job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
     assert result.stdout_path is not None and result.stdout_path.parent == sub
-    stdout = result.read_stdout()
-    assert stdout is not None and stdout.strip() == str(sub)
+    assert job_output(cluster, result.read_stdout()) == f"{sub}\n"
 
 
 def test_cwd(cluster: Cluster) -> None:

@@ -28,6 +28,7 @@ from tests.integration.conftest import (
     scheduler_folder,
     select_stack,
 )
+from tests.integration.helpers import job_output, without_extra_lines
 
 KNOWN = {"sge": ["ocs", "soge"], "slurm": ["22.05", "24.11"]}
 
@@ -99,8 +100,8 @@ def test_a_test_file_under_a_schedulers_folder_belongs_to_it() -> None:
 def test_every_scheduler_folder_in_the_repository_names_a_testbed_scheduler() -> None:
     root = Path(__file__).resolve().parents[1] / "integration"
     folders = {scheduler_folder(p, root) for p in root.rglob("test_*.py")}
-    assert folders == {None, "sge"}
-    assert "sge" in known_flavours()
+    assert folders == {None, "sge", "slurm"}
+    assert {"sge", "slurm"} <= set(known_flavours())
 
 
 def test_top_folder_test_runs_on_every_scheduler() -> None:
@@ -114,6 +115,9 @@ def test_scheduler_folder_test_runs_on_that_scheduler_only() -> None:
         "a sge test, not run on slurm"
     )
     assert _reason(folder="slurm") == "a slurm test, not run on sge"
+    assert _reason(folder="slurm", active_scheduler="slurm", active_flavour="24.11") is None
+    assert _reason(folder="slurm", active_scheduler="slurm", active_flavour="22.05") is None
+    assert _reason(folder="slurm", active_flavour="ocs") == "a slurm test, not run on sge"
 
 
 def test_flavour_mark_still_narrows_a_scheduler_folder_test() -> None:
@@ -240,3 +244,62 @@ def test_only_slurm_22_05_adds_lines_to_a_jobs_output() -> None:
         "Some of your processes may have been killed by the cgroup out-of-memory handler."
     )
     assert not any(re.fullmatch(p, oom) for p in patterns)
+
+
+#: The end of every batch job's output file on the 22.05 testbed (job 664).
+STEPD_22_05 = (
+    "slurmstepd-exec1: error: common_file_write_uint32s: write pid 664 to "
+    "/sys/fs/cgroup/cgroup.procs failed: Device or resource busy\n"
+    "slurmstepd-exec1: error: Unable to move pid 664 to init root cgroup /sys/fs/cgroup\n"
+    "slurmstepd-exec1: error: error unlocking cgroup "
+    "'/sys/fs/cgroup/system.slice/exec1_slurmstepd.scope' : Bad file descriptor\n"
+)
+
+
+def test_output_with_nothing_to_drop_is_returned_as_it_is() -> None:
+    work = Path("/work")
+    assert job_output(SlurmCluster(flavour="24.11", workdir=work), "hello\n") == "hello\n"
+    assert job_output(SGECluster(flavour="soge", workdir=work), "hello\n") == "hello\n"
+    # No pattern: the three lines would be the job's own.
+    both = "hello\n" + STEPD_22_05
+    assert job_output(SlurmCluster(flavour="24.11", workdir=work), both) == both
+    # 22.05, but the job's output does not end with them.
+    assert job_output(SlurmCluster(flavour="22.05", workdir=work), "hello\n") == "hello\n"
+    assert job_output(SlurmCluster(flavour="22.05", workdir=work), "") == ""
+
+
+def test_the_three_22_05_lines_are_dropped_from_the_end() -> None:
+    cluster = SlurmCluster(flavour="22.05", workdir=Path("/work"))
+    assert job_output(cluster, "hello\n" + STEPD_22_05) == "hello\n"
+    assert job_output(cluster, "a\nb\n" + STEPD_22_05) == "a\nb\n"
+    # A job that wrote nothing.
+    assert job_output(cluster, STEPD_22_05) == ""
+    # The job's last line had no newline: it is kept as written.
+    assert job_output(cluster, "hello" + STEPD_22_05) == "hello" + STEPD_22_05
+
+
+def test_a_line_like_one_of_them_is_kept_unless_at_the_end_in_order() -> None:
+    cluster = SlurmCluster(flavour="22.05", workdir=Path("/work"))
+    first, second, third = STEPD_22_05.splitlines(keepends=True)
+    # The job printed a look-alike itself, before its last line.
+    own = first + "done\n"
+    assert job_output(cluster, own + STEPD_22_05) == own
+    assert job_output(cluster, own) == own
+    # All three, but not at the end.
+    assert job_output(cluster, STEPD_22_05 + "done\n") == STEPD_22_05 + "done\n"
+    # At the end, in the wrong order, or one missing: nothing is dropped.
+    assert job_output(cluster, "x\n" + second + first + third) == "x\n" + second + first + third
+    assert job_output(cluster, "x\n" + second + third) == "x\n" + second + third
+    # Dropped once only: a second set above it is the job's.
+    assert job_output(cluster, STEPD_22_05 + STEPD_22_05) == STEPD_22_05
+
+
+def test_a_job_with_no_output_file_fails_the_comparison() -> None:
+    with pytest.raises(AssertionError, match="no output file"):
+        job_output(SlurmCluster(flavour="22.05", workdir=Path("/work")), None)
+
+
+def test_without_extra_lines_takes_any_patterns() -> None:
+    assert without_extra_lines("a\nb1\nc22\n", (r"b\d", r"c\d+")) == "a\n"
+    assert without_extra_lines("a\nb1\nc22\n", (r"b", r"c\d+")) == "a\nb1\nc22\n"  # in full
+    assert without_extra_lines("c22\n", (r"b\d", r"c\d+")) == "c22\n"  # fewer lines than patterns

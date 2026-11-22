@@ -9,6 +9,7 @@ from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import ArrayJobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
+from tests.integration.helpers import job_output
 
 
 def _task3_fails(cluster: Cluster) -> str:
@@ -63,7 +64,7 @@ def test_array_1_to_5(cluster: Cluster) -> None:
         path = result.task_stdout_path(index)
         assert path is not None and path.exists(), index
         assert path.parent == cluster.workdir
-        assert path.read_text().strip() == f"task {index}"
+        assert job_output(cluster, path.read_text()) == f"task {index}\n"
         assert result.read_task_stdout(index) == path.read_text()
     assert cluster.scheduler().get_exit_code(result.task_id(3)) == 1
     assert cluster.scheduler().get_exit_code(result.task_id(1)) == 0

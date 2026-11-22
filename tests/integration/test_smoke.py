@@ -6,6 +6,7 @@ from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
+from tests.integration.helpers import job_output
 
 
 def test_batch_echo_hello(cluster: Cluster) -> None:
@@ -15,6 +16,4 @@ def test_batch_echo_hello(cluster: Cluster) -> None:
     assert result.job_id is not None and result.job_id.isdigit()
     assert cluster.wait_for(result.job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
 
-    stdout = result.read_stdout()
-    assert stdout is not None
-    assert stdout.strip() == "hello"
+    assert job_output(cluster, result.read_stdout()) == "hello\n"

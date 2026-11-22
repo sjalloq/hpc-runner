@@ -312,6 +312,9 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
   one row named by the bare job id; the status after a waited submit is
   read with the polling wait, which is one query when accounting is up to
   date.
+- After `scancel` of a running job they disagree for about 0.2 s: `sacct`
+  says `CANCELLED` while `scontrol` says `COMPLETING` and the `.batch` row
+  `0:0` (24.11). A polled result has no exit code in that window.
   So the Slurm testbed needs no slow-accounting variant.
 - The `DependencyNeverSatisfied` reason is not in `sacct`: Reason is `None`
   on 24.11 and `Dependency` on 22.05, for both the pending and the
@@ -563,11 +566,12 @@ pending_resources, bad_partition, bad_account, dependent_ok.
 
 - Integration tests of hpc-runner's own behaviour (e.g. `hpc run --batch`
   of a failing command gives FAILED, exit code 1) run on every scheduler.
-- Tests of one scheduler's output stay per scheduler (`test_sge_*.py`,
-  `test_slurm_*.py`).
+- A scheduler's own tests are in `tests/integration/<scheduler>/`
+  (`sge/`, `slurm/`); the folder decides where a test runs.
 - Unit: parser tests per flavour from fixtures; one set of golden scripts
   per scheduler.
-- CI gains `24.11` and `22.05` cells.
+- CI has `24.11` and `22.05` cells; they have never run
+  (`../FOLLOW_UPS.md`, "Testbed stacks").
 
 ## Order of work
 
@@ -579,22 +583,8 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-1. Integration suite on both Slurm versions; CI cells for `24.11` and
-    `22.05`.
-    - Includes: for each kind of finished job with more than one `sacct`
-      row (timeout, cancelled while running), hpc-runner reports the
-      right status and code.
-   - Generic tests (`tests/integration/`) run as they are; Slurm's own go
-     in `tests/integration/slurm/`, one for each feature SGE's folder
-     tests in SGE's way. `test_deleted_while_pending...` has a Slurm
-     counterpart expecting CANCELLED. A memory-limit test expects
-     `OUT_OF_MEMORY`, on both versions.
-   - The generic tests that compare a job's whole output go through one
-     helper that first drops the lines the cluster is known to add (the
-     three on 22.05; none elsewhere).
-   - Slurm images have never been built in CI. A privileged container on
-     the hosted runner can create cgroups and set `memory.max` (probe run
-     2026-11-21).
+1. Push, and see the two Slurm CI cells run: the Slurm images have never
+   been built on the hosted runner. Push is not authorised yet.
 2. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
@@ -664,5 +654,10 @@ setup is in `../FOLLOW_UPS.md`.
 - `scancel` of an unknown id exits 0; of another user's job, 210.
 - `sacct -S` omits jobs never eligible to run (held or waiting on a
   dependency until cancelled), so a skipped job is not in the history.
+- `sbatch --test-only` exits 0 and prints "Job <id> to start at"; 1 with
+  "allocation failure: ..." when the controller refuses; 255 when `sbatch`
+  cannot read an option.
+- A requeued job starts again about 150 s after `scontrol requeue`; its
+  reason until then is `BeginTime`.
 - `afterok` on an unknown job id is accepted on 22.05 and rejected on
   24.11 (testbed runs). Where between the two it changed was not checked.

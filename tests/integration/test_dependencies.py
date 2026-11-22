@@ -10,7 +10,7 @@ from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
-from tests.integration.helpers import submitted_id
+from tests.integration.helpers import job_output, submitted_id
 
 
 def _array_task2_fails(cluster: Cluster) -> str:
@@ -49,9 +49,8 @@ def _assert_ran(cluster: Cluster, result: JobResult) -> None:
     job_id = _job_id(result)
     assert cluster.wait_for(job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
     assert cluster.scheduler().get_exit_code(job_id) == 0
-    stdout = result.read_stdout()
-    assert result.job is not None and stdout is not None
-    assert stdout.strip() == result.job.name
+    assert result.job is not None
+    assert job_output(cluster, result.read_stdout()) == f"{result.job.name}\n"
 
 
 def test_afterok_cascade(cluster: Cluster) -> None:

@@ -18,22 +18,17 @@ feature that has to be tested differently on it. Each exception is written
 down with its reason.
 
 Where things stand, from a pass over `testbed/`, `tests/` and CI on
-2026-11-16. There is no PBS backend (`schedulers/__init__.py` names a
-`pbs` module that does not exist), and no integration test has been run on
-Slurm, so most of this cannot be closed today.
-It is the list of what a backend must bring with it.
-For Slurm that work is step 1 of `slurm/PLAN.md`, "Order of
-work". For PBS nothing is planned.
+2026-11-16, brought up to date for Slurm on 2026-11-22. There is no PBS
+backend (`schedulers/__init__.py` names a `pbs` module that does not
+exist), so the PBS half of this cannot be closed today. It is the list of
+what a backend must bring with it. For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
 
 - The tests are sorted by folder: generic ones in `tests/integration/`
   (run on every scheduler, scheduler words from the cluster class), SGE's
-  own in `tests/integration/sge/`. No generic test can run on Slurm or PBS
-  yet:
-  - Slurm has its testbed config, its cluster class and a backend that
-    reads status, exit codes and listings; the suite has not been run on it
-    (`slurm/PLAN.md`, "Order of work", step 2).
+  own in `tests/integration/sge/`, Slurm's own in
+  `tests/integration/slurm/`. No generic test can run on PBS yet:
   - PBS: `cluster.config()` reads
     `testbed/<scheduler>/<flavour>/hpc-runner-testbed.toml`
     (`cluster.py`, `config_path`) and `pbs/openpbs` has no such file; its
@@ -41,14 +36,19 @@ work". For PBS nothing is planned.
   - PBS: the members the generic tests ask of the cluster class
     (`cluster.py`, "the scheduler's own words") are not answered;
     `PBSCluster` raises `NotImplementedError`.
-- The SGE folder has no counterpart for another scheduler. Same feature,
-  to be tested the other scheduler's way: `test_goldens` (`qsub -w v`;
-  Slurm has `sbatch --test-only`), `test_resources` (PE, `h_rt`),
-  `test_passthrough`, `test_hold_flag_forwards`, `test_node_killed`,
-  `test_deleted_while_pending_waits_out_to_unknown` (Slurm gets its own,
-  expecting CANCELLED). SGE only, with the reason in
-  `testbed/sge/README.md`: `test_slow_accounting_window`, `test_aged_out`,
-  `test_memory_per_consumable`, `test_h_vmem`.
+- The SGE and Slurm folders have no counterpart for PBS. The SGE tests
+  with no Slurm test, each with its reason, are listed in
+  `testbed/slurm/README.md`.
+- Three of the four Slurm batch goldens ask for more than the Slurm testbed
+  has (four CPUs, 8 GB, SGE flags in `scheduler_args`), so `sbatch
+  --test-only` accepts one and refuses three with the expected verdict
+  (`slurm/test_goldens.py`). The same holds for two of SGE's four.
+- The Slurm suite has three slow tests: two wait out a one-minute time
+  limit (about 105 s each) and one a requeue (about 155 s, Slurm's own
+  delay before a requeued job starts again).
+- A job on a killed node (`slurm/test_failures.py`): the exit code is not
+  asserted beyond "not 0", because it differs between the versions and is
+  not decided ("Slurm: facts from the captures" below).
 - `TestbedCluster.accounting_truncate` is implemented for SGE only. Slurm
   has no answer (`testbed/slurm/README.md`); the PBS class inherits
   `NotImplementedError` (`cluster.py`) with no reason written.
@@ -97,11 +97,9 @@ work". For PBS nothing is planned.
 ### Testbed stacks
 
 - What each stack lacks beside the SGE ones:
-  - `hpc-runner-testbed.toml` (and the second-layer
-    `-consumable.toml`): Slurm 22.05, Slurm 24.11, OpenPBS.
-  - A support matrix of test against flavour: only `testbed/sge/README.md`
-    has one. There is no `testbed/slurm/README.md` or
-    `testbed/pbs/README.md`.
+  - `hpc-runner-testbed.toml`: OpenPBS.
+  - A support matrix of test against flavour: `testbed/sge/README.md` and
+    `testbed/slurm/README.md` have one. There is no `testbed/pbs/README.md`.
 - The three clusters are not configured alike, so a test cannot be
   replicated as it stands:
   - Time-limited queue: SGE `short.q` 1 minute (`cell/q-short.conf`),
@@ -110,11 +108,18 @@ work". For PBS nothing is planned.
   - Resources to request: Slurm and PBS have a licence `lic`, a GPU on
     exec1 and a feature `fast`; PBS also `scratch`. SGE has `gpu` and
     `xcelium_lic` in `complexes.conf`, no `fast`, no `scratch`.
-- CI runs the integration job for `soge` and `ocs` only
-  (`.github/workflows/ci.yml`, the `integration` matrix). The Slurm and
-  PBS images are never built there, so a broken one is not noticed.
+- CI has cells for `soge`, `ocs`, Slurm `24.11` and Slurm `22.05`
+  (`.github/workflows/ci.yml`, the `integration` matrix). The PBS image is
+  never built there, so a broken one is not noticed.
+- Unverified: the Slurm CI cells, added 2026-11-22, have never run. The
+  Slurm images have never been built on the hosted runner, slurmd has
+  never run in a privileged container there (only a probe of cgroup
+  creation and `memory.max` did, 2026-11-21), and the 30-minute timeout
+  of a Slurm cell is an estimate. The first push closes this or shows
+  what is wrong.
 - Not run since the container renaming of 2026-11-16: the CI workflow's
-  log-copy step. The PBS, `ocs` and
+  log-copy step, rewritten 2026-11-22 to take the scheduler and the
+  flavour from the matrix. The PBS, `ocs` and
   Slurm 22.05 stacks were each brought up and down cleanly on 2026-11-17
   (flag research).
 - Cases the stacks cannot show, found by the flag research of 2026-11-17:
@@ -236,8 +241,10 @@ silently, it says so.
 - The plan says `SRUN_CPUS_PER_TASK` is needed on 22.05. Not reproduced
   here: with cgroups on, an `srun` step inside a two-CPU job saw two CPUs
   without it on both versions. It is exported as the plan says.
-- Nothing above has an integration test; they belong with step 1 of
-  `slurm/PLAN.md`.
+- Of the items above only the first half of the `kill_invalid_dependents`
+  one has an integration test (`slurm/test_dependencies.py`: the child
+  stays PENDING on the testbed, whose own setting does not cancel it).
+  Whether the others get one is not decided.
 
 ## The exit code of a batch job: to be revisited
 
@@ -353,6 +360,34 @@ decided.
   `SIGNALING`, `STAGE_OUT`, `RESIZING`, `STOPPED`, `BOOT_FAIL`,
   `SPECIAL_EXIT`, `PREEMPTED`, `REVOKED`, `DEADLINE`. `REQUEUED` is seen
   only with `sacct -D`, which hpc-runner does not ask for.
+
+## Slurm: found while writing the integration suite (2026-11-22)
+
+Run on 24.11 and 22.05 through hpc-runner in the `login` containers.
+Nothing here is decided.
+
+- For a moment after Slurm ends a running job (`scancel`, seen on 24.11)
+  the status is final and there is no exit code: `sacct` already says
+  `CANCELLED by <uid>` while `scontrol show job` says `COMPLETING` (with
+  `ExitCode=0:15`) and the `.batch` row still says `0:0`. `wait()` then
+  returns CANCELLED and `returncode` is None; about 0.2 s later it is 143.
+  The Slurm tests poll for the code (`exit_code_once_known`), as SGE's
+  `test_signal_exit_code` does for `qacct`. Ways to close it, none chosen:
+  read the code from a `COMPLETING` record; ask again before giving a
+  final status with no code; leave it to the caller.
+- `submit(job, wait=True)` of a job that is skipped gives `final_status`
+  SKIPPED and `exit_code` 0, the 0 `sbatch --wait` returned. `hpc run`
+  exits 1 for it. `slurm/test_waited.py` asserts the status and not the
+  code. Either the handle keeps what the submit command returned, or a job
+  that did not complete never has 0 (None, or 1 as `hpc run` gives).
+- `hpc status --history` did not list a job for about a second after
+  `sacct -j <id>` had it as FAILED (22.05, seen once; the cause was not
+  looked for). The tests poll the history.
+- A `time` longer than the partition allows is accepted by `sbatch` and the
+  job pends for ever (`short`, `time = "20m"`: reason `PartitionTimeLimit`
+  on 22.05). `hpc run --batch --wait` of one would not return. Not tested.
+- `sacct -X` straight after `scontrol requeue` said `REQUEUED` on 22.05 and
+  `PENDING` on 24.11; hpc-runner reports PENDING for both.
 
 ## Trace
 

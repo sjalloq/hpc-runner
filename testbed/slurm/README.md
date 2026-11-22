@@ -9,12 +9,13 @@ stack that is up.
 
 | Flavour | Source | Status |
 |---|---|---|
-| `24.11` | Debian trixie `slurm-wlm` 24.11.5 | stack runs; no integration test run yet |
-| `22.05` | Debian bookworm `slurm-wlm` 22.05.8 | stack runs; no integration test run yet |
+| `24.11` | Debian trixie `slurm-wlm` 24.11.5 | stack runs; results in "Support matrix" below |
+| `22.05` | Debian bookworm `slurm-wlm` 22.05.8 | stack runs; results in "Support matrix" below |
 
-The integration suite has not been run here yet (`docs/dev/slurm/PLAN.md`,
-"Order of work"). The stacks are used to run and record Slurm behaviour
-(`docs/dev/slurm/runs/`) and to take captures ("Captures" below).
+The integration suite runs on both (`hpc-testbed --scheduler slurm --flavour
+<name> pytest`): the generic tests and Slurm's own in
+`tests/integration/slurm/`. The stacks are also used to run and record Slurm
+behaviour (`docs/dev/slurm/runs/`) and to take captures ("Captures" below).
 
 ## Bringing a flavour up
 
@@ -22,6 +23,7 @@ The integration suite has not been run here yet (`docs/dev/slurm/PLAN.md`,
 hpc-testbed --scheduler slurm up                    # 24.11, the default
 hpc-testbed --scheduler slurm --flavour 22.05 up
 hpc-testbed --scheduler slurm --flavour 22.05 shell # bash in login as tester
+hpc-testbed --scheduler slurm --flavour 22.05 pytest # the integration suite
 hpc-testbed --scheduler slurm --flavour 22.05 capture
 hpc-testbed --scheduler slurm --flavour 22.05 down
 ```
@@ -167,7 +169,11 @@ are accepted as they are. 24.11 writes no such lines and leaves no
 directory.
 
 `SlurmCluster.extra_output_lines` gives the three lines as patterns for the
-22.05 flavour and nothing for 24.11.
+22.05 flavour and nothing for 24.11. A generic test that compares a job's
+whole output compares what `job_output` (`tests/integration/helpers.py`)
+returns: the text less those lines, dropped only when the text ends with all
+of them in order. `slurm/test_output_lines.py` checks the patterns against a
+real job on the flavour that has them.
 
 ## What the cluster class cannot answer
 
@@ -177,50 +183,94 @@ directory.
 
 ## Support matrix
 
-One row per integration test. The files in `tests/integration/` are the
-generic tests and run on every scheduler; Slurm's own tests will be in
-`tests/integration/slurm/`, which does not exist yet.
+One row per integration test, grouped by file. The files in
+`tests/integration/` are the generic tests: they check what hpc-runner does
+by its outcome on the cluster, name no scheduler command, and run on every
+scheduler. The files in `tests/integration/slurm/` are Slurm's own: they
+check that hpc-runner drives Slurm correctly and that Slurm does what
+hpc-runner says, and run only with `--scheduler slurm`.
 
-No integration test has been run on Slurm. A test deselected for a flavour with
-`@pytest.mark.flavour("slurm/<name>")` would show as such; nothing skips at
-run time.
+Each column is the result of `hpc-testbed --scheduler slurm --flavour <name>
+pytest` on 2026-11-22 (73 passed and 1 skipped on `24.11`, 74 passed on
+`22.05`). A test deselected for a flavour with
+`@pytest.mark.flavour("slurm/<name>")` would show as such (none so far). One
+test skips at run time, by the cluster class's answer: the check of the
+output lines only 22.05 adds.
 
 ### Generic tests (`tests/integration/`)
 
 | File | Test | `24.11` | `22.05` |
 |---|---|---|---|
-| test_smoke.py | test_batch_echo_hello | not run | not run |
-| test_submit.py | test_batch_echo | not run | not run |
-| | test_rejected_queue | not run | not run |
-| | test_interactive | not run | not run |
-| | test_interactive_no_slot | not run | not run |
-| test_status.py | test_queued_running_done | not run | not run |
-| | test_suspended_job_is_waited_through | not run | not run |
-| test_dependencies.py | test_afterok_cascade | not run | not run |
-| | test_afternotok | not run | not run |
-| | test_afterany | not run | not run |
-| | test_array_parent | not run | not run |
-| | test_cli_depend | not run | not run |
-| test_arrays.py | test_array_1_to_5 | not run | not run |
-| | test_array_concurrency_limit_is_accepted | not run | not run |
-| test_resources.py | test_queue_selection | not run | not run |
-| test_environment.py | test_modules_on_node | not run | not run |
-| | test_regardless_of_submitter | not run | not run |
-| | test_hpc_cpus | not run | not run |
-| | test_env_order | not run | not run |
-| | test_venv | not run | not run |
-| | test_inherit_env_false | not run | not run |
-| | test_cwd | not run | not run |
-| | test_cwd_with_space | not run | not run |
-| test_listing.py | test_two_users | not run | not run |
-| | test_completed_listing_by_user | not run | not run |
-| test_cli.py | test_status_active_history_and_details | not run | not run |
-| | test_cancel_by_filter_by_id_and_a_job_that_is_gone | not run | not run |
-| | test_run_exits_with_the_jobs_exit_code | not run | not run |
-| | test_tool_alias_and_config_resolve | not run | not run |
-| test_trace.py | test_flag_records_a_session | not run | not run |
-| | test_config_enabled_trace | not run | not run |
+| test_smoke.py | test_batch_echo_hello | pass | pass |
+| test_submit.py | test_batch_echo | pass | pass |
+| | test_rejected_queue | pass | pass |
+| | test_interactive | pass | pass |
+| | test_interactive_no_slot (all four slots filled) | pass | pass |
+| test_status.py | test_queued_running_done | pass | pass |
+| | test_suspended_job_is_waited_through | pass | pass |
+| test_dependencies.py | test_afterok_cascade | pass | pass |
+| | test_afternotok | pass | pass |
+| | test_afterany | pass | pass |
+| | test_array_parent | pass | pass |
+| | test_cli_depend | pass | pass |
+| test_arrays.py | test_array_1_to_5 | pass | pass |
+| | test_array_concurrency_limit_is_accepted | pass | pass |
+| test_resources.py | test_queue_selection | pass | pass |
+| test_environment.py | test_modules_on_node | pass | pass |
+| | test_regardless_of_submitter | pass | pass |
+| | test_hpc_cpus | pass | pass |
+| | test_env_order | pass | pass |
+| | test_venv | pass | pass |
+| | test_inherit_env_false | pass | pass |
+| | test_cwd | pass | pass |
+| | test_cwd_with_space | pass | pass |
+| test_listing.py | test_two_users | pass | pass |
+| | test_completed_listing_by_user | pass | pass |
+| test_cli.py | test_status_active_history_and_details | pass | pass |
+| | test_cancel_by_filter_by_id_and_a_job_that_is_gone | pass | pass |
+| | test_run_exits_with_the_jobs_exit_code | pass | pass |
+| | test_tool_alias_and_config_resolve | pass | pass |
+| test_trace.py | test_flag_records_a_session | pass | pass |
+| | test_config_enabled_trace | pass | pass |
 
 ### Slurm's own tests (`tests/integration/slurm/`)
 
-None written yet.
+| File | Test | `24.11` | `22.05` |
+|---|---|---|---|
+| slurm/test_goldens.py | test_every_slurm_batch_golden_is_covered | pass | pass |
+| | test_sbatch_reads_the_golden[4 Slurm batch goldens] (`sbatch --test-only`; one would start, two are too big for the testbed, one carries SGE flags in `scheduler_args`) | pass | pass |
+| slurm/test_resources.py | test_cpu_mem_time_queue_and_project (`scontrol` and `sacct` record each; `nproc` in the job is 2) | pass | pass |
+| | test_memory_per_cpu_divides_mem_by_the_cpus (`--mem-per-cpu=150`, 300M booked) | pass | pass |
+| | test_licences_devices_and_features (a job asking for what another holds waits; one asking for none runs on `exec2`) | pass | pass |
+| | test_time_limit_kill (TIMEOUT, exit 143; two `sacct` rows) | pass | pass |
+| | test_cancelled_while_running (CANCELLED, exit 143; two `sacct` rows) | pass | pass |
+| | test_over_its_memory_is_killed (KILLED, `OUT_OF_MEMORY`) | pass | pass |
+| | test_within_its_memory_runs | pass | pass |
+| slurm/test_status.py | test_cancelled_while_pending_is_cancelled_with_no_exit_code | pass | pass |
+| | test_requeued_job_is_waited_through_to_its_second_run (`scontrol requeue`; about two and a half minutes) | pass | pass |
+| slurm/test_dependencies.py | test_every_skipped_job_is_cancelled_by_slurm_with_no_exit_code | pass | pass |
+| | test_without_kill_invalid_dependents_the_child_stays_pending | pass | pass |
+| slurm/test_waited.py | test_hpc_run_wait_exits_as_the_job_did[exit 3, exit 137, segfault, over its memory] | pass | pass |
+| | test_submit_wait_gives_the_same[the same four] | pass | pass |
+| | test_a_time_limit_exits_1_with_timeout | pass | pass |
+| | test_a_skipped_job_exits_1 | pass | pass |
+| slurm/test_cli.py | test_history_has_sacct_exit_code_and_details_the_controllers (exit 137: 9 in `--history`, 137 in `hpc status <id>`) | pass | pass |
+| | test_status_shows_slurms_own_state (`CANCELLED by <uid>`, `OUT_OF_MEMORY`) | pass | pass |
+| | test_hold_flag_forwards | pass | pass |
+| slurm/test_listing.py | test_details_of_another_users_job_have_state_project_and_command | pass | pass |
+| slurm/test_submit.py | test_passthrough | pass | pass |
+| | test_rejected_queue_carries_sbatchs_words | pass | pass |
+| | test_rejected_request[8 requests the testbed cannot meet] | pass | pass |
+| slurm/test_trace.py | test_trace_holds_the_slurm_script_and_squeue_rows | pass | pass |
+| slurm/test_failures.py | test_node_killed (`--no-requeue`; FAILED, `NODE_FAIL`; fails if the Docker socket is not mounted) | pass | pass |
+| slurm/test_output_lines.py | test_a_batch_jobs_error_stream_ends_with_exactly_the_listed_lines | skips: no such lines | pass |
+
+### SGE's own tests with no Slurm test
+
+| SGE test | Why Slurm has none |
+|---|---|
+| sge/test_status.py test_slow_accounting_window | `sacct` has a job's row while it is still pending; there is no gap to wait out |
+| sge/test_status.py test_aged_out | the accounting store cannot be emptied from `login` ("What the cluster class cannot answer") |
+| sge/test_resources.py test_memory_per_consumable | measures SGE's per-slot booking of a consumable; `memory_per = "cpu"` is tested Slurm's way in test_memory_per_cpu_divides_mem_by_the_cpus |
+| sge/test_dependencies.py test_every_skipped_job_exits_113 | 113 is the SGE guard's code; Slurm's own way is tested in test_every_skipped_job_is_cancelled_by_slurm_with_no_exit_code |
+| sge/test_cli.py test_history_reports_failed_0_for_a_job_that_ran | SGE's `failed` field; Slurm has none, which the first slurm/test_cli.py test states |

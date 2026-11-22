@@ -26,9 +26,9 @@ testbed/
   slurm/24.11/        Slurm 24.11 (Debian trixie slurm-wlm 24.11.5): master (slurmctld,
                       slurmdbd), db (MariaDB), exec1, exec2, login. Jobs run in cgroups
                       (memory is enforced), so exec1 and exec2 are privileged containers.
-                      No hpc-runner backend or integration tests yet; used to run and
-                      record Slurm behaviour (docs/dev/slurm/PLAN.md, docs/dev/slurm/runs/)
-                      and to take captures. Its own hpc-runner-testbed.toml
+                      Runs the integration suite; also used to record Slurm behaviour
+                      (docs/dev/slurm/runs/) and to take captures. Its own
+                      hpc-runner-testbed.toml
   slurm/22.05/        Slurm 22.05 (Debian bookworm slurm-wlm 22.05.8), same shape
   slurm/common/       entrypoint.sh, conf/, ready.sh and clean.sh, shared by the Slurm flavours
   pbs/openpbs/        OpenPBS 23.06.06 built from source on Rocky Linux 8: master (server,
@@ -81,7 +81,9 @@ hpc-testbed pytest --slow-accounting   # ... the tests marked slow_accounting (d
 the testbed an unreachable scheduler is a broken testbed and fails the run.
 The same rule holds inside the tests: nothing skips on a missing
 precondition (no Docker socket, wrong accounting flush); it fails and says
-which `hpc-testbed` command fixes it. Variants are selected, not detected:
+which `hpc-testbed` command fixes it. One Slurm test is the exception: it
+checks the output lines only the 22.05 testbed adds, and skips where the
+cluster class lists none. Variants are selected, not detected:
 `--slow-accounting` selects exactly the tests marked `slow_accounting`, which
 are deselected otherwise, and exist only for the schedulers that have them
 (SGE). The suite takes the same two options, `--scheduler` and `--flavour`,
@@ -143,20 +145,25 @@ Shared volumes: `/work` (mode 1777: job scripts, output, sentinels),
 ## CI
 
 The `integration` job in `.github/workflows/ci.yml` runs these stacks on
-`ubuntu-latest` after `lint` and `test`, with `timeout-minutes: 20` and no
-registry (the image is built in the job). One matrix cell per flavour and
-Python: `soge` at 3.12 on pull requests and at 3.10, 3.11 and 3.12 on pushes
-to `main`; `ocs` at 3.12 always (its differences are in what the scheduler
-writes, not in the Python reading it). A cell is, with `--scheduler sge --flavour <name>`
-on every command:
+`ubuntu-latest` after `lint` and `test`, with no registry (the image is
+built in the job). `timeout-minutes` is 20 for an SGE cell and 30 for a
+Slurm one, whose suite waits out two time limits and a requeue. One matrix
+cell per scheduler, flavour and Python: `sge` `soge` at 3.12 on pull
+requests and at 3.10, 3.11 and 3.12 on pushes to `main`; `sge` `ocs`,
+`slurm` `24.11` and `slurm` `22.05` at 3.12 always (their differences are in
+what the scheduler writes, not in the Python reading it). A cell is, with
+`--scheduler <name> --flavour <name>` on every command:
 
 1. `pip install -e .` for the driver, `hpc-testbed up`, then `hpc-testbed
    pytest --py <ver> --junit testbed/junit-<ver>-default.xml` (a missing
    cluster is a failure, not a skip).
-2. `hpc-testbed down`, `hpc-testbed up --slow-accounting`, then `hpc-testbed
-   pytest --py <ver> --slow-accounting` for the one test that needs the
-   15 s flush (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its report is
-   `testbed/junit-<ver>.xml`.
+2. SGE only: `hpc-testbed down`, `hpc-testbed up --slow-accounting`, then
+   `hpc-testbed pytest --py <ver> --slow-accounting` for the one test that
+   needs the 15 s flush (docs/dev/testbed/TESTBED_REVIEW.md D-T22); its
+   report is `testbed/junit-<ver>.xml`.
+
+The Slurm cells have not run on the hosted runner yet
+(`docs/dev/FOLLOW_UPS.md`, "Testbed stacks").
 
 Artefacts: `junit-<flavour>-<ver>` (both XML reports, always uploaded) and,
 on failure, `testbed-logs-<flavour>-<ver>` with `compose.log` (`hpc-testbed logs`) and each
@@ -186,12 +193,14 @@ A new scheduler is `testbed/<scheduler>/<flavour>/` plus:
   release, suspend and resume a job, the queues and their slots, the wait
   for accounting records, the command names, the submit output, the
   script's option prefix and the lines the cluster adds to every job's
-  output file). A member with no answer raises
+  output file, which `job_output` in `tests/integration/helpers.py` drops
+  before a generic test compares the output). A member with no answer raises
   `NotImplementedError` naming it;
 - its default flavour in `DEFAULT_FLAVOURS` (`src/hpc_runner/_testbed.py`);
 - a folder `tests/integration/<scheduler>/` (with an `__init__.py`) for the
   tests that drive its own CLI or read its own output, as
-  `tests/integration/sge/` does for `qstat`/`qacct`/`qmod` and SGE syntax;
+  `tests/integration/sge/` does for `qstat`/`qacct`/`qmod` and SGE syntax
+  and `tests/integration/slurm/` for `scontrol`/`sacct`/`squeue`;
 - optionally a capture module in `CAPTURE_MODULES` (SGE:
   `tests/integration/capture.py`; Slurm: `tests/integration/capture_slurm.py`)
   and the scheduler in `SLOW_ACCOUNTING_SCHEDULERS`

@@ -15,6 +15,7 @@ from hpc_runner.core.resolve import resolve
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
+from tests.integration.helpers import job_output
 
 #: Fillers run ``sleep 15``; a queued interactive job cannot start for most of that.
 MIN_QUEUED_SECONDS = 5.0
@@ -40,8 +41,7 @@ def test_batch_echo(cluster: Cluster) -> None:
     assert job_id.isdigit()
     assert cluster.wait_for(job_id, JobStatus.COMPLETED) is JobStatus.COMPLETED
     assert result.stdout_path is not None and result.stdout_path.parent == cluster.workdir
-    stdout = result.read_stdout()
-    assert stdout is not None and stdout.strip() == "hello"
+    assert job_output(cluster, result.read_stdout()) == "hello\n"
 
 
 def test_rejected_queue(cluster: Cluster) -> None:

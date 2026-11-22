@@ -496,6 +496,10 @@ class BaseScheduler(ABC):
             returncode = result.returncode if status.is_terminal else None
         elif returncode < 0:
             returncode = 128 - returncode
+        if returncode == 0 and status is not JobStatus.COMPLETED:
+            # The waiting command returns 0 for a job that never ran or was
+            # deleted; a job that did not complete has no exit code of 0.
+            returncode = None
         result.final_status = status
         result.exit_code = returncode
         return result

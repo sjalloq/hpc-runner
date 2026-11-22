@@ -28,8 +28,10 @@ S = JobStatus
 #: The waiting submit command before the script path.
 ARGV = {"sge": ["qsub", "-sync", "y"], "slurm": ["sbatch", "--wait"]}
 
-#: scheduler -> scenario -> (what the submit command exited with, the status read after it).
-CASES: dict[str, dict[str, tuple[int, JobStatus]]] = {
+#: scheduler -> scenario -> (the exit code on the handle, the status read after the wait).
+#: The code is what the submit command exited with, except that its 0 for a job
+#: that did not complete is no exit code.
+CASES: dict[str, dict[str, tuple[int | None, JobStatus]]] = {
     "sge": {
         "ok": (0, S.COMPLETED),
         "exit1": (1, S.FAILED),
@@ -37,16 +39,16 @@ CASES: dict[str, dict[str, tuple[int, JobStatus]]] = {
         # The dependency guard's skip code: qsub returns it as any other.
         "skipped": (113, S.SKIPPED),
         # Deleted while pending: qsub exits 0 and there is never a record.
-        "deleted_pending": (0, S.UNKNOWN),
+        "deleted_pending": (None, S.UNKNOWN),
     },
     "slurm": {
         "ok": (0, S.COMPLETED),
         "exit1": (1, S.FAILED),
         "exit137": (137, S.FAILED),
         "out_of_memory": (1, S.KILLED),
-        "cancelled_pending": (0, S.CANCELLED),
+        "cancelled_pending": (None, S.CANCELLED),
         "cancelled_running": (1, S.CANCELLED),
-        "dependent_skipped": (0, S.SKIPPED),
+        "dependent_skipped": (None, S.SKIPPED),
     },
 }
 ALL_CASES = sorted({scenario for cases in CASES.values() for scenario in cases})
@@ -61,7 +63,7 @@ def scheduler(fixtures, scheduler_env, monkeypatch):
     return get_scheduler(fixtures.scheduler, config=HPCConfig())
 
 
-def _expected(fixtures: Fixtures, scenario: str) -> tuple[int, JobStatus]:
+def _expected(fixtures: Fixtures, scenario: str) -> tuple[int | None, JobStatus]:
     if scenario not in CASES[fixtures.scheduler]:
         pytest.skip(f"no {scenario} capture on {fixtures.scheduler}")
     return CASES[fixtures.scheduler][scenario]

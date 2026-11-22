@@ -7,7 +7,9 @@ session fixture only checks readiness and skips (or, with
 
 There are no conditional skips in the tests themselves: the testbed *is*
 the environment, so a missing precondition (no Docker socket, the wrong
-accounting flush) is a broken testbed and the test fails saying so.
+accounting flush) is a broken testbed and the test fails saying so. The one
+exception asks the cluster class, not the environment: the check of the
+lines a cluster adds to a job's output skips where the class lists none.
 Variants are selected, never detected: ``--slow-accounting`` selects the
 tests marked ``slow_accounting`` (and only those); without it they are
 deselected.

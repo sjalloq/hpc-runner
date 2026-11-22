@@ -5,12 +5,44 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from tests.integration.cluster import ACCOUNTING_TIMEOUT, Cluster
 
 HPC_KEYS = ("HPC_RUNNER_CONFIG", "HPC_SCRIPT_DIR", "HPC_EXIT_DIR")
+
+
+def without_extra_lines(text: str, patterns: Sequence[str]) -> str:
+    """*text* without the lines a cluster adds at the end of a job's output.
+
+    *patterns* is one regular expression per added line, in the order the
+    lines appear (``Cluster.extra_output_lines``). They are dropped only
+    when the last lines of *text* match them all, each in full and in that
+    order; otherwise *text* comes back as it is, so a line that only looks
+    like one of them elsewhere in the output is the job's own and stays.
+    """
+    if not patterns:
+        return text
+    lines = text.splitlines(keepends=True)
+    tail = lines[-len(patterns) :]
+    if len(tail) != len(patterns):
+        return text
+    if not all(re.fullmatch(p, line.rstrip("\n")) for p, line in zip(patterns, tail)):
+        return text
+    return "".join(lines[: -len(patterns)])
+
+
+def job_output(cluster: Cluster, text: str | None) -> str:
+    """What the job itself wrote: *text* less ``cluster.extra_output_lines``.
+
+    *text* is the whole of a batch job's output file (``read_stdout()``,
+    ``read_task_stdout()`` or the file read directly). Every test that
+    compares a job's whole output compares what this returns, exactly.
+    """
+    assert text is not None, "the job has no output file"
+    return without_extra_lines(text, cluster.extra_output_lines)
 
 
 def hpc(cluster: Cluster, *args: str, check: bool = True) -> str:
