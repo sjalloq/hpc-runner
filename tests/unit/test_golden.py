@@ -23,6 +23,7 @@ from hpc_runner.core.spec import JobSpec
 from hpc_runner.schedulers.base import BaseScheduler
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
+from hpc_runner.schedulers.slurm import SlurmScheduler
 from tests.conftest import bash_syntax_error
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
@@ -47,6 +48,7 @@ CONFIG = HPCConfig(
             "time_resource": "h_rt",
             "memory_per": "slot",
         },
+        "slurm": {"memory_per": "cpu"},
     },
 )
 
@@ -117,6 +119,12 @@ MODES: dict[str, tuple[str, bool, tuple[str, ...]]] = {
         True,
         ("minimal", "full_environment", "passthrough_resources_project"),
     ),
+    "slurm_batch": ("slurm", False, tuple(SPECS)),
+    "slurm_interactive": (
+        "slurm",
+        True,
+        ("minimal", "full_environment", "passthrough_resources_project"),
+    ),
     "local": ("local", False, ("minimal", "full_environment", "passthrough_resources_project")),
 }
 
@@ -126,6 +134,8 @@ CASES = [f"{mode}_{case}" for mode, (_, _, cases) in MODES.items() for case in c
 def _scheduler(name: str, monkeypatch, tmp_path: Path) -> BaseScheduler:
     if name == "local":
         return LocalScheduler(CONFIG)
+    if name == "slurm":
+        return SlurmScheduler(CONFIG)
     monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
     scheduler = SGEScheduler(CONFIG)
     scheduler.exit_dir = EXIT_DIR

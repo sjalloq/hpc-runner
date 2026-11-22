@@ -371,7 +371,7 @@ Decided 2026-11-15.
 | `${hpc.task_id}` | `$SLURM_ARRAY_TASK_ID` | `%a` |
 | `${hpc.job_name}` | `$SLURM_JOB_NAME` | `%x` |
 | `${hpc.tmpdir}` | `$TMPDIR` | none |
-| `${hpc.host}` | `$HOSTNAME` | `%N` (not run on the testbed) |
+| `${hpc.host}` | `$HOSTNAME` | `%N` |
 
 - `${hpc.job_id}` is the number submit printed, the same for every task of
   an array, as on SGE. Slurm gives each task its own `SLURM_JOB_ID`
@@ -544,14 +544,7 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-1. Rendering.
-   - The scheduler class, registered in `schedulers/__init__.py`;
-     `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
-   - Arguments, batch template, golden scripts.
-   - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
-     `recorder.note_script`.
-   - Interactive: `srun`, the `--pty` rule, `--export`.
-2. Parsing, against the fixtures.
+1. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
@@ -564,7 +557,7 @@ questions. Results are in the two fact files and `runs/`.
       `make_sge_responder`, `sge_fixtures`, `mock_sge_commands`) serve both
       schedulers' captures, and the tests that are not about a scheduler
       (TUI status labels, `--wait` exit code, trace) run on each.
-3. Integration suite on both Slurm versions; CI cells for `24.11` and
+2. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
@@ -580,7 +573,7 @@ questions. Results are in the two fact files and `runs/`.
    - Slurm images have never been built in CI. A privileged container on
      the hosted runner can create cgroups and set `memory.max` (probe run
      2026-11-21).
-4. User docs, and a manual checklist on a real cluster.
+3. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.
@@ -642,7 +635,7 @@ setup is in `../FOLLOW_UPS.md`.
 - An out-of-memory kill is `OUT_OF_MEMORY`, `ExitCode 0:125`, on both
   versions. Inside an `srun` step followed by exit 0, the job is
   `COMPLETED` and only the step is `OUT_OF_MEMORY`.
-- `sacct` prints an exit status above 128 less 128 (`exit 137` is `9:0`);
-  `scontrol show job` prints `137:0`.
+- `sacct` prints an exit status above 128 less 128 (`exit 137` is `9:0`;
+  `src/sacct/print.c`, both versions); `scontrol show job` prints `137:0`.
 - `afterok` on an unknown job id is accepted on 22.05 and rejected on
   24.11 (testbed runs). Where between the two it changed was not checked.

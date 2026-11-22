@@ -913,11 +913,12 @@ class TestSchedulerSections:
         assert config.warnings[0] in caplog.text
 
     def test_registered_but_missing_backend_is_warning(self, tmp_path):
-        path = _write(tmp_path, "config_version = 1\n[schedulers.slurm]\n")
+        path = _write(tmp_path, "config_version = 1\n[schedulers.pbs]\n")
         assert len(load_config(path).warnings) == 1
 
     def test_backend_declares_keys(self):
         assert scheduler_config_keys("sge")["emulate_afterok"] is bool
+        assert scheduler_config_keys("slurm")["kill_invalid_dependents"] is bool
         assert scheduler_config_keys("nope") is None
 
 

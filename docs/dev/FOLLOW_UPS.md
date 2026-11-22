@@ -18,10 +18,11 @@ feature that has to be tested differently on it. Each exception is written
 down with its reason.
 
 Where things stand, from a pass over `testbed/`, `tests/` and CI on
-2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
-names `slurm` and `pbs` modules that do not exist), so most of this cannot
-be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is step 3 of `slurm/PLAN.md`, "Order of
+2026-11-16. There is no PBS backend (`schedulers/__init__.py` names a
+`pbs` module that does not exist), and the Slurm backend renders and
+submits but reads no status yet, so most of this cannot be closed today.
+It is the list of what a backend must bring with it.
+For Slurm that work is step 2 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -31,7 +32,8 @@ work". For PBS nothing is planned.
   own in `tests/integration/sge/`. No generic test can run on Slurm or PBS
   yet:
   - Slurm has its testbed config and its cluster class; what is missing is
-    the backend (`slurm/PLAN.md`, "Order of work").
+    the backend's reading of status, exit codes and listings
+    (`slurm/PLAN.md`, "Order of work").
   - PBS: `cluster.config()` reads
     `testbed/<scheduler>/<flavour>/hpc-runner-testbed.toml`
     (`cluster.py`, `config_path`) and `pbs/openpbs` has no such file; its
@@ -63,8 +65,10 @@ work". For PBS nothing is planned.
     to take", on both flavours (`testbed/slurm/README.md`, "Captures").
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each),
-  `slurm/24.11` (119 files) and `slurm/22.05` (121 files). No parser reads
-  the Slurm ones yet; `test_slurm_capture_files.py` checks the file set.
+  `slurm/24.11` (119 files) and `slurm/22.05` (121 files). Of the Slurm
+  ones only the `sbatch_*.json` files are read (`test_slurm.py`: the job
+  id, the two rejections); `test_slurm_capture_files.py` checks the file
+  set.
 - Slurm texts no capture provides:
   - A completed-jobs listing (`sacct` by user and start time, what
     `hpc status --history` will ask). The argv is the backend's to choose;
@@ -84,11 +88,11 @@ work". For PBS nothing is planned.
 
 ### Unit suite
 
-- Goldens exist for `sge_batch`, `sge_interactive` and `local`
-  (`tests/unit/golden/`, `CASES` in `test_golden.py`). None for Slurm or
-  PBS.
-- Scheduler unit tests are `test_sge*.py` and `test_local.py` only
-  (`tests/unit/test_schedulers/`).
+- Goldens exist for `sge_batch`, `sge_interactive`, `slurm_batch`,
+  `slurm_interactive` and `local` (`tests/unit/golden/`, `CASES` in
+  `test_golden.py`). None for PBS.
+- Scheduler unit tests are `test_sge*.py`, `test_slurm.py` (rendering and
+  submission only) and `test_local.py` (`tests/unit/test_schedulers/`).
 - `test-review/LIFECYCLE_MATRIX.md` (every job state against every reader,
   with the test for each cell) covers SGE only. It is what caught the
   gaps on SGE; there is no such table for another scheduler.
@@ -198,6 +202,45 @@ Each bears on a line of `slurm/PLAN.md`; nothing is decided.
   submission set no limit. Which rows changes from run to run.
 - `sacct` AllocCPUS of a pending job is 0 on 24.11 and the CPUs asked for
   on 22.05.
+
+## Slurm: left open by the rendering step (2026-11-22)
+
+Run on 24.11 and 22.05 while the backend's rendering was built. Nothing
+here is decided; where something was built to keep a job from going wrong
+silently, it says so.
+
+- `${hpc.host}` is `$HOSTNAME` (`slurm/PLAN.md`, "`${hpc.*}` variables").
+  In an interactive job that inherits the environment it is the submit
+  host's name: `srun` passes `HOSTNAME=login` on. `$SLURMD_NODENAME` was
+  the node in all four cases run (`sbatch` and `srun`, `--export=ALL` and
+  `NONE`).
+- A `#SBATCH` line does not carry every character: `'`, `"` and `\` are
+  taken out of the value, `#` ends the line, an unmatched `'` is fatal.
+  The plan refuses whitespace only. Built: those four are refused with
+  whitespace (`_check_directive_values`, `slurm/scheduler.py`) and become
+  `_` in a job name.
+- The refusal message is Slurm's own wording, not SGE's text: SGE's names
+  SGE and `#$`.
+- An `env_passthrough` value with a space is not refused on an SGE batch
+  job (`_check_directive_values` there does not look at it) and is refused
+  on a Slurm one.
+- Several features are sent as `-C a&b`. The plan joins licences and
+  devices and does not say how features are joined. Run: `-C fast&fast`
+  is accepted, `-C fast&nosuch` is rejected. Two different features on
+  one node were not run; the testbed has one feature.
+- Two different licence names or device names in one option were not run:
+  the testbed has one of each.
+- A `%` in a user's output pattern is read by Slurm as one of its own
+  symbols; the path recorded on the result is then not the file written.
+  Nothing is built for it.
+- `kill_invalid_dependents = false` sends no `--kill-on-invalid-dep`, so
+  the site's own setting decides. A site set to cancel such jobs was not
+  run.
+- The plan says `SRUN_CPUS_PER_TASK` is needed on 22.05. Not reproduced
+  here: with cgroups on, an `srun` step inside a two-CPU job saw two CPUs
+  without it on both versions. It is exported as the plan says.
+- Nothing above has an integration test; they belong with step 2 of
+  `slurm/PLAN.md`.
 
 ## Trace
 

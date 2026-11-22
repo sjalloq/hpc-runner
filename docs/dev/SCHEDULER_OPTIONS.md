@@ -3,11 +3,9 @@
 What hpc-runner does with each option, on each scheduler. This is the spec:
 the code is built and tested against it.
 
-- Each rule for a built scheduler is proven by
+- Each rule, for SGE, Slurm and local, is proven by
   `tests/unit/test_schedulers/test_option_table.py`, which reads the rules
   table below and states the exact flag for every cell.
-- The Slurm columns are the spec for the Slurm backend. The same test
-  covers them once it exists.
 - The scheduler behaviour here was found by running each flag on the Docker
   testbeds (`testbed/`) on 2026-11-17.
 

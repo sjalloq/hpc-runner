@@ -10,8 +10,10 @@ import pytest
 
 from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.result import JobStatus
+from hpc_runner.schedulers.base import BaseScheduler
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
+from hpc_runner.schedulers.slurm import SlurmScheduler
 from tests.fakes import make_host, make_job
 
 requires_bash = pytest.mark.skipif(shutil.which("bash") is None, reason="bash not installed")
@@ -66,16 +68,25 @@ def _sched_config(module_init_script: str = "", **settings) -> HPCConfig:
 
 
 class TestSharedEnvironmentBlock:
-    def test_three_templates_render_identical_blocks(self, tmp_path, monkeypatch):
+    def test_five_templates_render_identical_blocks(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
         config = _sched_config(module_init_script="/site/init.sh")
         job = _full_job(tmp_path)
-        sge, local = SGEScheduler(config), LocalScheduler(config)
+        sge, slurm, local = SGEScheduler(config), SlurmScheduler(config), LocalScheduler(config)
         batch = sge.preview(job)
         interactive = sge.preview(dataclasses.replace(job, interactive=True))
+        slurm_batch = slurm.preview(job)
+        slurm_interactive = slurm.preview(dataclasses.replace(job, interactive=True))
         local_script = local.preview(job)
         assert "#$ " in batch and "#$ " not in interactive  # really different templates
-        assert _env_block(batch) == _env_block(interactive) == _env_block(local_script)
+        assert "#SBATCH " in slurm_batch and "#SBATCH " not in slurm_interactive
+        assert (
+            _env_block(batch)
+            == _env_block(interactive)
+            == _env_block(slurm_batch)
+            == _env_block(slurm_interactive)
+            == _env_block(local_script)
+        )
 
     def test_order(self, tmp_path):
         block = _env_block(LocalScheduler(HPCConfig()).preview(_full_job(tmp_path)))
@@ -94,27 +105,36 @@ class TestSharedEnvironmentBlock:
         assert positions == sorted(positions)
 
     @requires_bash
-    @pytest.mark.parametrize("which", ["batch", "interactive", "local"])
+    @pytest.mark.parametrize(
+        "which", ["batch", "interactive", "slurm_batch", "slurm_interactive", "local"]
+    )
     @pytest.mark.parametrize("verbose", [False, True])
     def test_bash_syntax(self, tmp_path, monkeypatch, which, verbose):
         from hpc_runner.core.dependency import Dependency
 
         monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit dir"))
         config = _sched_config(module_init_script="/site dir/init.sh")
-        host = make_host(env={"DISPLAY": ":0 'x'"})
+        # A #SBATCH line takes no space or quote (test_slurm.py, TestDirectiveValues).
+        host = make_host(env={"DISPLAY": ":0" if which == "slurm_batch" else ":0 'x'"})
         job = _full_job(
             tmp_path,
             inherit_env=False,
             env_passthrough=["DISPLAY"],
             host=host,
-            dependencies=[Dependency("1")] if which == "batch" else [],
-            interactive=which == "interactive",
+            dependencies=[Dependency("1")] if which.endswith("batch") else [],
+            interactive=which.endswith("interactive"),
             stdout="out file.log" if which == "local" else None,
         )
         job = dataclasses.replace(
             job, env_vars={**job.env_vars, "MAKEFLAGS": "-j${hpc.cpus} ${hpc.job_name}"}
         )
-        scheduler = LocalScheduler(config) if which == "local" else SGEScheduler(config)
+        scheduler: BaseScheduler
+        if which == "local":
+            scheduler = LocalScheduler(config)
+        elif which.startswith("slurm"):
+            scheduler = SlurmScheduler(config)
+        else:
+            scheduler = SGEScheduler(config)
         script = scheduler.preview(job, verbose=verbose)
         result = subprocess.run(["bash", "-n"], input=script, text=True, capture_output=True)
         assert result.returncode == 0, result.stderr

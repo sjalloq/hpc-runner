@@ -17,7 +17,7 @@ Layout
 - ``src/hpc_runner/core/``: ``JobSpec`` → ``resolve()`` → ``Job``, the
   config loader and schema, units, expansion, results.
 - ``src/hpc_runner/schedulers/``: one package per scheduler (``sge``,
-  ``local``) plus the registry. ``_subprocess.run_command``
+  ``slurm``, ``local``) plus the registry. ``_subprocess.run_command``
   is the only place a scheduler CLI is run; tests patch it, never
   ``subprocess``.
 - ``src/hpc_runner/cli/``: the ``hpc`` command group.
@@ -87,6 +87,10 @@ Schedulers (``src/hpc_runner/schedulers/``)
   (``core/descriptors.py``), each with ``to_args()`` and ``to_directive()``;
   ``scheduler.py`` is submit, status and cancel. The PE name and the
   resource names come from ``[schedulers.sge]``; nothing is hard-coded.
+- ``slurm/``: the same shape as ``sge/``. ``args.py`` renders each option
+  as the words ``sbatch`` and ``srun`` take; ``scheduler.py`` writes the
+  script and submits it; ``parser.py`` reads the job id ``sbatch`` prints.
+  Status, listings and cancel are not built yet.
 - ``local/``: runs the job as a subprocess on this machine with the same
   rendered environment.
 - The scheduler is named, never detected: ``get_scheduler(name)``, else
@@ -121,7 +125,8 @@ Other packages
   name each other; each is resolved and its dependencies injected at submit
   time. ``results`` is a read-only mapping and ``wait()`` returns statuses.
 - ``templates/``: Jinja2 job scripts. Each scheduler template
-  (``schedulers/sge/templates/batch.sh.j2`` and ``interactive.sh.j2``,
+  (``batch.sh.j2`` and ``interactive.sh.j2`` in ``schedulers/sge/templates/``
+  and ``schedulers/slurm/templates/``,
   ``schedulers/local/templates/job.sh.j2``) owns its directives and exec line
   and includes the shared ``templates/_environment.sh.j2``. Every
   interpolated value goes through the ``sh`` filter (``templates/engine.py``).

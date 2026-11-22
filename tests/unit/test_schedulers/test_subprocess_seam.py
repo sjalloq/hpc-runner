@@ -161,13 +161,13 @@ def test_unknown_scheduler_is_config_error():
         get_scheduler("nope", config=HPCConfig())
 
 
-@pytest.mark.parametrize("name", ["slurm", "pbs"])
-def test_planned_scheduler_is_config_error(name):
+def test_planned_scheduler_is_config_error():
     """A registered backend whose module is not shipped yet fails cleanly, not with a traceback."""
-    with pytest.raises(
-        ConfigError, match=f"scheduler '{name}' is not implemented.*implemented: sge, local"
-    ):
-        get_scheduler(name, config=HPCConfig())
+    with pytest.raises(ConfigError) as err:
+        get_scheduler("pbs", config=HPCConfig())
+    assert str(err.value) == (
+        "scheduler 'pbs' is not implemented in this hpc-runner; implemented: sge, slurm, local"
+    )
 
 
 class TestWhichScheduler:

@@ -24,6 +24,7 @@ from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.schema import FIELD_VALIDATORS
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
+from hpc_runner.schedulers.slurm import SlurmScheduler
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
@@ -139,11 +140,29 @@ def test_configuration_reference_lists_every_job_key():
     assert listed == set(FIELD_VALIDATORS)
 
 
-@pytest.mark.parametrize("scheduler", [SGEScheduler, LocalScheduler], ids=lambda s: s.name)
+SCHEDULER_KEYS = {
+    SGEScheduler: [
+        "parallel_environment",
+        "memory_resource",
+        "time_resource",
+        "memory_per",
+        "emulate_afterok",
+        "sentinel_ttl_days",
+    ],
+    SlurmScheduler: ["memory_per", "kill_invalid_dependents"],
+    LocalScheduler: [],
+}
+
+
+@pytest.mark.parametrize("scheduler", list(SCHEDULER_KEYS), ids=lambda s: s.name)
 def test_configuration_reference_lists_every_scheduler_key(scheduler):
+    """Each scheduler's keys are listed under its own ``[schedulers.<name>]`` heading."""
+    assert list(scheduler.CONFIG_KEYS) == SCHEDULER_KEYS[scheduler]
     reference = _section((DOCS / "configuration.rst").read_text(), "Scheduler settings reference")
+    assert f"``[schedulers.{scheduler.name}]``" in reference
+    own = reference.split(f"``[schedulers.{scheduler.name}]``", 1)[1].split("``[schedulers.", 1)[0]
     for key in scheduler.CONFIG_KEYS:
-        assert f"``{key}``" in reference, key
+        assert f"``{key}``" in own, key
 
 
 @pytest.mark.parametrize(

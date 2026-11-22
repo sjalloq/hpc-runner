@@ -12,10 +12,10 @@ stack that is up.
 | `24.11` | Debian trixie `slurm-wlm` 24.11.5 | stack runs; no integration test run yet |
 | `22.05` | Debian bookworm `slurm-wlm` 22.05.8 | stack runs; no integration test run yet |
 
-hpc-runner has no Slurm backend yet (`docs/dev/slurm/PLAN.md`, "Order of
-work"), so the integration suite cannot run here. The stacks are used to
-run and record Slurm behaviour (`docs/dev/slurm/runs/`) and to take
-captures ("Captures" below).
+The Slurm backend renders and submits jobs but does not read their status
+yet (`docs/dev/slurm/PLAN.md`, "Order of work"), so the integration suite
+cannot run here. The stacks are used to run and record Slurm behaviour
+(`docs/dev/slurm/runs/`) and to take captures ("Captures" below).
 
 ## Bringing a flavour up
 
@@ -176,8 +176,8 @@ One row per integration test. The files in `tests/integration/` are the
 generic tests and run on every scheduler; Slurm's own tests will be in
 `tests/integration/slurm/`, which does not exist yet.
 
-No integration test has been run on Slurm: every one needs the Slurm
-backend. A test deselected for a flavour with
+No integration test has been run on Slurm: every one needs the backend to
+read a job's status. A test deselected for a flavour with
 `@pytest.mark.flavour("slurm/<name>")` would show as such; nothing skips at
 run time.
 

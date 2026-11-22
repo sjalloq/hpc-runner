@@ -212,7 +212,7 @@ Scheduler settings reference
 ``[schedulers.<name>]`` holds site facts for one scheduler. Each backend
 declares the keys it reads; any other key, or a value of the wrong type, is
 an error. A section for a scheduler this hpc-runner does not have (for
-example ``[schedulers.slurm]`` today) is a warning and is not checked.
+example ``[schedulers.pbs]`` today) is a warning and is not checked.
 
 ``[schedulers.sge]``:
 
@@ -251,6 +251,28 @@ example ``[schedulers.slurm]`` today) is a warning and is not checked.
      - ``30``
      - Exit sentinels older than this are removed when a scheduler is
        created. Raise it if dependency chains wait longer than a month.
+
+``[schedulers.slurm]``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 12 14 50
+
+   * - Key
+     - Type
+     - Default
+     - Meaning
+   * - ``memory_per``
+     - ``"job"`` or ``"cpu"``
+     - ``"job"``
+     - ``"job"``: ``mem`` is requested as given, with ``--mem``; ``"cpu"``:
+       ``mem`` is divided by ``cpu``, rounded up to the megabyte, and
+       requested with ``--mem-per-cpu``.
+   * - ``kill_invalid_dependents``
+     - boolean
+     - ``true``
+     - Send ``--kill-on-invalid-dep=yes`` with a job's dependencies; with
+       ``false`` it is not sent.
 
 ``[schedulers.local]`` (runs jobs as local subprocesses) has no settings.
 The module init script is the top-level ``module_init_script`` key, shared

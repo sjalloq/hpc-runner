@@ -37,6 +37,7 @@ from hpc_runner.schedulers.base import (
     BaseScheduler,
     NotApplicable,
     Support,
+    get_script_dir,
     refuse_interactive_dependencies,
 )
 from hpc_runner.schedulers.sge.args import (
@@ -82,24 +83,6 @@ _GUARDED = frozenset({DependencyType.AFTEROK, DependencyType.AFTERNOTOK})
 
 # Script path shown by preview(); never written or deleted.
 _PREVIEW_SCRIPT_PATH = "<script>"
-
-
-def get_script_dir() -> Path:
-    """Get directory for temporary job scripts.
-
-    Uses HPC_SCRIPT_DIR environment variable if set, otherwise
-    defaults to ~/.cache/hpc-runner/scripts/.
-
-    Returns:
-        Path to script directory (created if needed).
-    """
-    if env_dir := os.environ.get("HPC_SCRIPT_DIR"):
-        script_dir = Path(env_dir)
-    else:
-        script_dir = Path.home() / ".cache" / "hpc-runner" / "scripts"
-
-    script_dir.mkdir(parents=True, exist_ok=True)
-    return script_dir
 
 
 #: Default for ``[schedulers.sge] sentinel_ttl_days``: how long an exit

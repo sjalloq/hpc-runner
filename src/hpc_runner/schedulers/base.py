@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from abc import ABC, abstractmethod
@@ -50,6 +51,24 @@ def _with_task_id(pattern: str) -> str:
     if match is None:
         return f"{pattern}.{TASK_ID_PLACEHOLDER}"
     return f"{pattern[: match.start()]}.{TASK_ID_PLACEHOLDER}{match.group()}"
+
+
+def get_script_dir() -> Path:
+    """Get directory for temporary job scripts.
+
+    Uses HPC_SCRIPT_DIR environment variable if set, otherwise
+    defaults to ~/.cache/hpc-runner/scripts/.
+
+    Returns:
+        Path to script directory (created if needed).
+    """
+    if env_dir := os.environ.get("HPC_SCRIPT_DIR"):
+        script_dir = Path(env_dir)
+    else:
+        script_dir = Path.home() / ".cache" / "hpc-runner" / "scripts"
+
+    script_dir.mkdir(parents=True, exist_ok=True)
+    return script_dir
 
 
 #: The scheduler turns the option into its own arguments.
@@ -172,6 +191,10 @@ class BaseScheduler(ABC):
         """
         return self.HPC_VARS
 
+    def hpc_path_vars(self, job: Job) -> Mapping[str, str]:
+        """:attr:`HPC_PATH_VARS` for *job*; override when one depends on the job."""
+        return self.HPC_PATH_VARS
+
     def render_hpc_vars(
         self,
         text: str,
@@ -187,7 +210,7 @@ class BaseScheduler(ABC):
         """
         mapping = dict(self.hpc_vars(job, job_id=job_id))
         if context == "path":
-            mapping.update(self.HPC_PATH_VARS)
+            mapping.update(self.hpc_path_vars(job))
         return _HPC_REF.sub(lambda m: mapping[m.group(1)], text)
 
     def shell_word(self, text: str, *, job: Job, job_id: str | None = None) -> ShellWord:

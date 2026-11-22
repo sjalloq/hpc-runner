@@ -108,8 +108,12 @@ def test_table_is_complete(scheduler: BaseScheduler, kind: str) -> None:
 @pytest.fixture
 def sched(monkeypatch, tmp_path):
     """A scheduler by name, with its script and exit directories under tmp_path."""
+    from hpc_runner.schedulers.slurm import SlurmScheduler
+
     monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
     monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+    # srun gets --pty at a terminal (test_slurm.py); the words below are without one.
+    monkeypatch.setattr(SlurmScheduler, "_at_a_terminal", staticmethod(lambda: False))
     return lambda name: get_scheduler(name, config=HPCConfig())
 
 
@@ -173,6 +177,13 @@ def _qrsh_words(scheduler: BaseScheduler, **fields: Any) -> str:
     return " ".join(argv[3:-1])
 
 
+def _srun_words(scheduler: BaseScheduler, **fields: Any) -> str:
+    """srun's arguments between ``srun`` and the script."""
+    argv = scheduler._build_srun_command(_job("interactive", **fields), "SCRIPT")  # type: ignore[attr-defined]
+    assert argv[0] == "srun" and argv[-1] == "SCRIPT"
+    return " ".join(argv[1:-1])
+
+
 #: SGE batch, option set as in SAMPLES: (lines the script gains, lines it loses).
 SGE_BATCH: dict[str, tuple[list[str], list[str]]] = {
     "name": (["#$ -N sample_name"], ["#$ -N alice_echo"]),
@@ -216,6 +227,56 @@ SGE_INTERACTIVE: dict[str, str] = {
     "devices": "-cwd -V -N alice_echo -l sample_dev=2",
     "features": "-cwd -V -N alice_echo -l sample_feat=1",
     "scheduler_args": "-cwd -V -N alice_echo -l sample_arg=1 -binding linear:1",
+}
+#: Slurm batch, option set as in SAMPLES: (lines the script gains, lines it loses).
+SLURM_BATCH: dict[str, tuple[list[str], list[str]]] = {
+    "name": (["#SBATCH --job-name=sample_name"], ["#SBATCH --job-name=alice_echo"]),
+    "cpu": (["#SBATCH --cpus-per-task=3 --ntasks=1"], ["#SBATCH --cpus-per-task=1 --ntasks=1"]),
+    "mem": (["#SBATCH --mem=2048"], []),
+    "time": (["#SBATCH --time=0-01:00:00"], []),
+    "queue": (["#SBATCH --partition=sample.q"], []),
+    "project": (["#SBATCH --account=sample_project"], []),
+    "stdout": (["#SBATCH --output=/work/sample.log"], ["#SBATCH --output=/work/%x.%j.out"]),
+    "stderr": (["#SBATCH --error=/work/sample.err"], []),
+    "inherit_env": (["#SBATCH --export=NONE"], ["#SBATCH --export=ALL"]),
+    "env_passthrough": (["#SBATCH --export=SAMPLE_VAR=1"], ["#SBATCH --export=NONE"]),
+    "workdir": (
+        ["#SBATCH --chdir=/sample/dir", "#SBATCH --output=/sample/dir/%x.%j.out"],
+        ["#SBATCH --chdir=/work", "#SBATCH --output=/work/%x.%j.out"],
+    ),
+    "licenses": (["#SBATCH -L sample_lic:2"], []),
+    "devices": (["#SBATCH --gres=sample_dev:2"], []),
+    "features": (["#SBATCH -C sample_feat"], []),
+    "array": (
+        ["#SBATCH --output=/work/%x.%A.%a.out", "#SBATCH --array=1-3"],
+        ["#SBATCH --output=/work/%x.%j.out"],
+    ),
+    "dependencies": (["#SBATCH --dependency=afterany:7 --kill-on-invalid-dep=yes"], []),
+    "scheduler_args": (["#SBATCH -l sample_arg=1 -binding linear:1"], []),
+}
+#: srun's arguments with nothing set.
+SRUN_PLAIN = "--chdir=/work --export=ALL --job-name=alice_echo --cpus-per-task=1 --ntasks=1"
+#: Slurm interactive: srun's arguments with the option set as in SAMPLES.
+SLURM_INTERACTIVE: dict[str, str] = {
+    "name": "--chdir=/work --export=ALL --job-name=sample_name --cpus-per-task=1 --ntasks=1",
+    "cpu": "--chdir=/work --export=ALL --job-name=alice_echo --cpus-per-task=3 --ntasks=1",
+    "mem": f"{SRUN_PLAIN} --mem=2048",
+    "time": f"{SRUN_PLAIN} --time=0-01:00:00",
+    "queue": f"{SRUN_PLAIN} --partition=sample.q",
+    "project": f"{SRUN_PLAIN} --account=sample_project",
+    "inherit_env": (
+        "--chdir=/work --export=NONE --job-name=alice_echo --cpus-per-task=1 --ntasks=1"
+    ),
+    "env_passthrough": (
+        "--chdir=/work --export=SAMPLE_VAR=1 --job-name=alice_echo --cpus-per-task=1 --ntasks=1"
+    ),
+    "workdir": (
+        "--chdir=/sample/dir --export=ALL --job-name=alice_echo --cpus-per-task=1 --ntasks=1"
+    ),
+    "licenses": f"{SRUN_PLAIN} -L sample_lic:2",
+    "devices": f"{SRUN_PLAIN} --gres=sample_dev:2",
+    "features": f"{SRUN_PLAIN} -C sample_feat",
+    "scheduler_args": f"{SRUN_PLAIN} -l sample_arg=1 -binding linear:1",
 }
 #: Local batch: (lines the script gains, lines it loses).
 LOCAL_BATCH: dict[str, tuple[list[str], list[str]]] = {
@@ -261,6 +322,10 @@ def test_passes_on(name: str, kind: str, option: str, sched) -> None:
         assert _script_change(scheduler, kind, option) == SGE_BATCH[option]
     elif (name, kind) == ("sge", "interactive"):
         assert _qrsh_words(scheduler, **SAMPLES[option]) == SGE_INTERACTIVE[option]
+    elif (name, kind) == ("slurm", "batch"):
+        assert _script_change(scheduler, kind, option) == SLURM_BATCH[option]
+    elif (name, kind) == ("slurm", "interactive"):
+        assert _srun_words(scheduler, **SAMPLES[option]) == SLURM_INTERACTIVE[option]
     else:
         assert (name, kind) == ("local", "batch")
         assert _script_change(scheduler, kind, option) == LOCAL_BATCH[option]
@@ -273,6 +338,8 @@ def test_ignores(name: str, kind: str, option: str, sched) -> None:
     assert _script_change(scheduler, kind, option) == ([], [])
     if (name, kind) == ("sge", "interactive"):
         assert _qrsh_words(scheduler, **SAMPLES[option]) == "-cwd -V -N alice_echo"
+    if (name, kind) == ("slurm", "interactive"):
+        assert _srun_words(scheduler, **SAMPLES[option]) == SRUN_PLAIN
 
 
 @pytest.mark.parametrize(("name", "kind", "option"), _cells(REFUSES))
@@ -287,6 +354,8 @@ def test_the_tables_above_cover_every_passes_on_cell() -> None:
     written = (
         {("sge", "batch", option) for option in SGE_BATCH}
         | {("sge", "interactive", option) for option in SGE_INTERACTIVE}
+        | {("slurm", "batch", option) for option in SLURM_BATCH}
+        | {("slurm", "interactive", option) for option in SLURM_INTERACTIVE}
         | {("local", "batch", option) for option in LOCAL_BATCH}
         | AT_LAUNCH
     )
