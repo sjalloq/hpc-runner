@@ -164,6 +164,9 @@ that uses them runs once per flavour through ``sge_fixtures``. No scheduler
 text is typed from memory: a scenario the captures lack is a reason to
 extend the capture. Regenerate a flavour against its running stack when a
 scenario changes. The manifest also records the argv behind every file.
+Slurm's captures are written the same way by
+``tests/integration/capture_slurm.py`` into
+``tests/unit/fixtures/slurm/<flavour>/`` (``24.11``, ``22.05``).
 
 The docs are tested too: every Python snippet in the README and the API
 guide compiles (those marked ``# doctest: local`` run against the local

@@ -36,7 +36,10 @@ ACCOUNTING_FLUSH_SLOW = "00:00:15"
 #: conftest reads this too); ``--slow-accounting`` elsewhere is a usage error.
 SLOW_ACCOUNTING_SCHEDULERS = frozenset({"sge"})
 #: ``{scheduler: module}`` run by ``capture``; a scheduler without one cannot capture yet.
-CAPTURE_MODULES = {"sge": "tests.integration.capture"}
+CAPTURE_MODULES = {
+    "sge": "tests.integration.capture",
+    "slurm": "tests.integration.capture_slurm",
+}
 #: In-container paths fixed by the image (testbed/sge/soge/Dockerfile).
 VENV_ROOT = "/opt/venv"
 SRC_DIR = "/src"
@@ -236,9 +239,9 @@ CAPTURE_DIR = f"{WORK_DIR}/capture"
 def cmd_capture(stack: Stack, *, py: str) -> None:
     """Regenerate the unit-test fixtures from the live stack.
 
-    Runs the scheduler's capture module (``tests/integration/capture.py`` for
-    SGE) inside ``login`` (it submits the scenario jobs, kills a node and
-    stops the master) and copies its output to ``tests/unit/fixtures/<scheduler>/<flavour>/``.
+    Runs the scheduler's capture module (``CAPTURE_MODULES``) inside ``login``
+    (SGE's submits the scenario jobs, kills a node and stops the master) and
+    copies its output to ``tests/unit/fixtures/<scheduler>/<flavour>/``.
     """
     module = CAPTURE_MODULES.get(stack.scheduler)
     if module is None:

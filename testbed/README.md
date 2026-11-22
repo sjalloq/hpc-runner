@@ -22,10 +22,13 @@ testbed/
   sge/soge/           Debian trixie gridengine 8.1.9 (Son of Grid Engine lineage)
   sge/ocs/            Open Cluster Scheduler 9.1.7 (Univa lineage), upstream tarballs
   sge/common/         ready.sh and clean.sh, shared by the SGE flavours
+  slurm/README.md     Slurm flavours, what the stack contains (cgroups) and the support matrix
   slurm/24.11/        Slurm 24.11 (Debian trixie slurm-wlm 24.11.5): master (slurmctld,
-                      slurmdbd), db (MariaDB), exec1, exec2, login. No hpc-runner backend
-                      or integration tests yet; used to run and record Slurm behaviour
-                      (docs/dev/slurm/PLAN.md, docs/dev/slurm/runs/)
+                      slurmdbd), db (MariaDB), exec1, exec2, login. Jobs run in cgroups
+                      (memory is enforced), so exec1 and exec2 are privileged containers.
+                      No hpc-runner backend or integration tests yet; used to run and
+                      record Slurm behaviour (docs/dev/slurm/PLAN.md, docs/dev/slurm/runs/)
+                      and to take captures. Its own hpc-runner-testbed.toml
   slurm/22.05/        Slurm 22.05 (Debian bookworm slurm-wlm 22.05.8), same shape
   slurm/common/       entrypoint.sh, conf/, ready.sh and clean.sh, shared by the Slurm flavours
   pbs/openpbs/        OpenPBS 23.06.06 built from source on Rocky Linux 8: master (server,
@@ -69,7 +72,7 @@ hpc-testbed pytest --up [--keep]  # up, pytest, down (--keep leaves the stack ru
 hpc-testbed logs [master ...]     # container logs, all or named services
 hpc-testbed clean                 # delete every job, wait for an empty queue
 hpc-testbed down                  # containers, network and volumes removed
-hpc-testbed capture               # regenerate tests/unit/fixtures/<scheduler>/<flavour>/ (~3 min)
+hpc-testbed capture               # regenerate tests/unit/fixtures/<scheduler>/<flavour>/ (SGE: ~3 min)
 hpc-testbed up --slow-accounting  # master with a 15 s accounting flush, for ...
 hpc-testbed pytest --slow-accounting   # ... the tests marked slow_accounting (deselected otherwise)
 ```
@@ -170,26 +173,30 @@ configuration and `hpc-runner-testbed.toml`. The fixture classes
 (`tests/integration/cluster.py`) and the tests are shared across flavours of
 one scheduler (the generic tests across all schedulers); `--scheduler <name> --flavour <name>` selects the stack that is up and
 `@pytest.mark.flavour("<scheduler>/<flavour>")` deselects what a flavour cannot do, which is what
-fills `testbed/sge/README.md`.
+fills `testbed/sge/README.md` and `testbed/slurm/README.md`.
 
 A new scheduler is `testbed/<scheduler>/<flavour>/` plus:
 
 - a `TestbedCluster` subclass in `tests/integration/cluster.py` (`name`,
-  `probe_command`, `dump_commands`, `accounting_truncate`) registered in
+  `probe_command`, `dump_commands`, and `accounting_truncate` where the
+  scheduler's accounting can be emptied) registered in
   `CLUSTERS`; the fixture picks it from `--scheduler`. The class also
   answers what the generic tests ask of a scheduler (the members under "the
   scheduler's own words" in that file: the array task variable, how to hold,
   release, suspend and resume a job, the queues and their slots, the wait
-  for accounting records, the command names, the submit output and the
-  script's option prefix). A member with no answer raises
+  for accounting records, the command names, the submit output, the
+  script's option prefix and the lines the cluster adds to every job's
+  output file). A member with no answer raises
   `NotImplementedError` naming it;
 - its default flavour in `DEFAULT_FLAVOURS` (`src/hpc_runner/_testbed.py`);
 - a folder `tests/integration/<scheduler>/` (with an `__init__.py`) for the
   tests that drive its own CLI or read its own output, as
   `tests/integration/sge/` does for `qstat`/`qacct`/`qmod` and SGE syntax;
-- optionally a capture module in `CAPTURE_MODULES` and the scheduler in
-  `SLOW_ACCOUNTING_SCHEDULERS` (`src/hpc_runner/_testbed.py`); without them
-  `hpc-testbed capture` and `--slow-accounting` refuse that scheduler.
+- optionally a capture module in `CAPTURE_MODULES` (SGE:
+  `tests/integration/capture.py`; Slurm: `tests/integration/capture_slurm.py`)
+  and the scheduler in `SLOW_ACCOUNTING_SCHEDULERS`
+  (`src/hpc_runner/_testbed.py`); without them `hpc-testbed capture` and
+  `--slow-accounting` refuse that scheduler.
 
 ## Phase 0 spike results (2026-10-29, gridengine 8.1.9+dfsg-13.1 on trixie)
 

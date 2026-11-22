@@ -1,0 +1,12 @@
+# hpc-runner configuration used by the integration suite inside the `login`
+# container (HPC_RUNNER_CONFIG points here). The names match
+# ../common/conf/slurm.conf.
+config_version = 1
+scheduler = "slurm"
+
+# One tool entry matching several executables (configuration.rst "One tool,
+# several commands"); `sort` and `uniq` are coreutils every node has and no
+# other integration test runs them. test_cli.py proves the alias live.
+[tools.sort]
+commands = ["sort", "uniq"]
+queue = "short"

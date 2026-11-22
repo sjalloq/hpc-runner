@@ -1,0 +1,108 @@
+slurm-wlm 22.05.8
+AccountingStorageEnforce = associations
+=== W1 sbatch: no account, own account, unknown account, account the user is not in
+[sbatch -o /dev/null --wrap true] rc=0 Submitted batch job 57
+[sbatch -o /dev/null -A proj --wrap true] rc=0 Submitted batch job 58
+[sbatch -o /dev/null -A nosuch --wrap true] rc=1 sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified
+[sbatch -o /dev/null -A other --wrap true] rc=1 sbatch: error: Batch job submission failed: Invalid account or account/partition combination specified
+=== W2 srun: the same four
+[srun hostname] rc=0 srun: job 59 queued and waiting for resources
+srun: job 59 has been allocated resources
+exec2
+[srun -A proj hostname] rc=0 exec1
+[srun -A nosuch hostname] rc=1 srun: error: Unable to allocate resources: Invalid account or account/partition combination specified
+[srun -A other hostname] rc=1 srun: error: Unable to allocate resources: Invalid account or account/partition combination specified
+=== W3 what sacct recorded
+3|proj|OUT_OF_MEMORY|0:125
+3.batch|proj|OUT_OF_MEMORY|0:125
+4|proj|COMPLETED|0:0
+4.batch|proj|COMPLETED|0:0
+5|proj|COMPLETED|0:0
+5.batch|proj|COMPLETED|0:0
+6|proj|COMPLETED|0:0
+6.batch|proj|COMPLETED|0:0
+7|proj|COMPLETED|0:0
+7.batch|proj|COMPLETED|0:0
+8|proj|CANCELLED|0:9
+8.batch|proj|CANCELLED|0:9
+9|proj|CANCELLED|0:0
+10_1|proj|COMPLETED|0:0
+10_1.batch|proj|COMPLETED|0:0
+10_2|proj|COMPLETED|0:0
+10_2.batch|proj|COMPLETED|0:0
+10_3|proj|FAILED|1:0
+10_3.batch|proj|FAILED|1:0
+13|proj|COMPLETED|0:0
+13.0|proj|COMPLETED|0:0
+15|proj|COMPLETED|0:0
+15.batch|proj|COMPLETED|0:0
+16|proj|COMPLETED|0:0
+16.batch|proj|COMPLETED|0:0
+17|proj|CANCELLED|0:9
+17.batch|proj|CANCELLED|0:9
+18|proj|CANCELLED|0:0
+19|proj|CANCELLED|0:15
+19.batch|proj|CANCELLED|0:15
+20_1|proj|COMPLETED|0:0
+20_1.batch|proj|COMPLETED|0:0
+20_2|proj|COMPLETED|0:0
+20_2.batch|proj|COMPLETED|0:0
+20_3|proj|COMPLETED|0:0
+20_3.batch|proj|COMPLETED|0:0
+23|proj|COMPLETED|0:0
+23.batch|proj|COMPLETED|0:0
+24|proj|CANCELLED|0:15
+24.batch|proj|CANCELLED|0:15
+25|proj|CANCELLED|0:15
+25.batch|proj|CANCELLED|0:15
+26|proj|CANCELLED|0:15
+26.batch|proj|CANCELLED|0:15
+27|proj|CANCELLED|0:15
+27.batch|proj|CANCELLED|0:15
+28|proj|CANCELLED|0:0
+29|proj|CANCELLED|0:0
+34|proj|COMPLETED|0:0
+34.batch|proj|COMPLETED|0:0
+35|proj|COMPLETED|0:0
+35.batch|proj|COMPLETED|0:0
+36|proj|COMPLETED|0:0
+36.batch|proj|COMPLETED|0:0
+37|proj|COMPLETED|0:0
+37.batch|proj|COMPLETED|0:0
+38|proj|COMPLETED|0:0
+38.batch|proj|COMPLETED|0:0
+39|proj|COMPLETED|0:0
+39.batch|proj|COMPLETED|0:0
+40|proj|COMPLETED|0:0
+40.batch|proj|COMPLETED|0:0
+42|proj|CANCELLED by 1003|0:0
+42.batch|proj|CANCELLED|0:15
+43|proj|CANCELLED by 0|0:0
+43.batch|proj|CANCELLED|0:15
+45|proj|FAILED|1:0
+45.batch|proj|FAILED|1:0
+47|proj|CANCELLED by 1003|0:0
+47.batch|proj|CANCELLED|0:15
+49_1|proj|CANCELLED by 1003|0:0
+49_1.batch|proj|CANCELLED|0:15
+49_2|proj|CANCELLED by 1003|0:0
+49_2.batch|proj|CANCELLED|0:15
+49_3|proj|CANCELLED by 1003|0:0
+49_3.batch|proj|CANCELLED|0:15
+53|proj|FAILED|0:15
+53.batch|proj|CANCELLED|0:15
+54|proj|COMPLETED|0:0
+54.batch|proj|COMPLETED|0:0
+55|proj|COMPLETED|0:0
+55.batch|proj|COMPLETED|0:0
+56|proj|COMPLETED|0:0
+56.0|proj|COMPLETED|0:0
+57|proj|COMPLETED|0:0
+57.batch|proj|COMPLETED|0:0
+58|proj|COMPLETED|0:0
+58.batch|proj|COMPLETED|0:0
+59|proj|COMPLETED|0:0
+59.0|proj|COMPLETED|0:0
+60|proj|COMPLETED|0:0
+60.0|proj|COMPLETED|0:0
+=== done

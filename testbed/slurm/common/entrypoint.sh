@@ -25,14 +25,7 @@ common_prologue() {
     done
     chmod 1777 /work
     mkdir -p "$MARKER_DIR" /etc/slurm
-    cp "$CONF/slurm.conf" "$CONF/gres.conf" /etc/slurm/
-    # `CgroupPlugin=disabled` exists from 23.02. 22.05 fails on it ("cannot
-    # find cgroup plugin for disabled") and its default, cgroup/v2, needs
-    # dbus; cgroup/v1 loads and is then never used (as vhpc does).
-    case "$(sinfo --version)" in
-        *" 22."*) cp "$CONF/cgroup-22.05.conf" /etc/slurm/cgroup.conf ;;
-        *) cp "$CONF/cgroup.conf" /etc/slurm/ ;;
-    esac
+    cp "$CONF/slurm.conf" "$CONF/gres.conf" "$CONF/cgroup.conf" /etc/slurm/
 }
 
 # /etc/munge is a volume shared by the stack; the master writes the key once.
@@ -65,12 +58,16 @@ run_master() {
     local cpid=$!
     trap 'kill -TERM "$cpid" "$dpid" 2>/dev/null' TERM INT
     wait_ctld
-    # Accounts and users, so `project` has something to name.
-    sacctmgr -i add account proj Description=testbed Organization=testbed >/dev/null
-    sacctmgr -i add account other Description=testbed Organization=testbed >/dev/null
-    for u in alice bob tester; do
-        sacctmgr -i add user "$u" Account=proj >/dev/null
-    done
+    # Accounts and users, so `project` has something to name. Once only: the
+    # database outlives a restart of this container, and sacctmgr exits 1
+    # when asked to add what is already there.
+    if [ -z "$(sacctmgr -n -P show assoc user=tester format=user)" ]; then
+        sacctmgr -i add account proj Description=testbed Organization=testbed >/dev/null
+        sacctmgr -i add account other Description=testbed Organization=testbed >/dev/null
+        for u in alice bob tester; do
+            sacctmgr -i add user "$u" Account=proj >/dev/null
+        done
+    fi
     touch "$MARKER_DIR/configured"
     log "master configured"
 
@@ -83,9 +80,24 @@ run_master() {
     exit "$rc"
 }
 
+# cgroup v2 inside a container, without systemd: empty the container's root
+# cgroup into `init`, then turn the controllers on for the children of the
+# root and of `system.slice`, where slurmd puts its jobs. Run on every
+# flavour (testbed/slurm/README.md, "Cgroups").
+prepare_cgroups() {
+    local root=/sys/fs/cgroup controllers="+cpuset +cpu +memory +pids" pid
+    mkdir -p "$root/system.slice" "$root/init"
+    for pid in $(cat "$root/cgroup.procs"); do
+        echo "$pid" > "$root/init/cgroup.procs" 2>/dev/null || true
+    done
+    echo "$controllers" > "$root/cgroup.subtree_control"
+    echo "$controllers" > "$root/system.slice/cgroup.subtree_control"
+}
+
 run_exec() {
     wait_ctld
     install -d /var/spool/slurmd
+    prepare_cgroups
     exec /usr/sbin/slurmd -D
 }
 

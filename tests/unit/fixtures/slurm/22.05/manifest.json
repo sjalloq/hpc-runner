@@ -1,0 +1,40 @@
+{
+  "captured": "2026-11-22T16:30:22Z",
+  "flavour": "22.05",
+  "scheduler": "slurm-wlm 22.05.8",
+  "sacct_format": "JobID,JobName,User,Partition,State,ExitCode,Submit,Start,End,Elapsed,NodeList",
+  "jobs": {
+    "ok": "35"
+  },
+  "files": {
+    "sbatch.txt": {
+      "what": "sbatch stdout for the ok job",
+      "argv": [
+        "sbatch",
+        "-J",
+        "ok",
+        "/work/capture/ok.sh"
+      ]
+    },
+    "scontrol_ok.txt": {
+      "what": "scontrol show job of a job that exited 0, the controller still holding it",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "35"
+      ]
+    },
+    "sacct_ok.txt": {
+      "what": "sacct of a job that exited 0",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "35",
+        "--format=JobID,JobName,User,Partition,State,ExitCode,Submit,Start,End,Elapsed,NodeList"
+      ]
+    }
+  }
+}

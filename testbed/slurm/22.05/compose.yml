@@ -79,6 +79,10 @@ services:
     hostname: exec1
     container_name: ${COMPOSE_PROJECT_NAME}-exec1
     environment: { SLURM_ROLE: exec }
+    # Privileged: slurmd writes the cgroup tree (cgroup.conf). init: tini is
+    # PID 1 and reaps what slurmd leaves behind.
+    privileged: true
+    init: true
     networks:
       slurm: { ipv4_address: 10.81.0.11 }
     depends_on:
@@ -96,6 +100,10 @@ services:
     hostname: exec2
     container_name: ${COMPOSE_PROJECT_NAME}-exec2
     environment: { SLURM_ROLE: exec }
+    # Privileged: slurmd writes the cgroup tree (cgroup.conf). init: tini is
+    # PID 1 and reaps what slurmd leaves behind.
+    privileged: true
+    init: true
     networks:
       slurm: { ipv4_address: 10.81.0.12 }
     depends_on:
@@ -115,6 +123,7 @@ services:
     init: true
     environment:
       SLURM_ROLE: login
+      HPC_RUNNER_CONFIG: /src/testbed/slurm/22.05/hpc-runner-testbed.toml
       HPC_SCRIPT_DIR: /work/cache/scripts
       HPC_EXIT_DIR: /work/cache/exit
       # Container names are <project>-<service>; node control needs the prefix.

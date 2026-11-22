@@ -270,7 +270,8 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 
 - A new job is not in `sacct` at once: within 0.1 s on 24.11, up to 1 s on
   22.05, where the first row can also be a stub (name `allocation`, no
-  partition) for 0.2 s. State and exit code in the stub are right.
+  partition), seen for up to 4 s and on a job already COMPLETED. State and
+  exit code in the stub are right.
   A missing job is UNKNOWN; the wait loop already keeps waiting through
   60 s of UNKNOWN on every scheduler (`core/result.py:173-203`), so
   nothing new is needed.
@@ -279,21 +280,22 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - The `DependencyNeverSatisfied` reason is not in `sacct`: Reason is `None`
   on 24.11 and `Dependency` on 22.05, for both the pending and the
   cancelled form. It is in `squeue` and `scontrol show job`.
-- After `scontrol requeue`, `sacct` says `PENDING` on 24.11 and `REQUEUED`
-  on 22.05.
+- After `scontrol requeue`, `sacct -X` says `PENDING` on both versions;
+  with `-D` the earlier run is a second row, `REQUEUED` (run 2026-11-22).
 - A job cancelled by a user is `CANCELLED by <uid>` in `sacct`; one
   cancelled by `--kill-on-invalid-dep` is plain `CANCELLED` (both
   versions).
 - Every `scancel` leaves `CANCELLED by <uid>` on the job's own row: by
   the owner or by root, pending or running, single job or array (run
-  exp7, 24.11 only). The only plain `CANCELLED` found is the dependent
+  exp7, both versions). The only plain `CANCELLED` found is the dependent
   killed by `--kill-on-invalid-dep`, whether its parent failed or was
   cancelled. The `.batch` row is always plain `CANCELLED`, so the test is
   made on the job's own row.
 - The job's own row has `ExitCode 0:0` for TIMEOUT and for a cancelled
   running job; only the `.batch` row shows the signal (`0:15`).
 - A pending array is one `sacct` row, `64_[1-4%2]`; each task gets its own
-  row once it starts. The base job id belongs to the last task.
+  row once it starts. The base job id belongs to the last task. On 22.05 a
+  held array cancelled before it starts is one row named by the bare id.
 
 ## Job details
 
@@ -469,9 +471,29 @@ Nothing in it is scheduler-specific.
 - A container is named `<compose project>-<service>`
   (`hpc-testbed-slurm-24-11-login`) and each stack has its own subnet, so
   any stacks can be up together (2026-11-16).
-- No cgroups: `proctrack/linuxproc`, `task/none`. Not `privileged`, but the
-  24.11 exec containers have `cap_add: SYS_ADMIN`: without it slurmd exits
-  at the first `--export=NONE` job (testbed run). 22.05 does not need it.
+- Cgroups on, both flavours (user, 2026-11-22), so `--mem` is enforced
+  and every Slurm feature can be tested: `proctrack/cgroup`,
+  `task/cgroup`, `CgroupPlugin=cgroup/v2`, `IgnoreSystemd=yes`,
+  `ConstrainRAMSpace`, `ConstrainSwapSpace` with `AllowedSwapSpace=0`,
+  `ConstrainCores`. `ConstrainDevices` stays off: it breaks the fake GPU.
+- The exec containers are `privileged` and run Docker's `init`. Privileged
+  is what lets slurmd manage cgroups and record MaxRSS; `init` reaps the
+  `slurmstepd` zombies slurmd leaves as PID 1. The testbed is not a
+  production container.
+- 22.05 in a container, two faults of that version, neither seen on 24.11
+  (trial runs on scratch copies, 2026-11-21 and 2026-11-22):
+  - It needs a hook before slurmd starts, moving the root cgroup's
+    processes aside and enabling the controllers.
+  - Every batch job's stderr ends with three `slurmstepd` error lines and a
+    stale `job_N` cgroup directory is left. At step end 22.05 moves
+    `slurmstepd` to the cgroup mount point, which in a container is not the
+    real root, and the kernel refuses. A real 22.05 cluster would not show
+    it. The integration tests drop those three lines, on 22.05 only,
+    before comparing a job's output.
+  - 18 job shapes run by hand on 22.05 with cgroups on and off differed in
+    nothing else but what cgroups are for: memory enforced, `nproc` equal
+    to the CPUs asked for.
+- A job that sets no `--mem` gets the testbed's `DefMemPerCPU` enforced.
 - exec1 has a feature (`fast`) and a GPU
   count; both nodes have temp disk; there are two licences (`lic`).
 - Accounting always on. Munge key generated per stack.
@@ -479,11 +501,9 @@ Nothing in it is scheduler-specific.
   SGE tests use (`kill_node` in `tests/integration/cluster.py`). The testbed
   `slurm.conf` sets no `SlurmdTimeout` today; set a short one when the
   `node_fail` capture is taken, and check the job ends `NODE_FAIL`.
-- Cannot be produced in this testbed: an out-of-memory kill, memory
-  enforcement, `--x11`. Their handling rests on the Slurm source and one
-  hand-built record, marked as not captured.
+- Cannot be produced in this testbed: `--x11`.
 
-Captures to take: ok, exit1, signal, timeout, cancelled_pending,
+Captures to take: ok, exit1, signal, timeout, out_of_memory, cancelled_pending,
 cancelled_running, held, dependent_skipped, dependent_pending, array,
 array_partial, array_throttled, suspended, requeued, node_fail, running,
 pending_resources, bad_partition, bad_account, dependent_ok.
@@ -492,7 +512,7 @@ pending_resources, bad_partition, bad_account, dependent_ok.
   2026-11-16). Every user is in `proj`; `other` has no user. A job with
   no account runs under `proj`; `-A nosuch` and `-A other` are rejected by
   `sbatch` and `srun` with rc 1 and `Invalid account or account/partition
-  combination specified` (run exp8, 24.11 only).
+  combination specified` (run exp8, both versions).
 
 ## Tests
 
@@ -514,41 +534,28 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-1. Slurm testbed support, both flavours.
-   - First: research what it takes to enable cgroups (`ConstrainRAMSpace`)
-     in the Slurm containers, on this machine and in CI, so `--mem` is
-     enforced and `OUT_OF_MEMORY` can be seen. Report to the user before
-     anything else in this step: if it is impossible or hard in
-     containers, the user wants the implications first. Also find what
-     `OverMemoryKill` (no cgroups) reports. Nothing is changed in the
-     testbed until the user decides.
-   - `hpc-runner-testbed.toml`, and `HPC_RUNNER_CONFIG` in the compose
-     files.
-   - The Slurm cluster class: every method the SGE one has, or a written
-     reason (`accounting_truncate`).
-   - A Slurm capture module, registered in `CAPTURE_MODULES`.
-   - `testbed/slurm/README.md` with the table of test against flavour.
-   - Run exp7 (which cancellations are plain `CANCELLED`) and exp8
-     (account enforcement) on 22.05.
-2. Slurm captures and fixtures: the list in "Testbed". Set a short
+1. Slurm captures and fixtures: the list in "Testbed". Set a short
    `SlurmdTimeout` for `node_fail`.
+   - `tests/integration/capture_slurm.py` takes `ok` today. On 22.05 its
+     `sacct` row can be the stub: `ok` waits for the settled row, and the
+     stub is its own capture.
    - The unit-suite helpers named for SGE (`SGEFixtures`,
      `make_sge_responder`, `sge_fixtures`, `mock_sge_commands`) serve both
      schedulers' captures, and the tests that are not about a scheduler
      (TUI status labels, `--wait` exit code, trace) run on each.
-3. Rendering.
+2. Rendering.
    - The scheduler class, registered in `schedulers/__init__.py`;
      `[schedulers.slurm]` keys in its `CONFIG_KEYS`.
    - Arguments, batch template, golden scripts.
    - `${hpc.*}` variables, whitespace refusal, `make_output_dirs`,
      `recorder.note_script`.
    - Interactive: `srun`, the `--pty` rule, `--export`.
-4. Parsing, against the fixtures.
+3. Parsing, against the fixtures.
     - Status and exit code from `sacct`; the SKIPPED rule.
     - Live listing from `squeue`.
     - Job details from `scontrol show job`, then `sacct`.
     - Cancel.
-5. Integration suite on both Slurm versions; CI cells for `24.11` and
+4. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
@@ -556,9 +563,15 @@ questions. Results are in the two fact files and `runs/`.
    - Generic tests (`tests/integration/`) run as they are; Slurm's own go
      in `tests/integration/slurm/`, one for each feature SGE's folder
      tests in SGE's way. `test_deleted_while_pending...` has a Slurm
-     counterpart expecting CANCELLED. A memory-limit test follows the
-     cgroups decision.
-6. User docs, and a manual checklist on a real cluster.
+     counterpart expecting CANCELLED. A memory-limit test expects
+     `OUT_OF_MEMORY`, on both versions.
+   - The generic tests that compare a job's whole output go through one
+     helper that first drops the lines the cluster is known to add (the
+     three on 22.05; none elsewhere).
+   - Slurm images have never been built in CI. A privileged container on
+     the hosted runner can create cgroups and set `memory.max` (probe run
+     2026-11-21).
+5. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.
@@ -580,7 +593,6 @@ setup is in `../FOLLOW_UPS.md`.
 - A config key for whether `srun` steps in a user's script start clean.
 - A look at Slurm's advanced features (job steps, `salloc`, ...) and
   whether any fits a single-job runner.
-- A privileged testbed profile to capture a real out-of-memory kill.
 - Review of the `cpu` and `mem` mapping after real use. One known
   point: Slurm multiplies `--mem-per-cpu` by the CPUs it allocates, which
   can be more than `cpu` (`RESOURCES_COMPARISON.md`, R4).
@@ -615,9 +627,11 @@ setup is in `../FOLLOW_UPS.md`.
   `--format`. `sacct` prints long state names; the table above uses the
   two-letter codes.
 - `hpc-testbed pytest -k` needs `--`.
-- `nproc` proves nothing under `task/none`.
+- With cgroups on, `nproc` in a job is the CPUs asked for.
 - A request larger than any node is rejected at submit, so it cannot give a
   pending-for-resources capture.
-- An out-of-memory kill without cgroups shows as `FAILED 0:9`.
+- An out-of-memory kill is `OUT_OF_MEMORY`, `ExitCode 0:125`, on both
+  versions. Inside an `srun` step followed by exit 0, the job is
+  `COMPLETED` and only the step is `OUT_OF_MEMORY`.
 - `afterok` on an unknown job id is accepted on 22.05 and rejected on
   24.11 (testbed runs). Where between the two it changed was not checked.

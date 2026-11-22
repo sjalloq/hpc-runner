@@ -21,7 +21,7 @@ Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no Slurm or PBS backend yet (`schedulers/__init__.py`
 names `slurm` and `pbs` modules that do not exist), so most of this cannot
 be closed today. It is the list of what a backend must bring with it.
-For Slurm that work is steps 1 and 5 of `slurm/PLAN.md`, "Order of
+For Slurm that work is step 4 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -30,14 +30,15 @@ work". For PBS nothing is planned.
   (run on every scheduler, scheduler words from the cluster class), SGE's
   own in `tests/integration/sge/`. No generic test can run on Slurm or PBS
   yet:
-  - `cluster.config()` reads
+  - Slurm has its testbed config and its cluster class; what is missing is
+    the backend (`slurm/PLAN.md`, "Order of work").
+  - PBS: `cluster.config()` reads
     `testbed/<scheduler>/<flavour>/hpc-runner-testbed.toml`
-    (`cluster.py`, `config_path`), and only `sge/soge` and `sge/ocs` have
-    the file. The Slurm and PBS compose files do not export
-    `HPC_RUNNER_CONFIG` either.
-  - The members the generic tests ask of the cluster class (`cluster.py`,
-    "the scheduler's own words") are answered by `SGECluster` only;
-    `SlurmCluster` and `PBSCluster` raise `NotImplementedError`.
+    (`cluster.py`, `config_path`) and `pbs/openpbs` has no such file; its
+    compose file does not export `HPC_RUNNER_CONFIG` either.
+  - PBS: the members the generic tests ask of the cluster class
+    (`cluster.py`, "the scheduler's own words") are not answered;
+    `PBSCluster` raises `NotImplementedError`.
 - The SGE folder has no counterpart for another scheduler. Same feature,
   to be tested the other scheduler's way: `test_goldens` (`qsub -w v`;
   Slurm has `sbatch --test-only`), `test_resources` (PE, `h_rt`),
@@ -46,23 +47,23 @@ work". For PBS nothing is planned.
   expecting CANCELLED). SGE only, with the reason in
   `testbed/sge/README.md`: `test_slow_accounting_window`, `test_aged_out`,
   `test_memory_per_consumable`, `test_h_vmem`.
-- `TestbedCluster.accounting_truncate` is implemented for SGE only; the
-  Slurm and PBS classes inherit `NotImplementedError`
-  (`cluster.py`), though `testbed/README.md` lists it as part of a new
-  scheduler's class.
+- `TestbedCluster.accounting_truncate` is implemented for SGE only. Slurm
+  has no answer (`testbed/slurm/README.md`); the PBS class inherits
+  `NotImplementedError` (`cluster.py`) with no reason written.
 - `--slow-accounting` exists for SGE only
   (`SLOW_ACCOUNTING_SCHEDULERS`, `_testbed.py:37`). Slurm needs none
   (`slurm/PLAN.md`, "Status and exit codes"); PBS is not measured.
 
 ### Captures and fixtures
 
-- `hpc-testbed capture` works for SGE only (`CAPTURE_MODULES`,
-  `_testbed.py:39`). `tests/integration/capture.py` is one 600-line SGE
-  script; nothing in it is shared.
-  - Slurm: planned (`slurm/PLAN.md`, "Order of work" steps 1 and 2).
+- `hpc-testbed capture` works for SGE and Slurm (`CAPTURE_MODULES`,
+  `_testbed.py`). `tests/integration/capture.py` is one 600-line SGE
+  script; nothing in it is shared with `tests/integration/capture_slurm.py`.
+  - Slurm: the module takes one scenario (`ok`); the rest of the list is
+    planned (`slurm/PLAN.md`, "Order of work" step 1).
   - PBS: not planned anywhere.
 - `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each)
-  and nothing else.
+  and `slurm/24.11` and `slurm/22.05` (4 files each, read by no test yet).
 - The helpers that serve fixtures are SGE by name and by content:
   `SGEFixtures`, `make_sge_responder` (`tests/fakes.py`), the
   `sge_fixtures` and `mock_sge_commands` fixtures (`tests/conftest.py`).

@@ -13,9 +13,9 @@ scheduler's class names its probe command and says how to dump a job's state.
 
 A test in ``tests/integration/`` itself runs on every scheduler, so it names
 no scheduler command, flag or queue: it asks the cluster (the section "the
-scheduler's own words" of :class:`Cluster`). :class:`SGECluster` answers each;
-a class that has not been given an answer raises ``NotImplementedError``
-naming the member.
+scheduler's own words" of :class:`Cluster`). :class:`SGECluster` and
+:class:`SlurmCluster` answer each; a class that has not been given an answer
+raises ``NotImplementedError`` naming the member.
 """
 
 from __future__ import annotations
@@ -196,6 +196,13 @@ class Cluster(Protocol):
     @property
     def directive_prefix(self) -> str:
         """What an option line of a batch script starts with."""
+        ...
+
+    @property
+    def extra_output_lines(self) -> tuple[str, ...]:
+        """Lines this cluster adds to every batch job's output file, none of them
+        written by the job: one regular expression per line, in the order the
+        lines appear. Empty when the cluster adds nothing."""
         ...
 
 
@@ -462,6 +469,10 @@ class TestbedCluster:
     def directive_prefix(self) -> str:
         raise self._unanswered("directive_prefix")
 
+    @property
+    def extra_output_lines(self) -> tuple[str, ...]:
+        raise self._unanswered("extra_output_lines")
+
 
 @dataclass
 class SGECluster(TestbedCluster):
@@ -537,16 +548,121 @@ class SGECluster(TestbedCluster):
     def directive_prefix(self) -> str:
         return "#$"
 
+    @property
+    def extra_output_lines(self) -> tuple[str, ...]:
+        return ()
+
+
+#: ``sacct`` states of a job that has not ended; every other state is a record
+#: of a finished run.
+SACCT_LIVE_STATES = frozenset({"PENDING", "RUNNING", "SUSPENDED"})
+
+#: What the 22.05 testbed's slurmstepd appends to every batch output file
+#: (testbed/slurm/README.md, "Known output lines on 22.05").
+SLURM_22_05_OUTPUT_LINES: tuple[str, ...] = (
+    r"slurmstepd-\S+: error: common_file_write_uint32s: write pid \d+ to "
+    r"/sys/fs/cgroup/cgroup\.procs failed: Device or resource busy",
+    r"slurmstepd-\S+: error: Unable to move pid \d+ to init root cgroup /sys/fs/cgroup",
+    r"slurmstepd-\S+: error: error unlocking cgroup "
+    r"'/sys/fs/cgroup/system\.slice/\S+_slurmstepd\.scope' : Bad file descriptor",
+)
+
+
+def sacct_finished_rows(text: str) -> int:
+    """How many rows of ``sacct -X -D -n -P --format=JobID,State`` are of a finished run.
+
+    One row per array task and per run of a requeued job (``-D``); a row
+    whose state is in :data:`SACCT_LIVE_STATES` is not counted. A state may
+    carry more words (``CANCELLED by 1003``); the first decides.
+    """
+    count = 0
+    for line in text.splitlines():
+        _, _, state = line.partition("|")
+        words = state.split()
+        if words and words[0] not in SACCT_LIVE_STATES:
+            count += 1
+    return count
+
 
 @dataclass
 class SlurmCluster(TestbedCluster):
-    """A Slurm testbed of one *flavour* (``24.11``, ...), driven from ``login``."""
+    """A Slurm testbed of one *flavour* (``24.11``, ...), driven from ``login``.
+
+    ``accounting_truncate`` has no answer: the reason is in testbed/slurm/README.md.
+    """
 
     name: str = "slurm"
     probe_command: ClassVar[str] = "sinfo"
 
     def dump_commands(self, job_id: str) -> list[list[str]]:
         return [["sinfo", "-N", "-l"], ["scontrol", "show", "job", job_id]]
+
+    # The names below match testbed/slurm/common/conf/slurm.conf.
+
+    @property
+    def array_task_var(self) -> str:
+        return "SLURM_ARRAY_TASK_ID"
+
+    def array_task_id(self, job_id: str, index: int) -> str:
+        return f"{job_id}_{index}"
+
+    @property
+    def hold_args(self) -> tuple[str, ...]:
+        """A user hold: the job pends with reason ``JobHeldUser``."""
+        return ("--hold",)
+
+    def release_job(self, job_id: str) -> None:
+        self.run(["scontrol", "release", job_id])
+
+    def suspend_job(self, job_id: str) -> None:
+        """As root: ``scontrol suspend`` is refused to the job's owner."""
+        self.run(["scontrol", "suspend", job_id], user="root")
+
+    def resume_job(self, job_id: str) -> None:
+        self.run(["scontrol", "resume", job_id], user="root")
+
+    @property
+    def default_queue(self) -> str:
+        return "all"
+
+    @property
+    def other_queue(self) -> str:
+        return "short"
+
+    @property
+    def queue_slots(self) -> dict[str, int]:
+        """Both partitions are the same two nodes of two CPUs each, so four
+        one-CPU jobs in ``all`` leave nothing for ``short`` either."""
+        return {"all": 4}
+
+    def accounting_records(self, job_id: str) -> int:
+        """Finished rows of ``sacct -X -D``: one per array task and per run of a
+        requeued job (:func:`sacct_finished_rows`)."""
+        argv = ["sacct", "-X", "-D", "-n", "-P", "-j", job_id, "--format=JobID,State"]
+        return sacct_finished_rows(self.run(argv, check=False).stdout)
+
+    @property
+    def submit_command(self) -> str:
+        return "sbatch"
+
+    @property
+    def listing_command(self) -> tuple[str, ...]:
+        return ("squeue",)
+
+    @property
+    def accounting_command(self) -> str:
+        return "sacct"
+
+    def submit_output(self, job_id: str) -> str:
+        return f"Submitted batch job {job_id}"
+
+    @property
+    def directive_prefix(self) -> str:
+        return "#SBATCH"
+
+    @property
+    def extra_output_lines(self) -> tuple[str, ...]:
+        return SLURM_22_05_OUTPUT_LINES if self.flavour == "22.05" else ()
 
 
 @dataclass

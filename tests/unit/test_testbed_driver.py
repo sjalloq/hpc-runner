@@ -250,9 +250,37 @@ class TestCommands:
         assert "--slow-accounting is a variant of the sge stack" in capsys.readouterr().err
         assert calls == []
 
+    def test_capture_runs_slurms_own_module_for_the_named_flavour(self, repo, calls):
+        main(["--scheduler", "slurm", "capture"])
+        run_argv, copy_argv = (c[0] for c in calls)
+        tail = run_argv[run_argv.index("login") + 1 :]
+        assert tail == [
+            "/opt/venv/3.12/bin/python",
+            "-m",
+            "tests.integration.capture_slurm",
+            "/work/capture",
+            "24.11",
+        ]
+        assert copy_argv[-2:] == [
+            "login:/work/capture/.",
+            str(repo / "tests/unit/fixtures/slurm/24.11"),
+        ]
+
+    def test_every_capture_module_is_a_file_in_the_repository(self):
+        assert driver.CAPTURE_MODULES == {
+            "sge": "tests.integration.capture",
+            "slurm": "tests.integration.capture_slurm",
+        }
+        root = Path(__file__).resolve().parents[2]
+        for module in driver.CAPTURE_MODULES.values():
+            assert (root / (module.replace(".", "/") + ".py")).is_file()
+
     def test_capture_is_refused_for_a_scheduler_without_scenarios(self, repo, calls, capsys):
-        assert main(["--scheduler", "slurm", "capture"]) == 2
-        assert "no capture scenarios for slurm" in capsys.readouterr().err
+        d = repo / "testbed" / "pbs" / "openpbs"
+        d.mkdir(parents=True)
+        (d / "compose.yml").write_text("services: {}\n")
+        assert main(["--scheduler", "pbs", "capture"]) == 2
+        assert "no capture scenarios for pbs" in capsys.readouterr().err
         assert calls == []
 
     def test_other_scheduler_runs_its_own_stack(self, repo, calls):

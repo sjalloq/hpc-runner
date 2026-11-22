@@ -1,0 +1,29 @@
+slurm-wlm 22.05.8
+1003
+=== V1 tester cancels own held job
+41|CANCELLED by 1003|0:0|None
+=== V2 tester cancels own running job
+42|CANCELLED by 1003|0:0|None
+42.batch|CANCELLED|0:15|
+=== V3 root cancels tester's running job
+43|CANCELLED by 0|0:0|None
+43.batch|CANCELLED|0:15|
+=== V4 root cancels tester's held job
+44|CANCELLED by 0|0:0|None
+=== V5 parent fails, dependent with --kill-on-invalid-dep=yes
+46|CANCELLED|0:0|Dependency
+=== V6 parent cancelled by tester, dependent with --kill-on-invalid-dep=yes
+48|CANCELLED|0:0|Dependency
+=== V7 tester cancels one task of a running array, then the rest
+49_1|CANCELLED by 1003|0:0|None
+49_1.batch|CANCELLED|0:15|
+49_2|CANCELLED by 1003|0:0|None
+49_2.batch|CANCELLED|0:15|
+49_3|CANCELLED by 1003|0:0|None
+49_3.batch|CANCELLED|0:15|
+=== V8 tester cancels a pending array (held)
+52|CANCELLED by 1003|0:0|None
+=== V9 scancel --signal=TERM on a running job (not a cancel)
+53|FAILED|0:15|None
+53.batch|CANCELLED|0:15|
+=== done
