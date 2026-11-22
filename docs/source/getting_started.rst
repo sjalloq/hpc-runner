@@ -17,8 +17,8 @@ In a virtual environment:
 Quick start: run a job
 ----------------------
 
-Run a command on the cluster. By default it runs interactively (SGE:
-``qrsh``) and its output streams to your terminal:
+Run a command on the cluster. By default it runs interactively (SGE
+``qrsh``, Slurm ``srun``) and its output streams to your terminal:
 
 .. code-block:: bash
 
@@ -40,7 +40,8 @@ Pass raw scheduler arguments as one quoted string with ``-S``/``--scheduler-args
 
 .. code-block:: bash
 
-   hpc run -S '-l gpu=1 -P proj' python train.py
+   hpc run -S '-l gpu=1 -P proj' python train.py     # SGE flags
+   hpc run -S '--nice=500' python train.py           # Slurm flags
 
 Use a named job type from the config:
 
@@ -65,7 +66,7 @@ probes ``PATH`` or the environment to guess. Name it in the config (see
    config_version = 1
    scheduler = "sge"
 
-or with ``HPC_SCHEDULER`` in the environment, which overrides the config:
+(``"sge"``, ``"slurm"`` or ``"local"``), or with ``HPC_SCHEDULER`` in the environment, which overrides the config:
 
 .. code-block:: bash
 
@@ -73,7 +74,8 @@ or with ``HPC_SCHEDULER`` in the environment, which overrides the config:
 
 With neither, every command that needs a scheduler stops with an error
 saying where to set it. See the compatibility table on the :doc:`index`
-page for the schedulers this release supports.
+page for the schedulers this release supports, and :doc:`sge` and
+:doc:`slurm` for what each one needs.
 
 ``HPC_SCHEDULER=local hpc run ...`` runs the job on this machine, through the
 same generated script with the same ``module purge`` and ``module load``
@@ -91,7 +93,8 @@ your git root to make it the project config; safe to commit):
 
    hpc config init
 
-Then open the file and set your site defaults, e.g. a default SGE queue:
+Then open the file and set your site defaults, e.g. a default queue (an
+SGE queue or a Slurm partition):
 
 .. code-block:: toml
 

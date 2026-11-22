@@ -152,7 +152,8 @@ in the job instead of only on failure), ``cancel(job_id)``,
 ``get_statuses(job_ids)`` (one bulk query, a dict of id to status),
 ``get_status(job_id)``, ``get_exit_code(job_id)``, ``result(job_id)`` and
 ``task_job_id(base, index)`` (the id of one array task: ``<base>.<index>``
-on SGE; schedulers without arrays raise ``NotSupportedError``).
+on SGE, ``<base>_<index>`` on Slurm; schedulers without arrays raise
+``NotSupportedError``).
 
 Interactive or batch
 ^^^^^^^^^^^^^^^^^^^^
@@ -160,7 +161,7 @@ Interactive or batch
 ``interactive`` is a job attribute. From the API it defaults to ``False``
 (batch: submit and return); a tool or type may set ``interactive = true`` in
 config, and the spec wins over config. An interactive job runs attached
-(``qrsh`` on SGE) and ``submit()`` returns once it has finished, with a
+(``qrsh`` on SGE, ``srun`` on Slurm) and ``submit()`` returns once it has finished, with a
 ``JobResult`` whose ``job_id`` is ``None`` and whose ``exit_code`` is set.
 
 .. code-block:: python
@@ -193,7 +194,8 @@ for the exit code. The two can differ for a job the scheduler ended
 itself: on Slurm a job killed at its time limit has ``returncode`` 143,
 while ``sbatch --wait`` returns 1 for it. Slurm's accounting also reports
 an exit status above 128 less 128 once the controller has forgotten the
-job; the waiting submit returns it as it was.
+job; the waiting submit returns it as it was. The table of who reports
+what is under "Exit codes" in :doc:`slurm`.
 
 An array handle from ``submit(job, wait=True)`` has every task's status in
 ``final_tasks`` (what ``task_statuses()`` returns) and the submit command's
@@ -222,14 +224,15 @@ Monitoring jobs
 the job reaches a terminal status (``COMPLETED``, ``FAILED``, ``CANCELLED``,
 ``TIMEOUT``, ``KILLED`` or ``SKIPPED``; ``JobStatus.is_terminal``).
 ``KILLED`` means the scheduler killed the job for exceeding a resource
-limit without saying which one; ``TIMEOUT`` is reserved for a scheduler
-that names the time limit. ``PENDING``,
+limit without saying which one (on Slurm: for using more than its memory);
+``TIMEOUT`` is reserved for a scheduler that names the time limit. ``PENDING``,
 ``RUNNING`` and ``SUSPENDED`` (started, then suspended by the user or the
 queue; it holds its slot until resumed) are the active statuses. If the scheduler
 reports ``UNKNOWN`` continuously for ``unknown_after`` seconds (for example
 the job has aged out of accounting), ``wait()`` returns ``UNKNOWN`` rather
 than polling forever. A shorter ``UNKNOWN`` is normal on SGE: between a job
-leaving ``qstat`` and its accounting record being written; ``timeout`` raises ``TimeoutError``.
+leaving ``qstat`` and its accounting record being written. On Slurm a job
+``sacct`` has no row for is ``UNKNOWN``. ``timeout`` raises ``TimeoutError``.
 ``ArrayJobResult.wait()`` takes the same arguments and polls all tasks with
 one ``get_statuses`` call per tick. It returns one status for the array as
 a whole: active while any task is, ``COMPLETED`` only when every task is,
@@ -375,6 +378,11 @@ exit-code guard in the dependent's script (``[schedulers.sge]
 emulate_afterok``), and ``AFTER`` raises ``NotSupportedError``. A dependent
 whose dependency is not satisfied exits with the reserved code 113 and
 reports ``JobStatus.SKIPPED``; ``returncode`` is 113. See :doc:`sge`.
+
+On Slurm every type, ``AFTER`` included, is Slurm's own ``--dependency``. A
+dependent whose dependency can never be satisfied is cancelled by Slurm
+and reports ``JobStatus.SKIPPED``; it never ran, so ``returncode`` is
+``None``. See :doc:`slurm`.
 
 ``Pipeline.wait(poll_interval=5.0, timeout=None, unknown_after=60.0)`` polls
 every step with one ``get_statuses`` call per tick and returns each step's
@@ -533,7 +541,7 @@ Array jobs
 Set ``array`` on the spec for a scheduler array job. The range is
 ``START-END[:STEP][%MAX_CONCURRENT]`` whatever the scheduler; each backend
 renders it in its own grammar (SGE: ``-t START-END[:STEP]`` plus
-``-tc MAX_CONCURRENT``). Array jobs are always batch;
+``-tc MAX_CONCURRENT``; Slurm: ``--array=START-END[:STEP]%MAX_CONCURRENT``). Array jobs are always batch;
 ``submit()`` returns an ``ArrayJobResult`` whose ``job_id`` is the base id:
 
 .. code-block:: python

@@ -4,6 +4,7 @@ Facts behind it:
 
 - Slurm against SGE: `SGE_SLURM_DIFFERENCES.md`.
 - Resource requests on SGE, Slurm, LSF, PBS: `RESOURCES_COMPARISON.md`.
+- Slurm job states against the code that reads them: `LIFECYCLE_MATRIX.md`.
 - Both were re-checked claim by claim against vendor docs and source on
   2026-11-13. What could not be confirmed is marked UNVERIFIED in place.
   SGE, Slurm (24.11, 22.05) and OpenPBS claims were then run on the
@@ -585,14 +586,6 @@ questions. Results are in the two fact files and `runs/`.
 
 1. Push, and see the two Slurm CI cells run: the Slurm images have never
    been built on the hosted runner. Push is not authorised yet.
-2. User docs, and a manual checklist on a real cluster.
-    - The Slurm cpu and task model.
-    - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
-      and `LOGNAME` empty.
-    - `${hpc.tmpdir}` is plain `$TMPDIR`; scratch space is the user's job.
-    - `SBATCH_*` variables are not to be combined with hpc-runner.
-    - A table of Slurm job states against readers, as
-      `test-review/LIFECYCLE_MATRIX.md` is for SGE.
 
 ## Open questions
 
@@ -612,8 +605,9 @@ setup is in `../FOLLOW_UPS.md`.
   can be more than `cpu` (`RESOURCES_COMPARISON.md`, R4).
 - Allowing dependencies on interactive Slurm jobs.
 - A site catalogue giving one resource a different name per scheduler.
-- Tests for every stdin/stdout combination of the `--pty` rule, plus a
-  manual checklist on a real cluster.
+- Running `MANUAL_CHECKLIST.md` on a real cluster.
+- The facts kept out of the user docs until a test proves them
+  (`../FOLLOW_UPS.md`, "left out of the user docs for want of a test").
 
 ## Build notes
 

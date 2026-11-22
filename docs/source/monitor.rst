@@ -31,8 +31,8 @@ Keys
    * - ``/``
      - Focus the search box; the table filters as you type.
    * - ``Enter``
-     - Open the full details of the selected job (``qstat -j`` fields,
-       output paths).
+     - Open the full details of the selected job (the scheduler's own
+       fields for it, output paths).
    * - ``?``
      - Show the key help popup.
    * - ``s``

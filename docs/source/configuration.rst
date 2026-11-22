@@ -4,7 +4,8 @@ Configuration
 =============
 
 This page describes the TOML configuration format used by **hpc-runner** and how
-configuration values map to scheduler flags (with a focus on SGE).
+configuration values map to scheduler flags. Each scheduler has its own
+page for the detail: :doc:`sge` and :doc:`slurm`.
 
 
 Where configuration is loaded from
@@ -40,7 +41,7 @@ one-line fix); ``hpc config init`` writes it for you. The remaining
 top-level keys are:
 
 - ``scheduler = "sge"``: the scheduler this installation submits to
-  (``sge``, or ``local`` to run jobs on this machine). There is one per
+  (``sge``, ``slurm``, or ``local`` to run jobs on this machine). There is one per
   installation and hpc-runner never guesses it: without this key, or
   ``HPC_SCHEDULER`` in the environment (which overrides it), every command
   that needs a scheduler fails with an error saying where to set it.
@@ -56,7 +57,8 @@ top-level keys are:
   and can contain an ``[tools.<name>.options]`` sub-table for argument-specific
   specialisation (see :ref:`tool-option-specialisation`).
 - ``[types.<name>]``: named flows that compose tools (see :ref:`job-types`)
-- ``[schedulers.<name>]``: site facts for one scheduler (e.g., SGE resource names)
+- ``[schedulers.<name>]``: site facts for one scheduler (e.g., SGE resource
+  names, how a Slurm site wants memory asked for)
 
 ``[defaults]``, ``[tools.*]``, ``[tools.*.options.*]`` and ``[types.*]`` are
 *job layers*: they all accept the same job settings, listed in
@@ -95,7 +97,8 @@ Keys marked *expanded* have ``$VAR`` resolved on the submit host
    * - ``cpu``
      - integer
      - overrides
-     - CPUs / slots (SGE ``-pe <parallel_environment> <cpu>``).
+     - CPUs / slots (SGE ``-pe <parallel_environment> <cpu>``; Slurm
+       ``--cpus-per-task=<cpu> --ntasks=1``).
    * - ``mem``
      - string
      - overrides
@@ -107,11 +110,12 @@ Keys marked *expanded* have ``$VAR`` resolved on the submit host
    * - ``queue``
      - string
      - overrides
-     - Queue / partition (SGE ``-q``); expanded.
+     - Queue / partition (SGE ``-q``, Slurm ``--partition``); expanded.
    * - ``project``
      - string
      - overrides
-     - Project / account charged (SGE ``-P``); expanded.
+     - Project / account charged (SGE ``-P``, Slurm ``--account``);
+       expanded.
    * - ``stdout``
      - string
      - overrides
@@ -124,8 +128,8 @@ Keys marked *expanded* have ``$VAR`` resolved on the submit host
    * - ``inherit_env``
      - boolean
      - overrides
-     - Inherit the submitting shell's environment (SGE ``-V``). Default
-       ``true``; see :ref:`environment`.
+     - Inherit the submitting shell's environment (SGE ``-V``, Slurm
+       ``--export=ALL``). Default ``true``; see :ref:`environment`.
    * - ``workdir``
      - string
      - overrides
@@ -139,8 +143,9 @@ Keys marked *expanded* have ``$VAR`` resolved on the submit host
    * - ``interactive``
      - boolean
      - overrides
-     - Run attached and wait (SGE ``qrsh``). Default ``false``; ``hpc run``
-       sets it unless ``--batch`` or ``--array`` is given.
+     - Run attached and wait (SGE ``qrsh``, Slurm ``srun``). Default
+       ``false``; ``hpc run`` sets it unless ``--batch`` or ``--array`` is
+       given.
    * - ``env_vars``
      - table of strings
      - overrides
@@ -179,16 +184,18 @@ Keys marked *expanded* have ``$VAR`` resolved on the submit host
      - table of ``name = count``
      - adds
      - Licences the job needs, each with a count (a whole number, 1 or
-       more). SGE ``-l name=count``.
+       more). SGE ``-l name=count``, Slurm ``-L name:count``.
    * - ``devices``
      - table of ``name = count``
      - adds
      - Devices the job needs (a GPU, ...), each with a count (a whole
-       number, 1 or more). SGE ``-l name=count``.
+       number, 1 or more). SGE ``-l name=count``, Slurm
+       ``--gres=name:count``.
    * - ``features``
      - list of strings
      - overrides
-     - Node features the job needs, by name. SGE ``-l name=1``.
+     - Node features the job needs, by name. SGE ``-l name=1``, Slurm
+       ``-C name``.
    * - ``scheduler_args``
      - list of strings
      - overrides
@@ -252,7 +259,7 @@ example ``[schedulers.pbs]`` today) is a warning and is not checked.
      - Exit sentinels older than this are removed when a scheduler is
        created. Raise it if dependency chains wait longer than a month.
 
-``[schedulers.slurm]``:
+``[schedulers.slurm]`` (:doc:`slurm`):
 
 .. list-table::
    :header-rows: 1
@@ -294,7 +301,7 @@ command while the setting is on:
   ``stderr``, without colour codes), the error it raised (``error``) and
   its ``exit_code``.
 - ``<time>-<pid>-<command>.json``, one per scheduler command (``qsub``,
-  ``qstat``, ``qacct``, ...): ``argv``, ``returncode``, ``stdout``,
+  ``qstat``, ``qacct``, ``sbatch``, ``squeue``, ...): ``argv``, ``returncode``, ``stdout``,
   ``stderr``. The record of the command that submitted a job also has
   ``script``: the path and full text of the job script, which otherwise
   deletes itself.
@@ -503,7 +510,8 @@ added to the config's, replacing the count of the same name; the same name
 given twice keeps the last. ``--feature`` replaces the config's features.
 
 Interactive and batch jobs carry all three alike. On SGE each is a ``-l``
-request (:doc:`sge`).
+request (:doc:`sge`). On Slurm they are ``-L``, ``--gres`` and ``-C``
+(:doc:`slurm`).
 
 
 .. _scheduler-args:
@@ -526,7 +534,9 @@ written in that scheduler's own flags:
 
 A layer that sets ``scheduler_args`` replaces the earlier list
 (:ref:`layer-rules`), so ``[tools.sim]`` above repeats the flag it wants to
-keep. Repeated flags (``-l a=1 -l b=2``) are kept as written.
+keep. Repeated flags (``-l a=1 -l b=2``) are kept as written. The examples
+here are SGE's flags; on Slurm the list holds ``sbatch`` flags
+(``scheduler_args = ["--nice=500"]``).
 
 On the command line, raw arguments go in ``-S``/``--scheduler-args``
 (``hpc run -S '-l gpu=2' make sim``). They replace the config's list.
@@ -539,7 +549,7 @@ scheduler has its own scale), as is an MPI job's node and task count:
 .. code-block:: toml
 
    [types.low]
-   scheduler_args = ["-p", "-500"]
+   scheduler_args = ["-p", "-500"]      # SGE; on Slurm ["--nice=500"]
 
 ``[schedulers.<name>]`` holds site facts only (PE name, resource names,
 module init script).
@@ -594,6 +604,20 @@ cluster:
    * - Arrays and dependencies are refused.
      - There is no scheduler to fan a job out or hold it.
 
+Slurm mapping notes
+-------------------
+
+- ``queue`` maps to ``--partition`` and ``project`` to ``--account``.
+- ``cpu`` maps to ``--cpus-per-task=<cpu> --ntasks=1``: one task with that
+  many CPUs.
+- ``mem`` maps to ``--mem`` in megabytes. It is per job;
+  ``memory_per = "cpu"`` divides it by ``cpu`` and sends ``--mem-per-cpu``.
+- ``time`` maps to ``--time=D-HH:MM:SS``.
+- ``stdout``/``stderr`` map to ``--output``/``--error``; without ``stderr``
+  no ``--error`` is sent.
+
+See :doc:`slurm` for the whole table.
+
 SGE mapping notes
 -----------------
 
@@ -626,7 +650,8 @@ and ``JobResult.stdout_path`` / ``read_stdout()`` work on every scheduler.
   (SGE puts a job whose output directory is missing in the error
   state). ``${hpc.cpus}`` and
   ``${hpc.tmpdir}`` are an error anywhere in an output path. On SGE the
-  pattern becomes ``<workdir>/$JOB_NAME.$JOB_ID.out`` and SGE fills it in.
+  pattern becomes ``<workdir>/$JOB_NAME.$JOB_ID.out`` and SGE fills it in;
+  on Slurm it becomes ``<workdir>/%x.%j.out``.
 - **Arrays:** the default is
   ``${hpc.job_name}.${hpc.job_id}.${hpc.task_id}.out`` (``name.123.4.out``).
   A pattern of your own without ``${hpc.task_id}`` gets it before the last
@@ -640,7 +665,8 @@ and ``JobResult.stdout_path`` / ``read_stdout()`` work on every scheduler.
   turns merging off.
 - ``${hpc.job_name}`` is the name as the scheduler submits it: on every
   scheduler whitespace, ``/`` and non-printable characters become ``_``
-  (SGE adds its own rules, see :doc:`sge`).
+  (SGE and Slurm each add their own rules, see :doc:`sge` and
+  :doc:`slurm`).
 - An **empty** ``stdout`` or ``stderr`` is an error: omit the key to use the
   default (stdout) or to merge (stderr).
 - **Interactive** jobs write to your terminal; ``stdout`` and ``stderr`` do
@@ -706,30 +732,38 @@ the ``${hpc.*}`` namespace, which each scheduler renders in its own terms:
    * - Name
      - Meaning
      - SGE
+     - Slurm
      - local
    * - ``${hpc.cpus}``
      - slots / CPUs granted
      - ``$NSLOTS``
+     - ``$SLURM_CPUS_PER_TASK``
      - ``cpu`` (or 1)
    * - ``${hpc.job_id}``
      - job id
      - ``$JOB_ID``
+     - ``${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}``
      - the local id
    * - ``${hpc.task_id}``
      - array task index
      - ``$SGE_TASK_ID``
+     - ``$SLURM_ARRAY_TASK_ID``
      - empty
    * - ``${hpc.tmpdir}``
-     - job scratch directory
+     - the job's ``$TMPDIR``: a job scratch directory on SGE; on Slurm
+       see :doc:`slurm`
+     - ``$TMPDIR``
      - ``$TMPDIR``
      - ``$TMPDIR``
    * - ``${hpc.job_name}``
      - job name
      - ``$JOB_NAME``
+     - ``$SLURM_JOB_NAME``
      - the job name
    * - ``${hpc.host}``
      - execution host
      - ``$HOSTNAME``
+     - ``$SLURMD_NODENAME``
      - ``$HOSTNAME``
 
 Any other ``${hpc.x}`` is an error. Writing a scheduler variable directly,
@@ -766,7 +800,8 @@ Environment
 -----------
 
 **The reproducibility contract.** By default a job inherits the submitting
-shell's environment (``inherit_env = true``, SGE ``-V``) and its script
+shell's environment (``inherit_env = true``; SGE ``-V``, Slurm
+``--export=ALL``) and its script
 then always runs ``module purge`` followed by the configured ``module use``
 and ``module load`` commands. Tool versions come from modules: because the
 module system owns the ``PATH`` and library entries of what it loaded, the
@@ -777,10 +812,12 @@ variables, ``DISPLAY``, a tool a site put on ``PATH`` outside the module
 system) is carried through unchanged; the fix for the last of these is to
 put the tool in a module, not to reset variables in hpc-runner.
 
-**Strict mode.** ``inherit_env = false`` drops ``-V``: the job starts from
-the scheduler's clean environment. ``env_passthrough`` names submit-host
-variables to pass explicitly (SGE ``-v NAME=value``); each must be set
-where you submit, or resolution fails. With ``inherit_env = true``,
+**Strict mode.** ``inherit_env = false`` drops ``-V`` (Slurm:
+``--export=NONE``): the job starts from the scheduler's clean environment.
+``env_passthrough`` names submit-host variables to pass explicitly (SGE
+``-v NAME=value``, Slurm ``--export=NAME=value,...``); each must be set
+where you submit, or resolution fails. On Slurm a value with a ``,`` in it
+is refused (:doc:`slurm`). With ``inherit_env = true``,
 ``env_passthrough`` is ignored, since the variables arrive anyway.
 
 .. code-block:: toml

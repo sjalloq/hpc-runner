@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-hpc-runner submits jobs to an HPC scheduler (SGE today, Slurm next) by tool
+hpc-runner submits jobs to an HPC scheduler (SGE or Slurm) by tool
 name or job type, from a TOML config that also fixes the Environment Modules
 every job loads, so a flow that works for one user works for all. What it
 does and how it is used: `README.md`, `docs/source/`. How the code is put

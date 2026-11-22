@@ -2,8 +2,8 @@
 
 **Submit HPC jobs by tool name, not by scheduler flag.**
 
-`hpc run xrun -f top.f` turns into the right `qsub`/`qrsh` call for your
-site, with the queue, slots, memory, licences and Environment Modules that
+`hpc run xrun -f top.f` turns into the right `qsub`/`qrsh` (SGE) or
+`sbatch`/`srun` (Slurm) call for your site, with the queue, slots, memory, licences and Environment Modules that
 the config file says an Xcelium run needs. Everyone gets the same module
 versions, so a flow that works for one user works for all of them.
 
@@ -18,7 +18,7 @@ Full documentation: <https://sjalloq.github.io/hpc-runner/>
 - **Reproducible environments**: every job script runs `module purge` and
   loads the configured versions.
 - **Dependencies, arrays and pipelines**, with `afterok`/`afternotok`
-  emulated on SGE.
+  emulated on SGE and Slurm's own dependencies on Slurm.
 - **Validated config**: unknown keys and wrong types are errors with file,
   line and a "did you mean".
 - **A terminal monitor**, `hpc monitor`, for watching your jobs.
@@ -29,12 +29,13 @@ Full documentation: <https://sjalloq.github.io/hpc-runner/>
 |-----------|--------|-------|
 | Sun Grid Engine / Open Grid Scheduler | Supported | qsub, qrsh, qstat, qacct, qdel. Integration suite runs against gridengine 8.1.9 in CI. |
 | Local | Supported | Runs the job on this machine with the same module environment; no scheduler needed. |
-| Slurm | Planned | |
+| Slurm | Supported | sbatch, srun, sacct, squeue, scontrol, scancel. Integration suite passes against Slurm 22.05 and 24.11 in the Docker testbed. |
 | PBS / Torque | Planned | |
 | LSF | Planned | |
 
 A scheduler moves to *Supported* when the integration suite passes against
-it. Name the scheduler once in the config (`scheduler = "sge"`) or with
+it. Name the scheduler once in the config (`scheduler = "sge"` or
+`scheduler = "slurm"`) or with
 `HPC_SCHEDULER=NAME`; hpc-runner never guesses it.
 
 ## Installation
@@ -61,7 +62,7 @@ hpc run --batch --wait --cpu 4 --mem 16G --time 4:00:00 make sim
 # Preview the generated script without submitting
 hpc run --dry-run --cpu 8 make -j8
 
-# Raw scheduler flags go in one quoted string
+# Raw scheduler flags go in one quoted string (SGE's here; Slurm's on Slurm)
 hpc run -S '-l gpu=1 -P proj' python train.py
 ```
 
@@ -116,9 +117,12 @@ tools = ["xcelium", "slang"]   # pulled in, in this order, then the keys below
 cpu = 2
 ```
 
-Every key, how layers combine, variable expansion and the SGE mapping are in
-the [configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html)
-and the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html).
+The example is an SGE site's; a Slurm site names `scheduler = "slurm"` and
+has a `[schedulers.slurm]` section instead. Every key, how layers combine,
+variable expansion and each scheduler's mapping are in the
+[configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html),
+the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html) and the
+[Slurm guide](https://sjalloq.github.io/hpc-runner/slurm.html).
 
 ## Documentation
 
@@ -126,6 +130,7 @@ and the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html).
 - [Configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html)
 - [CLI reference](https://sjalloq.github.io/hpc-runner/cli.html)
 - [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html)
+- [Slurm guide](https://sjalloq.github.io/hpc-runner/slurm.html)
 - [Python API](https://sjalloq.github.io/hpc-runner/programmatic_api.html)
 - [Job monitor](https://sjalloq.github.io/hpc-runner/monitor.html)
 - [Development](https://sjalloq.github.io/hpc-runner/development.html)
@@ -136,6 +141,7 @@ and the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html).
 source sourceme                   # .venv with the dev extras
 pytest                            # unit suite
 hpc-testbed --scheduler sge pytest --up   # integration suite against SGE in Docker
+hpc-testbed --scheduler slurm pytest --up # the same against Slurm
 ```
 
 See the [development page](https://sjalloq.github.io/hpc-runner/development.html)

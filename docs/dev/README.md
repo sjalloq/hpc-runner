@@ -7,9 +7,9 @@ update it whenever a status or a next action changes. User documentation is
 
 ## Next actions, in order
 
-1. `slurm/PLAN.md`, "Order of work", from step 1 (the Slurm CI cells, which
-   need a push; then the user docs). The list is all the remaining Slurm work. It has no
-   open questions.
+1. `slurm/PLAN.md`, "Order of work": the Slurm CI cells, which need a
+   push. It is the only step left.
+2. `slurm/MANUAL_CHECKLIST.md`, on the first real Slurm cluster.
 
 Anything missing, unverified or undecided that belongs to no plan is in
 `FOLLOW_UPS.md`. Add to it whenever work is left unported or unrun.
@@ -18,7 +18,7 @@ Anything missing, unverified or undecided that belongs to no plan is in
 
 | Work | Status | Read | What is left |
 |---|---|---|---|
-| Slurm backend | Research closed; plan consolidated 2026-11-17; `hpc run` exit code, option removals, the option table , `hpc cancel`, the config layer rules and the test split built (SGE, local); Slurm testbed support built 2026-11-22 (cgroups on, cluster class, capture module, fixtures for both versions), Slurm backend built 2026-11-22 (rendering, submission, status, listings, details, cancel); `--wait` uses the scheduler's own wait on SGE and Slurm; integration suite passes on Slurm 24.11 and 22.05 and both SGE flavours (2026-11-22); Slurm CI cells written, never run | `slurm/PLAN.md` | Its "Order of work" (2 steps) |
+| Slurm backend | Research closed; plan consolidated 2026-11-17; `hpc run` exit code, option removals, the option table , `hpc cancel`, the config layer rules and the test split built (SGE, local); Slurm testbed support built 2026-11-22 (cgroups on, cluster class, capture module, fixtures for both versions), Slurm backend built 2026-11-22 (rendering, submission, status, listings, details, cancel); `--wait` uses the scheduler's own wait on SGE and Slurm; integration suite passes on Slurm 24.11 and 22.05 and both SGE flavours (2026-11-22); user docs (`docs/source/slurm.rst`), the Slurm lifecycle matrix and the manual checklist written 2026-11-22; Slurm CI cells written, never run | `slurm/PLAN.md` | Its "Order of work" (1 step: the push); the manual checklist on a real cluster; the unproven facts in `FOLLOW_UPS.md` ("left out of the user docs") |
 | Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
 | SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | See `FOLLOW_UPS.md` ("Testbed stacks") |
 | Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |
@@ -42,6 +42,8 @@ Anything missing, unverified or undecided that belongs to no plan is in
 | `tui/TEXTUAL_STYLING_COOKBOOK.md` | Rules and checklist for styling `hpc monitor` |
 | `tui/TUI_HORIZONTAL_SCROLLBAR.md` | How the job table avoids a horizontal scrollbar |
 | `slurm/PLAN.md` | The Slurm plan: what is decided, all remaining work in order, open questions |
+| `slurm/LIFECYCLE_MATRIX.md` | Reference: Slurm job states against the code that reads them, with the test or capture behind each cell, and the empty cells |
+| `slurm/MANUAL_CHECKLIST.md` | What to run by hand on the first real Slurm cluster, for what the testbed cannot show. Nothing captured there is committed |
 | `slurm/SGE_SLURM_DIFFERENCES.md` | Fact base: how Slurm differs from SGE, with sources |
 | `slurm/RESOURCES_COMPARISON.md` | Fact base: 17 resource requests on SGE, Slurm, LSF and PBS, with sources; Appendix A is the earlier LSF and PBS research |
 

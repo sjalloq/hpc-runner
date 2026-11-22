@@ -7,6 +7,9 @@
   a set of whole sections must pass config validation.
 - The configuration reference lists every job-layer key and every key each
   scheduler declares; the CLI docs list every ``hpc run`` option.
+- The tables of the Slurm guide (the flag for each option, the scheduler
+  settings, the ``${hpc.*}`` variables, the job states) say what the code
+  does.
 """
 
 from __future__ import annotations
@@ -20,11 +23,13 @@ import pytest
 
 from hpc_runner.cli.run import run as run_command
 from hpc_runner.core.config import check_config
+from hpc_runner.core.job import SCHEDULER_OPTIONS
 from hpc_runner.core.result import JobResult, JobStatus
 from hpc_runner.core.schema import FIELD_VALIDATORS
 from hpc_runner.schedulers.local import LocalScheduler
 from hpc_runner.schedulers.sge import SGEScheduler
 from hpc_runner.schedulers.slurm import SlurmScheduler
+from hpc_runner.schedulers.slurm.parser import state_to_status
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
@@ -172,3 +177,132 @@ def test_configuration_reference_lists_every_scheduler_key(scheduler):
 def test_cli_docs_list_every_run_option(option):
     listed = rf"(-\w, )?{option}\b"
     assert re.search(rf"``{listed}", (DOCS / "cli.rst").read_text()), "docs/source/cli.rst"
+
+
+# =============================================================================
+# The Slurm guide
+# =============================================================================
+
+
+def _list_table(section: str) -> list[list[str]]:
+    """The body rows of the first ``list-table`` in *section*, each a list of cell texts."""
+    rows: list[list[str]] = []
+    for line in section.splitlines():
+        if line.startswith("   * - "):
+            rows.append([line[7:].strip()])
+        elif not rows:
+            continue
+        elif line.startswith("     -"):
+            rows[-1].append(line[6:].strip())
+        elif line.startswith("       ") and line.strip():
+            rows[-1][-1] += " " + line.strip()
+        elif line.strip() and not line.startswith(" "):
+            break
+    return rows[1:]
+
+
+def _slurm_table(title: str) -> list[list[str]]:
+    return _list_table(_section((DOCS / "slurm.rst").read_text(), title))
+
+
+#: option -> the flag the Slurm guide gives for it (docs/dev/SCHEDULER_OPTIONS.md, "Flags").
+SLURM_FLAGS = {
+    "name": "``--job-name=NAME``",
+    "cpu": "``--cpus-per-task=N --ntasks=1``",
+    "mem": "``--mem=MB``",
+    "time": "``--time=D-HH:MM:SS``",
+    "queue": "``--partition=NAME``",
+    "project": "``--account=NAME``",
+    "workdir": "``--chdir=PATH``",
+    "stdout": "``--output=PATH``",
+    "stderr": "``--error=PATH``",
+    "inherit_env": "``--export=ALL`` when true, ``--export=NONE`` when false",
+    "env_passthrough": "``--export=NAME=value,...``",
+    "licenses": "``-L name:N,name:N``",
+    "devices": "``--gres=name:N,name:N``",
+    "features": "``-C name&name``",
+    "array": "``--array=START-END[:STEP][%MAX]``",
+    "dependencies": "``--dependency=TYPE:ID[:ID...][,TYPE:ID...]``",
+    "scheduler_args": "the arguments as given",
+}
+
+
+def test_slurm_guide_gives_the_flag_for_every_option():
+    rows = _slurm_table("How each option reaches Slurm")
+    assert {row[0].strip("`"): row[1] for row in rows} == SLURM_FLAGS
+    assert set(SLURM_FLAGS) == set(SCHEDULER_OPTIONS)
+
+
+def test_slurm_guide_lists_the_scheduler_settings_with_their_defaults():
+    rows = _slurm_table("Scheduler settings")
+    assert {row[0].strip("`"): row[2] for row in rows} == {
+        "memory_per": '``"job"``',
+        "kill_invalid_dependents": "``true``",
+    }
+    assert [row[0].strip("`") for row in rows] == list(SlurmScheduler.CONFIG_KEYS)
+
+
+def test_slurm_guide_hpc_variables_are_the_ones_rendered():
+    rows = _slurm_table("``${hpc.*}`` variables")
+    assert {row[0]: (row[1], row[2]) for row in rows} == {
+        "``${hpc.cpus}``": ("``$SLURM_CPUS_PER_TASK``", "not allowed"),
+        "``${hpc.job_id}``": (
+            "``${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}``",
+            "``%j``; ``%A`` for an array",
+        ),
+        "``${hpc.task_id}``": ("``$SLURM_ARRAY_TASK_ID``", "``%a``"),
+        "``${hpc.job_name}``": ("``$SLURM_JOB_NAME``", "``%x``"),
+        "``${hpc.tmpdir}``": ("``$TMPDIR``", "not allowed"),
+        "``${hpc.host}``": ("``$SLURMD_NODENAME``", "``%N``"),
+    }
+    for name, in_script, in_path in rows:
+        key = name.strip("`")[len("${hpc.") : -1]
+        assert in_script.strip("`") == SlurmScheduler.HPC_VARS[key].strip('"')
+        if key in SlurmScheduler.HPC_PATH_VARS:
+            assert in_path.startswith(f"``{SlurmScheduler.HPC_PATH_VARS[key]}``")
+        else:
+            assert in_path == "not allowed"
+
+
+#: Slurm state -> hpc-runner status, as the Slurm guide's table gives them.
+SLURM_STATES = {
+    "PENDING": "PENDING",
+    "REQUEUED": "PENDING",
+    "REQUEUE_HOLD": "PENDING",
+    "REQUEUE_FED": "PENDING",
+    "RESV_DEL_HOLD": "PENDING",
+    "RUNNING": "RUNNING",
+    "CONFIGURING": "RUNNING",
+    "COMPLETING": "RUNNING",
+    "SIGNALING": "RUNNING",
+    "STAGE_OUT": "RUNNING",
+    "RESIZING": "RUNNING",
+    "SUSPENDED": "SUSPENDED",
+    "STOPPED": "SUSPENDED",
+    "COMPLETED": "COMPLETED",
+    "FAILED": "FAILED",
+    "NODE_FAIL": "FAILED",
+    "BOOT_FAIL": "FAILED",
+    "SPECIAL_EXIT": "FAILED",
+    "CANCELLED by <uid>": "CANCELLED",
+    "PREEMPTED": "CANCELLED",
+    "REVOKED": "CANCELLED",
+    "CANCELLED": "SKIPPED",
+    "TIMEOUT": "TIMEOUT",
+    "DEADLINE": "TIMEOUT",
+    "OUT_OF_MEMORY": "KILLED",
+}
+
+
+def test_slurm_guide_state_table_is_the_one_the_parser_applies():
+    rows = _slurm_table("Job status")
+    listed = {
+        state: status.strip("`")
+        for states, status in rows
+        for state in re.findall(r"``([^`]+)``", states)
+    }
+    assert listed == SLURM_STATES
+    for state, status in SLURM_STATES.items():
+        assert state_to_status(state) is JobStatus[status], state
+    assert rows[-1] == ["anything else", "``UNKNOWN``"]
+    assert state_to_status("SOMETHING_NEW") is JobStatus.UNKNOWN

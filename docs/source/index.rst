@@ -26,10 +26,10 @@ Scheduler compatibility
      - Runs the job on this machine with the same module environment, for a
        workstation without a scheduler.
    * - Slurm
-     - In progress
+     - Supported
      - ``sbatch``, ``srun``, ``sacct``, ``squeue``, ``scontrol``,
-       ``scancel``, on 22.05 and 24.11. Not yet run through the
-       integration suite, and not documented here yet.
+       ``scancel``. The integration suite passes against Slurm 22.05 and
+       24.11 in the Docker testbed; see :doc:`slurm`.
    * - PBS / Torque
      - Planned
      -
@@ -38,7 +38,7 @@ Scheduler compatibility
      -
 
 A scheduler is listed as supported once the integration suite passes
-against it. Detection order and how to force one: :doc:`getting_started`.
+against it. How to name the scheduler: :doc:`getting_started`.
 
 .. toctree::
    :maxdepth: 2
@@ -48,6 +48,7 @@ against it. Detection order and how to force one: :doc:`getting_started`.
    configuration
    cli
    sge
+   slurm
    programmatic_api
    monitor
    development

@@ -37,8 +37,8 @@ A Python traceback means a bug in hpc-runner.
 ``hpc run``
 -----------
 
-Run a command on the cluster. By default the job runs interactively (SGE:
-``qrsh``): output streams to your terminal and ``hpc`` waits for it to
+Run a command on the cluster. By default the job runs interactively (SGE
+``qrsh``, Slurm ``srun``): output streams to your terminal and ``hpc`` waits for it to
 finish. ``--batch`` submits and returns immediately. Array jobs are always
 batch.
 
@@ -52,7 +52,8 @@ run the command by hand:
   command returns. The job id is printed when the job is submitted, and
   the job's final status when it has ended. A job the scheduler itself
   ended (a time limit, a memory limit, a cancel) exits with whatever the
-  scheduler's command returns for it, never 0.
+  scheduler's command returns for it, never 0. On Slurm that is 1; the
+  numbers for each case are in :doc:`slurm`.
 - A job that did not complete and has no exit code of its own exits 1:
   cancelled while pending, skipped because a dependency was not satisfied,
   or one the scheduler can no longer report on.
@@ -66,7 +67,7 @@ Options:
 - ``-c, --cpu N``
 - ``-m, --mem TEXT`` (memory for the whole job, e.g. ``16G``, ``1.5GiB``; see :ref:`memory-and-time`)
 - ``-T, --time TEXT`` (e.g. ``4:00:00``, ``4h``, ``1h30m``; a bare integer is an error)
-- ``-q, --queue TEXT`` (SGE queue)
+- ``-q, --queue TEXT`` (SGE queue, Slurm partition)
 - ``-d, --directory PATH`` (working dir)
 - ``-t, --type TEXT`` (named profile from config)
 - ``-o, --stdout TEXT`` (stdout file pattern, batch only; default
@@ -78,11 +79,14 @@ Options:
   resolved where you submit)
 - ``--license NAME=N`` (repeatable; requests ``N`` of a licence, added to
   the config's ``licenses``. A name here replaces the count of the same
-  name, and the last of a repeated name wins; SGE ``-l NAME=N``)
+  name, and the last of a repeated name wins; SGE ``-l NAME=N``, Slurm
+  ``-L NAME:N``)
 - ``--device NAME=N`` (repeatable; requests ``N`` of a device such as a GPU,
-  added to the config's ``devices`` the same way; SGE ``-l NAME=N``)
+  added to the config's ``devices`` the same way; SGE ``-l NAME=N``, Slurm
+  ``--gres=NAME:N``)
 - ``--feature NAME`` (repeatable; requests a node feature. The features
-  given here replace the config's ``features``; SGE ``-l NAME=1``)
+  given here replace the config's ``features``; SGE ``-l NAME=1``, Slurm
+  ``-C NAME``)
 - ``-D, --depend TEXT`` (repeatable; ``ID`` (afterok), or ``TYPE:ID[:ID...][,TYPE:ID...]``,
   e.g. ``afterok:123:124,afterany:125``)
 - ``-b, --batch`` (submit and return; default is interactive via qrsh/srun)
@@ -105,9 +109,9 @@ order. The flags given here replace the config's ``scheduler_args``
 
 .. code-block:: bash
 
-   hpc run -S '-l gpu=1 -P proj' python train.py
-   hpc run -c 4 -S '-l scratch=50G' -S '-P proj' make -j8 sim
-   hpc run -S '--gres=gpu:2 --partition=short' srun ./a.out   # Slurm
+   hpc run -S '-l gpu=1 -P proj' python train.py              # SGE
+   hpc run -c 4 -S '-l scratch=50G' -S '-P proj' make -j8 sim # SGE
+   hpc run --batch -S '--nice=500 --comment=nightly' make sim # Slurm
 
 ``hpc run`` stops reading its own options at the first word that is not one,
 so the command's flags are never interpreted (``hpc run mpirun -N 4 ./sim``
@@ -164,6 +168,11 @@ whole (``COMPLETED`` only when every task is, else the worst task) followed
 by a table with one row per task: index, status, exit code, the
 scheduler's failure code and reason, node and runtime. With ``--json`` the
 tasks are the ``tasks`` list.
+
+On Slurm the tasks are listed while the array is still pending or running
+too, and there is no failure code beside the exit code. ``--history`` and
+``hpc status <id>`` can show different exit codes for one Slurm job; see
+"Exit codes" in :doc:`slurm`.
 
 Options:
 
