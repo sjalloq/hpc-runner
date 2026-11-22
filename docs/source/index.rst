@@ -26,8 +26,10 @@ Scheduler compatibility
      - Runs the job on this machine with the same module environment, for a
        workstation without a scheduler.
    * - Slurm
-     - Planned
-     -
+     - In progress
+     - ``sbatch``, ``srun``, ``sacct``, ``squeue``, ``scontrol``,
+       ``scancel``, on 22.05 and 24.11. Not yet run through the
+       integration suite, and not documented here yet.
    * - PBS / Torque
      - Planned
      -

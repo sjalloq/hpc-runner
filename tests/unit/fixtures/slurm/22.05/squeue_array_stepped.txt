@@ -1,0 +1,1 @@
+267_[1-100:3]|267|1-100:3|tester|proj|all|PENDING|JobHeldUser|2026-11-22T20:20:56|N/A|N/A|0:00|UNLIMITED|1|100M||(null)|N/A|/work/capture-jobs|array_stepped

@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "scancel",
+    "999999"
+  ],
+  "returncode": 0,
+  "stdout": "",
+  "stderr": ""
+}

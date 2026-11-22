@@ -1,14 +1,14 @@
-JobId=76 ArrayJobId=76 ArrayTaskId=3-4%2 ArrayTaskThrottle=2 JobName=array_throttled
+JobId=260 ArrayJobId=260 ArrayTaskId=3-4%2 ArrayTaskThrottle=2 JobName=array_throttled
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901700 Nice=0 Account=proj QOS=normal
+   Priority=4294901585 Nice=0 Account=proj QOS=normal
    JobState=PENDING Reason=JobArrayTaskLimit Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T16:59:58 EligibleTime=Unknown
-   AccrueTime=2026-11-22T17:00:00
+   SubmitTime=2026-11-22T20:20:42 EligibleTime=Unknown
+   AccrueTime=2026-11-22T20:20:43
    StartTime=Unknown EndTime=Unknown Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T17:00:00 Scheduler=Main
-   Partition=all AllocNode:Sid=login:9532
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:43 Scheduler=Main
+   Partition=all AllocNode:Sid=login:116631
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=
    NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
@@ -19,23 +19,23 @@ JobId=76 ArrayJobId=76 ArrayTaskId=3-4%2 ArrayTaskThrottle=2 JobName=array_throt
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array_throttled.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array_throttled.76.4294967294.out
+   StdErr=/work/capture-jobs/array_throttled.260.4294967294.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array_throttled.76.4294967294.out
+   StdOut=/work/capture-jobs/array_throttled.260.4294967294.out
    Power=
    
 
-JobId=78 ArrayJobId=76 ArrayTaskId=2 ArrayTaskThrottle=2 JobName=array_throttled
+JobId=262 ArrayJobId=260 ArrayTaskId=2 ArrayTaskThrottle=2 JobName=array_throttled
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901700 Nice=0 Account=proj QOS=normal
+   Priority=4294901585 Nice=0 Account=proj QOS=normal
    JobState=RUNNING Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:03 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T16:59:58 EligibleTime=2026-11-22T17:00:00
-   AccrueTime=2026-11-22T17:00:00
-   StartTime=2026-11-22T17:00:00 EndTime=Unknown Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T17:00:00 Scheduler=Main
-   Partition=all AllocNode:Sid=login:9532
+   SubmitTime=2026-11-22T20:20:42 EligibleTime=2026-11-22T20:20:43
+   AccrueTime=2026-11-22T20:20:43
+   StartTime=2026-11-22T20:20:43 EndTime=Unknown Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:43 Scheduler=Main
+   Partition=all AllocNode:Sid=login:116631
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -47,26 +47,26 @@ JobId=78 ArrayJobId=76 ArrayTaskId=2 ArrayTaskThrottle=2 JobName=array_throttled
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array_throttled.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array_throttled.76.2.out
+   StdErr=/work/capture-jobs/array_throttled.260.2.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array_throttled.76.2.out
+   StdOut=/work/capture-jobs/array_throttled.260.2.out
    Power=
    
 
-JobId=77 ArrayJobId=76 ArrayTaskId=1 ArrayTaskThrottle=2 JobName=array_throttled
+JobId=261 ArrayJobId=260 ArrayTaskId=1 ArrayTaskThrottle=2 JobName=array_throttled
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901700 Nice=0 Account=proj QOS=normal
+   Priority=4294901585 Nice=0 Account=proj QOS=normal
    JobState=RUNNING Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:03 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T16:59:58 EligibleTime=2026-11-22T17:00:00
-   AccrueTime=2026-11-22T17:00:00
-   StartTime=2026-11-22T17:00:00 EndTime=Unknown Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T17:00:00 Scheduler=Main
-   Partition=all AllocNode:Sid=login:9532
+   SubmitTime=2026-11-22T20:20:42 EligibleTime=2026-11-22T20:20:43
+   AccrueTime=2026-11-22T20:20:43
+   StartTime=2026-11-22T20:20:43 EndTime=Unknown Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:43 Scheduler=Main
+   Partition=all AllocNode:Sid=login:116631
    ReqNodeList=(null) ExcNodeList=(null)
-   NodeList=exec2
-   BatchHost=exec2
+   NodeList=exec1
+   BatchHost=exec1
    NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
    TRES=cpu=1,mem=100M,node=1,billing=1
    Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
@@ -75,9 +75,9 @@ JobId=77 ArrayJobId=76 ArrayTaskId=1 ArrayTaskThrottle=2 JobName=array_throttled
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array_throttled.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array_throttled.76.1.out
+   StdErr=/work/capture-jobs/array_throttled.260.1.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array_throttled.76.1.out
+   StdOut=/work/capture-jobs/array_throttled.260.1.out
    Power=
    
 

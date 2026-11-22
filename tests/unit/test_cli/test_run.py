@@ -8,7 +8,7 @@ from click.testing import CliRunner
 from hpc_runner.cli.main import cli
 from hpc_runner.core.exceptions import ConfigError
 from hpc_runner.core.result import ArrayJobResult, ArrayJobStatus, JobResult, JobStatus
-from tests.fakes import make_sge_responder, patch_seam
+from tests.fakes import make_responder, patch_seam
 
 
 @pytest.fixture(autouse=True)
@@ -699,37 +699,78 @@ class TestExitCode:
             result = runner.invoke(cli, ["run", "sleep", "300"])
         assert result.exit_code == 143, result.output
 
-    @pytest.mark.parametrize(
-        ("scenario", "code"),
-        [
-            ("ok", 0),  # COMPLETED
-            ("exit1", 1),  # FAILED, the command's own code
-            ("signal", 137),  # FAILED, killed by SIGKILL
-            ("timeout", 137),  # KILLED at the time limit
-            ("skipped", 1),  # SKIPPED: 113 on record is hpc-runner's own, never shown
-            ("lost_node", 1),  # FAILED with exit code 0 on record: never 0
-            ("deleted_pending", 1),  # UNKNOWN: no record, so no code
-        ],
-    )
-    def test_batch_wait_over_captured_jobs(
-        self, runner, sge_dirs, sge_fixtures, quick_wait, scenario, code
-    ):
-        """qsub answers with a captured finished job's id; qstat no longer lists it."""
-        captured = make_sge_responder(sge_fixtures)
-        job_id = sge_fixtures.job(scenario)
+    #: scheduler -> scenario -> what ``hpc run --batch --wait`` exits with.
+    WAITED = {
+        "sge": {
+            "ok": 0,  # COMPLETED
+            "exit1": 1,  # FAILED, the command's own code
+            "exit137": 137,  # FAILED, the code qsub returned
+            "skipped": 1,  # SKIPPED: the 113 qsub returned is hpc-runner's own, never shown
+            "deleted_pending": 1,  # UNKNOWN, and qsub returned 0: never 0
+        },
+        "slurm": {
+            "ok": 0,  # COMPLETED
+            "exit1": 1,  # FAILED, the command's own code
+            "exit137": 137,  # FAILED, the code sbatch returned (sacct says 9)
+            "out_of_memory": 1,  # KILLED, the code sbatch returned
+            "cancelled_running": 1,  # CANCELLED, the code sbatch returned
+            "cancelled_pending": 1,  # CANCELLED, and sbatch returned 0: never 0
+            "dependent_skipped": 1,  # SKIPPED, and sbatch returned 0
+        },
+    }
+
+    @staticmethod
+    def _waited(fixtures, scenario):
+        """The seam: the waiting submit answers with *scenario*'s capture."""
+        captured = make_responder(fixtures)
 
         def respond(argv):
-            if argv[0] == "qsub":
-                text = sge_fixtures.text("qsub.txt")
-                return 0, text.replace(sge_fixtures.submitted_id, job_id), ""
-            if argv[0] == "qstat" and "-j" not in argv:
-                return 0, sge_fixtures.text("qstat_empty.xml"), ""
+            if argv[0] == fixtures.submit_command:
+                return fixtures.waited_answer(scenario)
             return captured(argv)
 
-        with patch_seam(respond):
+        return patch_seam(respond)
+
+    @pytest.mark.parametrize("scenario", sorted({s for t in WAITED.values() for s in t}))
+    def test_batch_wait_over_captured_jobs(
+        self, runner, fixtures, scheduler_env, quick_wait, scenario
+    ):
+        """The scheduler's own waiting submit (qsub -sync y, sbatch --wait) and
+        the accounting of the same job, as captured."""
+        if scenario not in self.WAITED[fixtures.scheduler]:
+            pytest.skip(f"no {scenario} capture on {fixtures.scheduler}")
+        job_id = fixtures.job(fixtures.waited(scenario))
+        with self._waited(fixtures, scenario) as seam:
             result = runner.invoke(cli, ["run", "--batch", "--wait", "true"])
-        assert f"Submitted job {job_id}" in result.output
-        assert result.exit_code == code, result.output
+        assert result.exit_code == self.WAITED[fixtures.scheduler][scenario], result.output
+        submit = seam.call_args_list[0].args[0]
+        assert (
+            submit[:-1]
+            == {"sge": ["qsub", "-sync", "y"], "slurm": ["sbatch", "--wait"]}[fixtures.scheduler]
+        )
+        lines = result.output.splitlines()
+        assert lines[0] == f"Submitted job {job_id}"
+        assert lines[1] == "Waiting for job completion..."
+        assert lines[2].startswith("Job completed with status: ")
+
+    def test_batch_without_wait_uses_the_plain_submit(self, runner, fixtures, mock_commands):
+        result = runner.invoke(cli, ["run", "--batch", "true"])
+        assert result.exit_code == 0, result.output
+        assert mock_commands.call_args_list[0].args[0][:-1] == [fixtures.submit_command]
+        assert "Waiting" not in result.output
+
+    def test_array_wait_over_a_captured_array(self, runner, fixtures, scheduler_env):
+        """Task 3 of three exited 1."""
+        job_id = fixtures.job(fixtures.waited("array_partial"))
+        with self._waited(fixtures, "array_partial"):
+            result = runner.invoke(cli, ["run", "--array", "1-3", "--wait", "true"])
+        assert result.exit_code == 1, result.output
+        assert result.output.splitlines() == [
+            f"Submitted array job {job_id}",
+            "  Tasks: 3 (1-3)",
+            "Waiting for job completion...",
+            "Array job completed with status: FAILED (2 ok, 1 not ok)",
+        ]
 
     @pytest.mark.parametrize(
         ("tasks", "code"),
@@ -740,11 +781,13 @@ class TestExitCode:
         ],
     )
     def test_array_wait_exits_0_only_if_every_task_completed(
-        self, runner, sge_dirs, mock_sge_commands, monkeypatch, tasks, code
+        self, runner, fixtures, scheduler_env, monkeypatch, tasks, code
     ):
+        """Whatever the submit command returned (1 here), the tasks decide."""
         statuses = ArrayJobStatus(tasks)
         monkeypatch.setattr(ArrayJobResult, "wait", lambda self: statuses.overall)
         monkeypatch.setattr(ArrayJobResult, "task_statuses", lambda self: statuses)
-        result = runner.invoke(cli, ["run", "--array", "1-2", "--wait", "true"])
+        with self._waited(fixtures, "array_partial"):
+            result = runner.invoke(cli, ["run", "--array", "1-2", "--wait", "true"])
         assert "Submitted array job" in result.output
         assert result.exit_code == code, result.output

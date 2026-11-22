@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>25</JB_job_number>
+      <JB_job_number>56</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/25</JB_exec_file>
-      <JB_submission_time>1793654282</JB_submission_time>
+      <JB_exec_file>job_scripts/56</JB_exec_file>
+      <JB_submission_time>1795378821</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -58,13 +58,13 @@
       <JB_script_file>sleep</JB_script_file>
       <JB_jid_predecessor_list>
         <job_predecessors>
-          <JRE_job_number>23</JRE_job_number>
+          <JRE_job_number>54</JRE_job_number>
         </job_predecessors>
       </JB_jid_predecessor_list>
       <JB_jid_request_list>
         <element>
           <JRE_job_number>0</JRE_job_number>
-          <JRE_job_name>23</JRE_job_name>
+          <JRE_job_name>54</JRE_job_name>
         </element>
       </JB_jid_request_list>
       <JB_deadline>0</JB_deadline>
@@ -80,7 +80,7 @@
       <JB_jid_request_list>
         <element>
           <JRE_job_number>0</JRE_job_number>
-          <JRE_job_name>23</JRE_job_name>
+          <JRE_job_name>54</JRE_job_name>
         </element>
       </JB_jid_request_list>
       <JB_verify_suitable_queues>0</JB_verify_suitable_queues>
@@ -117,7 +117,7 @@
         <element>
           <MES_job_number_list>
             <ulong_sublist>
-              <ULNG_value>25</ULNG_value>
+              <ULNG_value>56</ULNG_value>
             </ulong_sublist>
           </MES_job_number_list>
           <MES_message_number>35</MES_message_number>

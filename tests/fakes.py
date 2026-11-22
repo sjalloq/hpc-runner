@@ -31,7 +31,8 @@ def make_fake_run_command(respond: Responder) -> Callable[..., subprocess.Comple
     honours ``check`` the way the real seam does, so non-zero exits reach
     scheduler code as ``SchedulerCommandError``, and hands every answer to
     the trace recorder the way the real seam does, so ``hpc --trace`` can be
-    tested over the captured fixtures.
+    tested over the captured fixtures. ``on_stdout_line`` gets each line of
+    the answer's stdout before the call returns.
     """
 
     def fake(
@@ -42,9 +43,13 @@ def make_fake_run_command(respond: Responder) -> Callable[..., subprocess.Comple
         capture: bool = True,
         cwd: Path | None = None,
         input: str | None = None,
+        on_stdout_line: Callable[[str], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         args = list(argv)
         rc, out, err = respond(args)
+        if on_stdout_line is not None:
+            for line in out.splitlines(keepends=True):
+                on_stdout_line(line)
         recorder.record(args, returncode=rc, stdout=out, stderr=err, elapsed=0.0)
         if check and rc != 0:
             raise SchedulerCommandError(args, rc, out, err)
@@ -88,18 +93,41 @@ SGE_FLAVOURS = tuple(
 )
 
 
-class SGEFixtures:
-    """The SGE texts one flavour's testbed wrote, captured by ``hpc-testbed capture``.
+#: Every Slurm flavour with captures (``tests/unit/fixtures/slurm/<flavour>/``).
+SLURM_FLAVOURS = tuple(
+    sorted(d.name for d in (FIXTURES_ROOT / "slurm").iterdir() if (d / "manifest.json").is_file())
+)
+#: Every ``(scheduler, flavour)`` with captures.
+ALL_FLAVOURS = tuple(
+    [("sge", flavour) for flavour in SGE_FLAVOURS]
+    + [("slurm", flavour) for flavour in SLURM_FLAVOURS]
+)
 
-    ``manifest.json`` maps each scenario (``running``, ``held``, ``eqw``,
-    ``array``, ``ok``, ``exit1``, ``signal``, ``lost_node``, ``array_done``,
-    ``bob``) to the job id it had when captured, so tests never hard-code an
-    id; see ``tests/integration/capture.py`` for what each file is.
+
+class Fixtures:
+    """The texts one flavour's testbed wrote, captured by ``hpc-testbed capture``.
+
+    ``manifest.json`` maps each scenario to the job id it had when captured,
+    so tests never hard-code an id. The members below the constructor are
+    what a test that is not about one scheduler asks, answered by
+    :class:`SGEFixtures` and :class:`SlurmFixtures`.
     """
 
-    def __init__(self, flavour: str = "soge") -> None:
+    scheduler: str = ""
+    #: The first words of the argv that lists the live jobs.
+    listing_command: tuple[str, ...] = ()
+    #: The file holding the answer to that command in :func:`make_responder`.
+    listing_file: str = ""
+    #: The command that submits a script.
+    submit_command: str = ""
+    #: A directive line that a script has when ``queue = "all.q"`` is configured.
+    queue_directive: str = ""
+    #: Live jobs of :attr:`listing_file`: scenario to its label in ``hpc monitor``.
+    labels: dict[str, str] = {}
+
+    def __init__(self, flavour: str) -> None:
         self.flavour = flavour
-        self.root = FIXTURES_ROOT / "sge" / flavour
+        self.root = FIXTURES_ROOT / self.scheduler / flavour
         self.manifest: dict[str, Any] = json.loads((self.root / "manifest.json").read_text())
         self.jobs: dict[str, str] = self.manifest["jobs"]
 
@@ -113,6 +141,40 @@ class SGEFixtures:
 
     def job(self, scenario: str) -> str:
         return self.jobs[scenario]
+
+    def waited(self, scenario: str) -> str:
+        """The scenario of the job of *scenario* submitted with the scheduler's own wait."""
+        raise NotImplementedError
+
+    def waited_answer(self, scenario: str) -> tuple[int, str, str]:
+        """What the waiting submit command of :meth:`waited` returned."""
+        raise NotImplementedError
+
+
+class SGEFixtures(Fixtures):
+    """One SGE flavour's captures; see ``tests/integration/capture.py`` for each file."""
+
+    scheduler = "sge"
+    listing_command = ("qstat", "-xml")
+    listing_file = "qstat_mixed.xml"
+    submit_command = "qsub"
+    queue_directive = "#$ -q all.q"
+    labels = {
+        "running": "RUNNING",
+        "held": "PENDING",
+        "dependent": "PENDING",
+        "eqw": "FAILED",
+        "array": "RUNNING",
+    }
+
+    def __init__(self, flavour: str = "soge") -> None:
+        super().__init__(flavour)
+
+    def waited(self, scenario: str) -> str:
+        return f"sync_{scenario}"
+
+    def waited_answer(self, scenario: str) -> tuple[int, str, str]:
+        return self.result(f"qsub_sync_{scenario}.json")
 
     @property
     def submitted_id(self) -> str:
@@ -135,10 +197,16 @@ class SGEFixtures:
             self.job("vmem"): "qacct_vmem.txt",
             self.job("requeued"): "qacct_requeued.txt",
             self.job("skipped"): "qacct_skipped.txt",
+            **{
+                self.job(f"sync_{scenario}"): f"qacct_sync_{scenario}.txt"
+                for scenario in ("ok", "exit1", "exit137", "skipped", "array_partial")
+            },
         }
         if task is not None:
             if job_id == self.job("array_done") and task == "2":
                 return self.text("qacct_array_task.txt")
+            if job_id == self.job("sync_array_partial") and task in ("1", "2", "3"):
+                return self.text(f"qacct_sync_array_partial_task{task}.txt")
             return None
         name = by_scenario.get(job_id)
         return self.text(name) if name else None
@@ -168,6 +236,8 @@ def make_sge_responder(fixtures: SGEFixtures) -> Responder:
 
     def respond(argv: list[str]) -> tuple[int, str, str]:
         cmd, args = argv[0], argv[1:]
+        if cmd == "qsub" and args[:2] == ["-sync", "y"]:
+            raise AssertionError(f"no captured answer for {argv}: the test names the waited job")
         if cmd == "qsub":
             script = Path(args[-1]) if args else None
             is_array = (
@@ -220,3 +290,95 @@ def make_sge_responder(fixtures: SGEFixtures) -> Responder:
         raise AssertionError(f"no captured answer for {argv}")
 
     return respond
+
+
+class SlurmFixtures(Fixtures):
+    """One Slurm flavour's captures; see ``tests/integration/capture_slurm.py`` for each file."""
+
+    scheduler = "slurm"
+    listing_command = ("squeue", "-h")
+    listing_file = "squeue_all.txt"
+    submit_command = "sbatch"
+    queue_directive = "#SBATCH --partition=all.q"
+    labels = {
+        "running": "RUNNING",
+        "suspended": "SUSPEND",
+        "held": "PENDING",
+        "pending_resources": "PENDING",
+        "filler": "RUNNING",
+    }
+
+    def sacct(self, job_ids: list[str]) -> str:
+        """The settled ``sacct`` rows of each id in *job_ids* that is a scenario's job."""
+        by_id = {job_id: scenario for scenario, job_id in self.jobs.items()}
+        text = ""
+        for job_id in job_ids:
+            name = f"sacct_{by_id.get(job_id, '')}.txt"
+            if name in self.manifest["files"]:
+                text += self.text(name)
+        return text
+
+    def scontrol(self, job_id: str) -> tuple[int, str, str]:
+        """``scontrol show job`` of *job_id*: the settled record of a scenario's job."""
+        base = job_id.partition("_")[0]
+        by_id = {job: scenario for scenario, job in self.jobs.items()}
+        name = f"scontrol_{by_id.get(base, '')}.txt"
+        if name not in self.manifest["files"]:
+            return self.result("scontrol_missing.json")
+        return 0, self.text(name), ""
+
+    def waited(self, scenario: str) -> str:
+        return f"wait_{scenario}"
+
+    def waited_answer(self, scenario: str) -> tuple[int, str, str]:
+        return self.result(f"sbatch_wait_{scenario}.json")
+
+
+def make_slurm_responder(fixtures: SlurmFixtures) -> Responder:
+    """A responder that answers Slurm argv the way the captured testbed did.
+
+    By the whole argv: ``squeue -h [-u <user>] -o <format>`` is the snapshot
+    of live jobs (``squeue_all.txt``); ``sacct ... -j <ids>`` the settled
+    rows of each id that is a scenario's job, and nothing for another id, as
+    ``sacct`` answers; ``sacct ... -S <time>`` the history capture;
+    ``scontrol show job <id>`` a scenario job's settled record, and the
+    captured refusal for another id; ``scancel <id>`` exits 0 in silence, as
+    every captured ``scancel`` of one's own job did; ``sbatch <script>`` the
+    plain or the array submission, by whether the script has an
+    ``--array`` directive. Anything else is an AssertionError.
+    """
+
+    def respond(argv: list[str]) -> tuple[int, str, str]:
+        cmd, args = argv[0], argv[1:]
+        if cmd == "sbatch" and args[:1] != ["--wait"]:
+            script = Path(args[-1])
+            is_array = script.is_file() and "#SBATCH --array=" in script.read_text()
+            return fixtures.result("sbatch_array.json" if is_array else "sbatch_ok.json")
+        if cmd == "squeue" and args[:1] == ["-h"] and "-j" not in args:
+            return 0, fixtures.text("squeue_all.txt"), ""
+        if cmd == "sacct" and "-j" in args:
+            return 0, fixtures.sacct(args[args.index("-j") + 1].split(",")), ""
+        if cmd == "sacct" and "-S" in args:
+            return 0, fixtures.text("sacct_history.txt"), ""
+        if cmd == "scontrol" and args[:2] == ["show", "job"]:
+            return fixtures.scontrol(args[2])
+        if cmd == "scancel":
+            return fixtures.result("scancel_cancelled_running.json")
+        if cmd == "srun":
+            return 0, "", ""
+        raise AssertionError(f"no captured answer for {argv}")
+
+    return respond
+
+
+def make_fixtures(scheduler: str, flavour: str) -> Fixtures:
+    """The captures of one scheduler's flavour."""
+    return {"sge": SGEFixtures, "slurm": SlurmFixtures}[scheduler](flavour)
+
+
+def make_responder(fixtures: Fixtures) -> Responder:
+    """The responder for *fixtures*' scheduler (see the two ``make_*_responder``)."""
+    if isinstance(fixtures, SGEFixtures):
+        return make_sge_responder(fixtures)
+    assert isinstance(fixtures, SlurmFixtures)
+    return make_slurm_responder(fixtures)

@@ -21,6 +21,10 @@ hpc-runner's own rendering. What is kept of a scenario:
 * ``scontrol_<scenario>[_<stage>].txt``: ``scontrol show job <id>`` while the
   controller knows the job.
 * ``scancel_<scenario>.json``: ``scancel <id>`` where the scenario cancels.
+* ``sbatch_wait_<scenario>.json``: ``sbatch --wait`` of the job, which returns
+  when the job has ended: argv, exit status, stdout and stderr. Its job is
+  the scenario ``wait_<scenario>``, with ``sacct`` and ``scontrol`` texts
+  taken once it has ended.
 
 Scenarios (docs/dev/slurm/PLAN.md, "Captures to take"; the ones marked + are
 not in that list):
@@ -57,15 +61,26 @@ not in that list):
 * ``running``: a running job.
 * ``pending_resources``: a two-CPU job with no node able to hold it.
 * ``bad_partition``, ``bad_account``: ``sbatch`` and ``srun`` rejections.
-* ``missing`` +: ``sacct``, ``squeue`` and ``scontrol show job`` of an id
-  that never existed (JSON).
+* ``array_list`` +, ``array_stepped`` +, ``array_single`` +: held arrays
+  submitted with ``--array=1,3,7-9:2``, ``--array=1-100:3`` and
+  ``--array=5``, for the task ids the readers print in one row.
+* ``missing`` +: ``sacct``, ``squeue``, ``scontrol show job`` and ``scancel``
+  of an id that never existed (JSON).
+* ``not_owner`` +: ``scancel`` of another user's job (JSON).
+* ``wait_ok`` +, ``wait_exit1`` +, ``wait_exit137`` +, ``wait_out_of_memory``
+  +, ``wait_array_partial`` +, ``wait_cancelled_pending`` +,
+  ``wait_cancelled_running`` +, ``wait_dependent_skipped`` +: the jobs of the
+  same names without ``wait_``, submitted with ``sbatch --wait``.
 
 Not about one job: ``squeue_empty.txt`` (nothing queued), ``squeue_all.txt``
 (every live job of the last snapshot: running, suspended, held, pending for
-resources) and ``sacct_several.txt`` (``-j`` with three ids).
+resources), ``sacct_several.txt`` (``-j`` with three ids) and
+``sacct_history.txt`` (``sacct -u tester -S <when the capture began>``, taken
+while the snapshot's jobs are live: every job of the run, finished or not).
 
 ``manifest.json`` records the job id of every scenario and, for each file,
-what it is and the argv that produced it.
+what it is and the argv that produced it; ``history_since`` is the time
+given to ``sacct -S``.
 """
 
 from __future__ import annotations
@@ -73,6 +88,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
@@ -171,6 +187,11 @@ def squeue_argv(job_id: str | None = None, *, tasks: bool = False) -> list[str]:
     return [*argv, "-o", SQUEUE_FORMAT]
 
 
+def history_argv(user: str, since: str) -> list[str]:
+    """``sacct`` of every job of *user* since *since* (``YYYY-MM-DDTHH:MM:SS``)."""
+    return ["sacct", "-P", "-n", "-u", user, "-S", since, f"--format={SACCT_FORMAT}"]
+
+
 def scontrol_argv(job_id: str) -> list[str]:
     return ["scontrol", "show", "job", job_id]
 
@@ -202,6 +223,7 @@ class Capture:
         self.out = out
         self.jobs: dict[str, str] = {}
         self.files: dict[str, dict[str, Any]] = {}
+        self.began = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     # -- helpers --------------------------------------------------------------
 
@@ -352,6 +374,7 @@ class Capture:
             ("sacct_missing.json", sacct_argv("999999")),
             ("squeue_missing.json", squeue_argv("999999")),
             ("scontrol_missing.json", scontrol_argv("999999")),
+            ("scancel_missing.json", ["scancel", "999999"]),
         ):
             self.capture_result(name, argv, f"{argv[0]} of an id that never existed")
 
@@ -444,6 +467,92 @@ class Capture:
             self.wait_ended(scenario, "CANCELLED")
             self.stage(scenario, what)
 
+    def not_owner(self) -> None:
+        """``scancel``, as tester, of a job that is alice's."""
+        argv = ["sbatch", "-J", "not_owner", "--hold", "-o", "/dev/null", "--wrap", "sleep 600"]
+        job_id = self.cluster.run(argv, user="alice").stdout.split()[3]
+        self.capture_result(
+            "scancel_not_owner.json", ["scancel", job_id], "scancel of another user's job"
+        )
+        self.cluster.run(["scancel", job_id], user="alice")
+
+    def waited(self) -> None:
+        """``sbatch --wait``: what it prints, and what it exits with when the job has ended."""
+        oom = 'python3 -c "b = bytearray(200 * 1024 * 1024)"'
+        partial = 'test "$SLURM_ARRAY_TASK_ID" -ne 3\n'
+
+        def submit(scenario: str, body: str, *args: str) -> None:
+            name = f"wait_{scenario}"
+            array = any(arg.startswith("--array") for arg in args)
+            argv = sbatch_argv(name, self.script(name, body), "--wait", *args, array=array)
+            proc = self.capture_result(
+                f"sbatch_{name}.json", argv, f"sbatch --wait of the {name} job"
+            )
+            words = proc.stdout.split()
+            assert words[:3] == ["Submitted", "batch", "job"], (proc.stdout, proc.stderr)
+            self.jobs[name] = words[3]
+            self.log(f"{name}: job {words[3]}, sbatch exited {proc.returncode}")
+
+        def start(scenario: str, body: str, *args: str) -> threading.Thread:
+            """Submit in a thread, and return once ``squeue`` lists the job."""
+            thread = threading.Thread(target=submit, args=(scenario, body, *args))
+            thread.start()
+            argv = ["squeue", "-h", "-n", f"wait_{scenario}", "-o", "%i"]
+            self.wait(
+                f"wait_{scenario} in squeue", lambda: bool(self.cluster.run(argv).stdout.strip())
+            )
+            return thread
+
+        for scenario, body, args, state, what in (
+            ("ok", "true\n", (), "COMPLETED", "exited 0"),
+            ("exit1", "exit 1\n", (), "FAILED", "exited 1"),
+            ("exit137", "exit 137\n", (), "FAILED", "the script exited 137"),
+            ("out_of_memory", f"{oom}\n", ("--mem=50M",), "OUT_OF_MEMORY", "over --mem=50M"),
+        ):
+            submit(scenario, body, *args)
+            self.wait_ended(f"wait_{scenario}", state)
+            self.stage(f"wait_{scenario}", f"submitted with sbatch --wait: {what}")
+
+        submit("array_partial", partial, "--array=1-3")
+        self.wait_sacct(
+            "wait_array_partial",
+            lambda rows: sorted(states(rows)) == ["COMPLETED", "COMPLETED", "FAILED"],
+        )
+        self.stage(
+            "wait_array_partial", "submitted with sbatch --wait: three tasks, task 3 exited 1"
+        )
+
+        pending = start("cancelled_pending", "sleep 600\n", "--hold")
+        running = start("cancelled_running", "sleep 600\n")
+        parent = self.sbatch("wait_dependent_skipped_parent", "exit 1\n", "--hold", save=False)
+        skipped = start(
+            "dependent_skipped",
+            "true\n",
+            f"--dependency=afterok:{parent}",
+            "--kill-on-invalid-dep=yes",
+        )
+        self.wait(
+            "wait_cancelled_running running",
+            lambda: (
+                self.cluster.run(
+                    ["squeue", "-h", "-n", "wait_cancelled_running", "-o", "%T"]
+                ).stdout.strip()
+                == "RUNNING"
+            ),
+        )
+        for name in ("wait_cancelled_pending", "wait_cancelled_running"):
+            self.cluster.run(["scancel", "-n", name])
+        self.cluster.run(["scontrol", "release", parent])
+        for thread in (pending, running, skipped):
+            thread.join()
+        for scenario, what in (
+            ("cancelled_pending", "held, then cancelled before it ran"),
+            ("cancelled_running", "cancelled while running"),
+            ("dependent_skipped", "its parent exited 1; cancelled by --kill-on-invalid-dep=yes"),
+        ):
+            self.wait_ended(f"wait_{scenario}", "CANCELLED")
+            self.stage(f"wait_{scenario}", f"submitted with sbatch --wait: {what}")
+
     def dependents(self) -> None:
         """Three children, each ``afterok`` on its own held parent."""
         cases = (
@@ -507,6 +616,16 @@ class Capture:
 
         self.wait_ended("array", "COMPLETED", tasks=4)
         self.stage("array", "four tasks finished")
+
+        for scenario, spec in (
+            ("array_list", "1,3,7-9:2"),
+            ("array_stepped", "1-100:3"),
+            ("array_single", "5"),
+        ):
+            self.sbatch(scenario, "true\n", "--hold", f"--array={spec}")
+            self.wait_live(scenario, "PENDING", "JobHeldUser")
+            self.stage(scenario, f"--array={spec}, held", squeue=True)
+            self.cluster.run(["scancel", self.jobs[scenario]])
 
     def timeout_submit(self) -> None:
         """Killed about 80 s later; on exec2, away from the node ``node_fail`` kills."""
@@ -616,6 +735,12 @@ class Capture:
             squeue_argv(),
             "squeue of every job: running, suspended, held, pending for resources, and a filler",
         )
+        argv = history_argv("tester", self.began)
+        self.capture(
+            "sacct_history.txt",
+            argv,
+            "sacct of every job of tester since the capture began, the snapshot's jobs live",
+        )
         self.cluster.run(["scontrol", "resume", self.jobs["suspended"]], user="root")
 
     def rejected(self) -> None:
@@ -644,6 +769,8 @@ class Capture:
         self.stubs()
         self.finished_jobs()
         self.cancelled()
+        self.not_owner()
+        self.waited()
         self.dependents()
         self.arrays()
         self.node_fail()
@@ -659,6 +786,7 @@ class Capture:
             "scheduler": version.stdout.strip(),
             "sacct_format": SACCT_FORMAT,
             "squeue_format": SQUEUE_FORMAT,
+            "history_since": self.began,
             "jobs": self.jobs,
             "files": self.files,
         }

@@ -7,7 +7,8 @@ update it whenever a status or a next action changes. User documentation is
 
 ## Next actions, in order
 
-1. `slurm/PLAN.md`, "Order of work", from step 1 (parsing). The list is all the remaining Slurm work. It has no
+1. `slurm/PLAN.md`, "Order of work", from step 1 (the integration suite on both
+   Slurm versions, and CI). The list is all the remaining Slurm work. It has no
    open questions.
 
 Anything missing, unverified or undecided that belongs to no plan is in
@@ -17,7 +18,7 @@ Anything missing, unverified or undecided that belongs to no plan is in
 
 | Work | Status | Read | What is left |
 |---|---|---|---|
-| Slurm backend | Research closed; plan consolidated 2026-11-17; `hpc run` exit code, option removals, the option table , `hpc cancel`, the config layer rules and the test split built (SGE, local); Slurm testbed support built 2026-11-22 (cgroups on, cluster class, capture module, fixtures for both versions), Slurm rendering and submission built 2026-11-22, no status reading yet | `slurm/PLAN.md` | Its "Order of work" (3 steps) |
+| Slurm backend | Research closed; plan consolidated 2026-11-17; `hpc run` exit code, option removals, the option table , `hpc cancel`, the config layer rules and the test split built (SGE, local); Slurm testbed support built 2026-11-22 (cgroups on, cluster class, capture module, fixtures for both versions), Slurm backend built 2026-11-22 (rendering, submission, status, listings, details, cancel); `--wait` uses the scheduler's own wait on SGE and Slurm; no Slurm integration run yet | `slurm/PLAN.md` | Its "Order of work" (2 steps) |
 | Restructure of the core (D1..D19) | Done, released in v0.14.0 to v0.16.0 | `restructure/DECISIONS.md` | D16 (pipeline lifecycle after submission) is parked. One question hangs off it: what "pipeline retry" means. |
 | SGE testbed | Done for two flavours (`soge`, `ocs`), in CI | `testbed/TESTBED_REVIEW.md` (decisions D-T1.., bugs BUG-T1..); how-to in `testbed/README.md` | See `FOLLOW_UPS.md` ("Testbed stacks") |
 | Test review | Done | `test-review/LIFECYCLE_MATRIX.md` (every SGE state against every reader) | Nothing |

@@ -1,31 +1,31 @@
 ==============================================================
-qname        all.q               
+qname        short.q             
 hostname     exec1               
 group        tester              
 owner        tester              
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    6                   
-taskid       1                   
+jobnumber    31                  
+taskid       3                   
 account      sge                 
 priority     0                   
-qsub_time    Mon Nov  2 21:16:26 2026
-start_time   Mon Nov  2 21:16:26 2026
-end_time     Mon Nov  2 21:16:26 2026
+qsub_time    Sun Nov 22 20:18:53 2026
+start_time   Sun Nov 22 20:19:00 2026
+end_time     Sun Nov 22 20:19:00 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
-exit_status  0                   
+exit_status  1                   
 ru_wallclock 0s
-ru_utime     0.004s
+ru_utime     0.002s
 ru_stime     0.006s
-ru_maxrss    4.719KB
+ru_maxrss    4.566KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    267                 
+ru_minflt    268                 
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
@@ -33,9 +33,9 @@ ru_oublock   8
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     1                   
-ru_nivcsw    5                   
-cpu          0.010s
+ru_nvcsw     2                   
+ru_nivcsw    2                   
+cpu          0.008s
 mem          0.000Bs
 io           0.000B
 iow          0.000s
@@ -44,42 +44,42 @@ arid         undefined
 ar_sub_time  undefined
 category     NONE
 ==============================================================
-qname        short.q             
-hostname     exec1               
+qname        all.q               
+hostname     exec2               
 group        tester              
 owner        tester              
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    6                   
-taskid       2                   
+jobnumber    31                  
+taskid       1                   
 account      sge                 
 priority     0                   
-qsub_time    Mon Nov  2 21:16:26 2026
-start_time   Mon Nov  2 21:16:26 2026
-end_time     Mon Nov  2 21:16:26 2026
+qsub_time    Sun Nov 22 20:18:53 2026
+start_time   Sun Nov 22 20:19:00 2026
+end_time     Sun Nov 22 20:19:00 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
 exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.004s
-ru_stime     0.006s
-ru_maxrss    4.586KB
+ru_utime     0.003s
+ru_stime     0.007s
+ru_maxrss    4.562KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    271                 
-ru_majflt    1                   
+ru_minflt    268                 
+ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
 ru_oublock   8                   
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     5                   
-ru_nivcsw    0                   
+ru_nvcsw     1                   
+ru_nivcsw    6                   
 cpu          0.010s
 mem          0.000Bs
 io           0.000B
@@ -96,35 +96,35 @@ owner        tester
 project      NONE                
 department   defaultdepartment   
 jobname      array_done          
-jobnumber    6                   
-taskid       3                   
+jobnumber    31                  
+taskid       2                   
 account      sge                 
 priority     0                   
-qsub_time    Mon Nov  2 21:16:26 2026
-start_time   Mon Nov  2 21:16:26 2026
-end_time     Mon Nov  2 21:16:26 2026
+qsub_time    Sun Nov 22 20:18:53 2026
+start_time   Sun Nov 22 20:19:00 2026
+end_time     Sun Nov 22 20:19:00 2026
 granted_pe   NONE                
 slots        1                   
 failed       0    
-exit_status  1                   
+exit_status  0                   
 ru_wallclock 0s
-ru_utime     0.006s
-ru_stime     0.004s
-ru_maxrss    4.785KB
+ru_utime     0.003s
+ru_stime     0.007s
+ru_maxrss    4.730KB
 ru_ixrss     0.000B
 ru_ismrss    0.000B
 ru_idrss     0.000B
 ru_isrss     0.000B
-ru_minflt    276                 
+ru_minflt    267                 
 ru_majflt    0                   
 ru_nswap     0                   
 ru_inblock   0                   
-ru_oublock   40                  
+ru_oublock   8                   
 ru_msgsnd    0                   
 ru_msgrcv    0                   
 ru_nsignals  0                   
-ru_nvcsw     4                   
-ru_nivcsw    0                   
+ru_nvcsw     1                   
+ru_nivcsw    1                   
 cpu          0.010s
 mem          0.000Bs
 io           0.000B

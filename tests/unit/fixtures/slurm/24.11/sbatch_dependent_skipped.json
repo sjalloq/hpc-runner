@@ -6,11 +6,11 @@
     "--chdir=/work/capture-jobs",
     "-o",
     "%x.%j.out",
-    "--dependency=afterok:91",
+    "--dependency=afterok:310",
     "--kill-on-invalid-dep=yes",
     "/work/capture-jobs/dependent_skipped.sh"
   ],
   "returncode": 0,
-  "stdout": "Submitted batch job 92\n",
+  "stdout": "Submitted batch job 311\n",
   "stderr": ""
 }

@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "qsub",
+    "-sync",
+    "y",
+    "-N",
+    "sync_skipped",
+    "/work/capture/sync_skipped.sh"
+  ],
+  "returncode": 113,
+  "stdout": "Your job 43 (\"sync_skipped\") has been submitted\nJob 43 exited with exit code 113.\n",
+  "stderr": ""
+}

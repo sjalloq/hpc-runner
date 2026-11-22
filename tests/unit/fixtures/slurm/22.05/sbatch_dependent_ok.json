@@ -6,10 +6,10 @@
     "--chdir=/work/capture-jobs",
     "-o",
     "%x.%j.out",
-    "--dependency=afterok:69",
+    "--dependency=afterok:253",
     "/work/capture-jobs/dependent_ok.sh"
   ],
   "returncode": 0,
-  "stdout": "Submitted batch job 70\n",
+  "stdout": "Submitted batch job 254\n",
   "stderr": ""
 }

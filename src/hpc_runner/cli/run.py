@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from hpc_runner.cli._context import Context, pass_context
-from hpc_runner.core.result import ArrayJobResult, JobStatus
+from hpc_runner.core.result import ArrayJobResult, JobResult, JobStatus
 
 if TYPE_CHECKING:
     from hpc_runner.core.dependency import Dependency
@@ -197,10 +197,8 @@ def run(
         _show_dry_run(job, scheduler, verbose=ctx.verbose)
         return
 
-    # Submit the job
-    result = scheduler.submit(job, keep_script=keep_script, verbose=ctx.verbose)
-
     if job.interactive:
+        result = scheduler.submit(job, keep_script=keep_script, verbose=ctx.verbose)
         code = _shell_code(result.exit_code)
         if code == 0:
             console.print("[green]Job completed successfully[/green]")
@@ -209,35 +207,42 @@ def run(
         _exit_as_job(result.status, code)
         return
 
-    if isinstance(result, ArrayJobResult):
-        console.print(f"Submitted array job [bold cyan]{result.job_id}[/bold cyan]")
-        console.print(f"  Tasks: {result.array.count} ({result.array.range_str})")
-    else:
-        console.print(f"Submitted job [bold cyan]{result.job_id}[/bold cyan]")
-
-    if ctx.verbose:
-        console.print(f"  Scheduler: {scheduler.name}")
-        console.print(f"  Job name: {job.name}")
-        console.print(f"  Command: {job.command}")
-        if passthrough:
-            console.print(f"  Passthrough args: {' '.join(passthrough)}")
-
-    if wait:
-        console.print("[dim]Waiting for job completion...[/dim]")
+    def announce(result: JobResult) -> None:
+        """Say what was submitted, as soon as the scheduler has said so."""
         if isinstance(result, ArrayJobResult):
-            final_status = result.wait()
-            tasks = result.task_statuses()
-            not_ok = len(tasks.failed) + len(tasks.unfinished)
-            console.print(
-                f"Array job completed with status: [bold]{final_status.name}[/bold] "
-                f"({len(tasks.tasks) - not_ok} ok, {not_ok} not ok)"
-            )
-            # An array has no one exit code: 0 when every task completed, else 1.
-            _exit_as_job(final_status, None)
+            console.print(f"Submitted array job [bold cyan]{result.job_id}[/bold cyan]")
+            console.print(f"  Tasks: {result.array.count} ({result.array.range_str})")
         else:
-            final_status = result.wait()
-            console.print(f"Job completed with status: [bold]{final_status.name}[/bold]")
-            _exit_as_job(final_status, result.returncode if final_status.is_terminal else None)
+            console.print(f"Submitted job [bold cyan]{result.job_id}[/bold cyan]")
+        if ctx.verbose:
+            console.print(f"  Scheduler: {scheduler.name}")
+            console.print(f"  Job name: {job.name}")
+            console.print(f"  Command: {job.command}")
+            if passthrough:
+                console.print(f"  Passthrough args: {' '.join(passthrough)}")
+        if wait:
+            console.print("[dim]Waiting for job completion...[/dim]")
+
+    result = scheduler.submit(
+        job, keep_script=keep_script, verbose=ctx.verbose, wait=wait, on_submit=announce
+    )
+    if not wait:
+        return
+
+    # The job has ended: the scheduler's own waiting submit returned.
+    status = result.final_status or result.status
+    if isinstance(result, ArrayJobResult):
+        tasks = result.final_tasks or result.task_statuses()
+        not_ok = len(tasks.failed) + len(tasks.unfinished)
+        console.print(
+            f"Array job completed with status: [bold]{status.name}[/bold] "
+            f"({len(tasks.tasks) - not_ok} ok, {not_ok} not ok)"
+        )
+        # An array has no one exit code: 0 when every task completed, else 1.
+        _exit_as_job(status, None)
+    else:
+        console.print(f"Job completed with status: [bold]{status.name}[/bold]")
+        _exit_as_job(status, result.exit_code)
 
 
 def _shell_code(returncode: int | None) -> int | None:

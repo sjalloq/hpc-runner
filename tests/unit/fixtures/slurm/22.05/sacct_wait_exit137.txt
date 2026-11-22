@@ -1,0 +1,2 @@
+244|244|tester|proj|all|FAILED|9:0|None|2026-11-22T20:20:01|2026-11-22T20:20:01|2026-11-22T20:20:01|00:00:00|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_exit137
+244.batch|244.batch||proj||FAILED|9:0||2026-11-22T20:20:01|2026-11-22T20:20:01|2026-11-22T20:20:01|00:00:00||exec2|1|1||3.50M||cpu=1,mem=100M,node=1||batch

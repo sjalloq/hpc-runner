@@ -7,7 +7,7 @@ import os
 import re
 import time
 import uuid
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -37,6 +37,7 @@ from hpc_runner.schedulers.base import (
     BaseScheduler,
     NotApplicable,
     Support,
+    array_job_info,
     get_script_dir,
     refuse_interactive_dependencies,
 )
@@ -482,7 +483,15 @@ class SGEScheduler(BaseScheduler):
     # Job Submission
     # =========================================================================
 
-    def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
+    def submit(
+        self,
+        job: Job,
+        *,
+        keep_script: bool = False,
+        verbose: bool = False,
+        wait: bool = False,
+        on_submit: Callable[[JobResult], None] | None = None,
+    ) -> JobResult:
         """Submit a job to SGE: qrsh when ``job.interactive``, else qsub.
 
         Args:
@@ -491,6 +500,10 @@ class SGEScheduler(BaseScheduler):
                          Useful for debugging.
             verbose: If True, module commands in the script print their
                 output rather than only on failure.
+            wait: Submit with ``qsub -sync y``, which prints the job id at
+                once and exits when the job ends, with the job's exit code.
+            on_submit: Called with the batch job's handle once qsub has
+                printed its id.
 
         Raises:
             NotSupportedError: A dependency SGE cannot honour; nothing is
@@ -500,12 +513,24 @@ class SGEScheduler(BaseScheduler):
         self.check_options(job)
         if job.interactive:
             return self._submit_interactive(job, keep_script=keep_script, verbose=verbose)
-        return self._submit_batch(job, keep_script=keep_script, verbose=verbose)
+        return self._submit_batch(
+            job, keep_script=keep_script, verbose=verbose, wait=wait, on_submit=on_submit
+        )
 
     def _submit_batch(
-        self, job: Job, keep_script: bool = False, verbose: bool = False
+        self,
+        job: Job,
+        keep_script: bool = False,
+        verbose: bool = False,
+        *,
+        wait: bool = False,
+        on_submit: Callable[[JobResult], None] | None = None,
     ) -> JobResult:
-        """Submit via ``qsub <script>``; all options are in the script."""
+        """Submit via ``qsub <script>``; all options are in the script.
+
+        With *wait* the command is ``qsub -sync y <script>`` and the result
+        is of a job that has ended (:meth:`_waited`).
+        """
         # Determine script path first (needed for self-deletion in template)
         script_dir = get_script_dir()
         script_name = f"hpc_batch_{uuid.uuid4().hex[:8]}.sh"
@@ -524,13 +549,31 @@ class SGEScheduler(BaseScheduler):
         self.make_output_dirs(job)
 
         try:
-            job_id = self._qsub(["qsub", str(script_path)], script=script, cwd=Path(job.workdir))
+            if wait:
+                result, returncode = self._qsub_sync(
+                    ["qsub", "-sync", "y", str(script_path)],
+                    script=script,
+                    job=job,
+                    on_submit=on_submit,
+                )
+            else:
+                job_id = self._qsub(
+                    ["qsub", str(script_path)], script=script, cwd=Path(job.workdir)
+                )
         finally:
             # Clean up locally after qsub (script is copied to spool)
             # The script inside the job will also self-delete unless keep_script
             if not keep_script:
                 script_path.unlink(missing_ok=True)
+        if wait:
+            return self._waited(result, returncode)
+        result = self._batch_result(job, job_id)
+        if on_submit is not None:
+            on_submit(result)
+        return result
 
+    def _batch_result(self, job: Job, job_id: str) -> JobResult:
+        """The handle on *job*, submitted as *job_id*."""
         stdout_path, stderr_path = self.output_paths(job, job_id)
         if job.array is not None:
             return ArrayJobResult(
@@ -610,6 +653,47 @@ class SGEScheduler(BaseScheduler):
         cmd.extend(self._passthrough_args(job))
         cmd.append(script_path)
         return cmd
+
+    def _qsub_sync(
+        self,
+        argv: list[str],
+        *,
+        script: str,
+        job: Job,
+        on_submit: Callable[[JobResult], None] | None,
+    ) -> tuple[JobResult, int]:
+        """Run ``qsub -sync y``; returns the job's handle and qsub's exit status.
+
+        qsub runs for the job's lifetime, so there is no timeout. Its
+        ``Your job <id> ... has been submitted`` line is read as it is
+        printed.
+
+        Raises:
+            SubmissionError: qsub ended without printing a job id (message
+                is its stderr when it exited non-zero).
+        """
+        results: list[JobResult] = []
+
+        def on_line(line: str) -> None:
+            job_id = parse_qsub_output(line)
+            if job_id is not None and not results:
+                results.append(self._batch_result(job, job_id))
+                if on_submit is not None:
+                    on_submit(results[0])
+
+        done = self._run(
+            argv, timeout=None, check=False, cwd=Path(job.workdir), on_stdout_line=on_line
+        )
+        if not results:
+            if done.returncode != 0:
+                raise SubmissionError(done.stderr, script=script, argv=argv)
+            raise SubmissionError(
+                f"could not parse job id from qsub output: {done.stdout.strip()!r}",
+                script=script,
+                argv=argv,
+                stderr=done.stderr,
+            )
+        return results[0], done.returncode
 
     def _qsub(self, argv: list[str], *, script: str, cwd: Path | None) -> str:
         """Run qsub and return the job id.
@@ -950,7 +1034,7 @@ class SGEScheduler(BaseScheduler):
             # A plain job, or one task asked for by its own id (<base>.<n>).
             if len(tasks) == 1 and (not tasks[0].array_task_id or "." in job_id):
                 return tasks[0], {}
-            return _array_job_info(job_id, tasks), {"tasks": tasks}
+            return array_job_info(job_id, tasks), {"tasks": tasks}
 
         # Separate extra details from JobInfo fields
         extra_details: dict[str, object] = {}
@@ -1022,24 +1106,3 @@ class SGEScheduler(BaseScheduler):
 def _task_order(item: tuple[str, dict[str, Any]]) -> int:
     key, _ = item
     return int(key) if key.isdigit() else 0
-
-
-def _array_job_info(job_id: str, tasks: list[JobInfo]) -> JobInfo:
-    """One ``JobInfo`` for a finished array from its tasks' records."""
-    first = tasks[0]
-    statuses = [t.status for t in tasks]
-    codes = [t.exit_code for t in tasks if t.exit_code is not None]
-    failed = next((t for t in tasks if t.status is not JobStatus.COMPLETED), None)
-    return JobInfo(
-        job_id=job_id,
-        name=first.name,
-        user=first.user,
-        status=reduce_statuses(statuses),
-        queue=first.queue,
-        exit_code=next((c for c in codes if c != 0), 0) if codes else None,
-        failed_code=failed.failed_code if failed else None,
-        failed_reason=failed.failed_reason if failed else None,
-        submit_time=min((t.submit_time for t in tasks if t.submit_time), default=None),
-        start_time=min((t.start_time for t in tasks if t.start_time), default=None),
-        end_time=max((t.end_time for t in tasks if t.end_time), default=None),
-    )

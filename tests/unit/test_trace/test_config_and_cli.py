@@ -70,23 +70,19 @@ class TestGetSchedulerActivates:
 
 
 class TestTraceFlag:
-    """``hpc --trace DIR`` over the captured SGE fixtures (the fake seam records too)."""
+    """``hpc --trace DIR`` over each scheduler's captures (the fake seam records too)."""
 
-    def test_status_is_recorded(self, tmp_path, mock_sge_commands, sge_fixtures, monkeypatch):
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
-        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+    def test_status_is_recorded(self, tmp_path, mock_commands, fixtures, monkeypatch):
         monkeypatch.setenv("USER", "tester")
         trace = tmp_path / "trace"
         result = CliRunner().invoke(cli, ["--trace", str(trace), "status"])
         assert result.exit_code == 0, result.output
         records = [json.loads(p.read_text()) for p in trace.rglob("*.json")]
         assert len(records) == 1
-        assert records[0]["argv"][:2] == ["qstat", "-xml"]
-        assert records[0]["stdout"] == sge_fixtures.text("qstat_mixed.xml")
+        assert records[0]["argv"][:2] == list(fixtures.listing_command)
+        assert records[0]["stdout"] == fixtures.text(fixtures.listing_file)
 
-    def test_flag_beats_config(self, tmp_path, mock_sge_commands, monkeypatch):
-        monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
-        monkeypatch.setenv("HPC_SCHEDULER", "sge")
+    def test_flag_beats_config(self, tmp_path, mock_commands, monkeypatch):
         cfg = _write(tmp_path, f'[trace]\nenabled = true\ndir = "{tmp_path / "cfg"}"\n')
         result = CliRunner().invoke(
             cli,

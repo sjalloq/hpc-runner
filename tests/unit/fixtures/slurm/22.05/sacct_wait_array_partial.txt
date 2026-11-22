@@ -1,0 +1,6 @@
+246_1|247|tester|proj|all|COMPLETED|0:0|None|2026-11-22T20:20:11|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
+246_1.batch|247.batch||proj||COMPLETED|0:0||2026-11-22T20:20:13|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00||exec2|1|1||3280K||cpu=1,mem=100M,node=1||batch
+246_2|248|tester|proj|all|COMPLETED|0:0|None|2026-11-22T20:20:11|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
+246_2.batch|248.batch||proj||COMPLETED|0:0||2026-11-22T20:20:13|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00||exec1|1|1||3304K||cpu=1,mem=100M,node=1||batch
+246_3|246|tester|proj|all|FAILED|1:0|None|2026-11-22T20:20:11|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
+246_3.batch|246.batch||proj||FAILED|1:0||2026-11-22T20:20:13|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00||exec1|1|1||3472K||cpu=1,mem=100M,node=1||batch

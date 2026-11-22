@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>26</JB_job_number>
+      <JB_job_number>57</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/26</JB_exec_file>
-      <JB_submission_time>1793654282</JB_submission_time>
+      <JB_exec_file>job_scripts/57</JB_exec_file>
+      <JB_submission_time>1795378821</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -63,7 +63,7 @@
           <JAT_message_list>
             <ulong_sublist>
               <QIM_type>1</QIM_type>
-              <QIM_message>11/02/2026 21:18:02 [1003:6004]: error: can&apos;t chdir to /nonexistent: No such file or directory</QIM_message>
+              <QIM_message>11/22/2026 20:20:21 [1003:96493]: error: can&apos;t chdir to /nonexistent: No such file or directory</QIM_message>
             </ulong_sublist>
           </JAT_message_list>
           <JAT_start_time>0</JAT_start_time>

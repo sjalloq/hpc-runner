@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="https://github.com/hpc-gridware/clusterscheduler/raw/master/source/dist/util/resources/schemas/qstat/qstat.xsd">
   <djob_info>
     <element>
-      <JB_job_number>140</JB_job_number>
+      <JB_job_number>57</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/140</JB_exec_file>
-      <JB_submission_time>2026-11-02T21:02:18.562427</JB_submission_time>
+      <JB_exec_file>job_scripts/57</JB_exec_file>
+      <JB_submission_time>2026-11-22T20:22:35.437083</JB_submission_time>
       <JB_submission_command_line>qsub -b y -N held -o /dev/null -j y -h sleep 600</JB_submission_command_line>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
@@ -96,7 +96,7 @@
         </element>
       </JB_grp_list>
       <JB_sync_options>1</JB_sync_options>
-      <JB_category_id>62</JB_category_id>
+      <JB_category_id>48</JB_category_id>
     </element>
   </djob_info>
   <messages>
@@ -105,7 +105,7 @@
         <element>
           <MES_job_number_list>
             <ulong_sublist>
-              <ULNG_value>140</ULNG_value>
+              <ULNG_value>57</ULNG_value>
             </ulong_sublist>
           </MES_job_number_list>
           <MES_message_number>33</MES_message_number>
@@ -128,6 +128,10 @@
         <element>
           <MES_message_number>37</MES_message_number>
           <MES_message>queue instance &quot;short.q@exec2&quot; dropped because it is full</MES_message>
+        </element>
+        <element>
+          <MES_message_number>28</MES_message_number>
+          <MES_message>All queues dropped because of overload or full</MES_message>
         </element>
       </SME_global_message_list>
     </element>

@@ -1,0 +1,2 @@
+299|299|tester|proj|all|FAILED|9:0|None|2026-11-22T20:20:03|2026-11-22T20:20:03|2026-11-22T20:20:04|00:00:01|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_exit137
+299.batch|299.batch||proj||FAILED|9:0||2026-11-22T20:20:03|2026-11-22T20:20:03|2026-11-22T20:20:04|00:00:01||exec2|1|1||4172K||cpu=1,mem=100M,node=1||batch

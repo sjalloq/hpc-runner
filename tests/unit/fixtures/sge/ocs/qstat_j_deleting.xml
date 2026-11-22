@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="https://github.com/hpc-gridware/clusterscheduler/raw/master/source/dist/util/resources/schemas/qstat/qstat.xsd">
   <djob_info>
     <element>
-      <JB_job_number>135</JB_job_number>
+      <JB_job_number>52</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/135</JB_exec_file>
-      <JB_submission_time>2026-11-02T21:02:01.098260</JB_submission_time>
+      <JB_exec_file>job_scripts/52</JB_exec_file>
+      <JB_submission_time>2026-11-22T20:22:26.025734</JB_submission_time>
       <JB_submission_command_line>qsub -b y -N deleting -o /dev/null -j y -l hostname=exec2 -q all.q sleep 600</JB_submission_command_line>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
@@ -89,7 +89,7 @@
           <JAT_hold>0</JAT_hold>
           <JAT_task_number>1</JAT_task_number>
           <JAT_job_restarted>0</JAT_job_restarted>
-          <JAT_start_time>2026-11-02T21:02:01.099072</JAT_start_time>
+          <JAT_start_time>2026-11-22T20:22:26.026482</JAT_start_time>
           <JAT_granted_destin_identifier_list>
             <element>
               <JG_qname>all.q@exec2</JG_qname>
@@ -141,7 +141,7 @@
         </element>
       </JB_grp_list>
       <JB_sync_options>1</JB_sync_options>
-      <JB_category_id>58</JB_category_id>
+      <JB_category_id>44</JB_category_id>
     </element>
   </djob_info>
   <messages>

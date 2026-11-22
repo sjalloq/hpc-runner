@@ -6,29 +6,29 @@ owner                              tester
 project                            NONE                
 department                         defaultdepartment   
 jobname                            vmem                
-jobnumber                          127                 
+jobnumber                          38                  
 taskid                             undefined
 pe_taskid                          NONE
 arid                               undefined
 account                            sge                 
 priority                           0                   
-qsub_time                          2026-11-02 21:00:51.537728
+qsub_time                          2026-11-22 20:18:56.855368
 submit_cmd_line                    qsub -b y -N vmem -o /dev/null -j y -l h_vmem=50M python3 -c 'b = bytearray(200 * 1024 * 1024)'
-start_time                         2026-11-02 21:00:51.541640
-end_time                           2026-11-02 21:00:51.646348
+start_time                         2026-11-22 20:18:56.860061
+end_time                           2026-11-22 20:18:56.961498
 granted_pe                         NONE                
 slots                              1                   
 failed                             0    
 exit_status                        2                   
 ru_wallclock                       0            
-ru_utime                           0.082        
-ru_stime                           0.036        
-ru_maxrss                          8552                
+ru_utime                           0.079        
+ru_stime                           0.035        
+ru_maxrss                          8216                
 ru_ixrss                           0                   
 ru_ismrss                          0                   
 ru_idrss                           0                   
 ru_isrss                           0                   
-ru_minflt                          10419               
+ru_minflt                          10394               
 ru_majflt                          0                   
 ru_nswap                           0                   
 ru_inblock                         0                   
@@ -36,10 +36,10 @@ ru_oublock                         8
 ru_msgsnd                          0                   
 ru_msgrcv                          0                   
 ru_nsignals                        0                   
-ru_nvcsw                           344                 
+ru_nvcsw                           351                 
 ru_nivcsw                          25                  
-wallclock                          0.350        
-cpu                                0.118        
+wallclock                          0.632        
+cpu                                0.114        
 mem                                0.000             
 io                                 0.000             
 ioops                              0            

@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "wait_array_partial",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%A.%a.out",
+    "--wait",
+    "--array=1-3",
+    "/work/capture-jobs/wait_array_partial.sh"
+  ],
+  "returncode": 1,
+  "stdout": "Submitted batch job 301\n",
+  "stderr": ""
+}

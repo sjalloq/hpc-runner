@@ -234,18 +234,31 @@ class JobResult:
     does not know the job's patterns. For an array job they contain the
     literal :data:`TASK_ID_PLACEHOLDER`; see
     :meth:`ArrayJobResult.task_stdout_path`.
+
+    A handle from ``scheduler.submit(job, wait=True)`` is of a job that has
+    ended: ``exit_code`` is what the scheduler's own waiting submit command
+    returned and ``final_status`` the status read after it.
     """
 
     scheduler: BaseScheduler
     job_id: str | None  # None for a completed interactive run
     job: Job | None = None  # None when rebuilt from an id via scheduler.result()
-    exit_code: int | None = None  # set for interactive runs (the run already finished)
+    exit_code: int | None = None  # set for interactive and waited runs (already finished)
     stdout_path: Path | None = None
     stderr_path: Path | None = None
+    final_status: JobStatus | None = None  # set by a waited submission
 
     @property
     def status(self) -> JobStatus:
-        """Get current job status (queries scheduler)."""
+        """Get current job status (queries scheduler).
+
+        A waited submission's status was read when it ended and is not
+        asked for again, unless the scheduler could not say then.
+        """
+        if self.final_status is not None:
+            if self.final_status.is_terminal or self.job_id is None:
+                return self.final_status
+            return self.scheduler.get_status(self.job_id)
         if self.exit_code is not None:
             return JobStatus.COMPLETED if self.exit_code == 0 else JobStatus.FAILED
         if self.job_id is None:
@@ -371,6 +384,7 @@ class ArrayJobResult(JobResult):
     """A handle on a submitted array job; ``job_id`` is the base id."""
 
     array: ArrayRange
+    final_tasks: ArrayJobStatus | None = None  # set by a waited submission
 
     def _base_id(self) -> str:
         if self.job_id is None:
@@ -386,7 +400,12 @@ class ArrayJobResult(JobResult):
         return self.scheduler.get_status(self.task_id(index))
 
     def task_statuses(self) -> ArrayJobStatus:
-        """Every task's status by index, from one ``get_statuses`` call."""
+        """Every task's status by index, from one ``get_statuses`` call.
+
+        A waited submission's task statuses were read when it ended.
+        """
+        if self.final_tasks is not None and self.final_tasks.is_terminal:
+            return self.final_tasks
         by_id = dict(zip(self.task_ids(), self.array.indices))
         statuses = self.scheduler.get_statuses(list(by_id))
         return ArrayJobStatus({index: statuses[task_id] for task_id, index in by_id.items()})

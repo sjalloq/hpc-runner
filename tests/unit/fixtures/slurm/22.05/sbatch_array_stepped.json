@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "array_stepped",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%A.%a.out",
+    "--hold",
+    "--array=1-100:3",
+    "/work/capture-jobs/array_stepped.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 267\n",
+  "stderr": ""
+}

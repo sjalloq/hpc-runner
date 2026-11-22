@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>27</JB_job_number>
+      <JB_job_number>58</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/27</JB_exec_file>
-      <JB_submission_time>1793654282</JB_submission_time>
+      <JB_exec_file>job_scripts/58</JB_exec_file>
+      <JB_submission_time>1795378821</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -58,9 +58,35 @@
       <JB_script_file>sleep</JB_script_file>
       <JB_ja_tasks>
         <ulong_sublist>
-          <JAT_status>512</JAT_status>
+          <JAT_status>128</JAT_status>
           <JAT_task_number>1</JAT_task_number>
-          <JAT_start_time>1793654282</JAT_start_time>
+          <JAT_scaled_usage_list>
+            <scaled>
+              <UA_name>cpu</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>mem</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>io</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>iow</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>vmem</UA_name>
+              <UA_value>1601536.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>maxvmem</UA_name>
+              <UA_value>1601536.000000</UA_value>
+            </scaled>
+          </JAT_scaled_usage_list>
+          <JAT_start_time>1795378821</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
         <ulong_sublist>
@@ -85,20 +111,46 @@
             </scaled>
             <scaled>
               <UA_name>vmem</UA_name>
-              <UA_value>1601536.000000</UA_value>
+              <UA_value>1523712.000000</UA_value>
             </scaled>
             <scaled>
               <UA_name>maxvmem</UA_name>
-              <UA_value>1601536.000000</UA_value>
+              <UA_value>1523712.000000</UA_value>
             </scaled>
           </JAT_scaled_usage_list>
-          <JAT_start_time>1793654282</JAT_start_time>
+          <JAT_start_time>1795378821</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
         <ulong_sublist>
-          <JAT_status>512</JAT_status>
+          <JAT_status>128</JAT_status>
           <JAT_task_number>3</JAT_task_number>
-          <JAT_start_time>1793654282</JAT_start_time>
+          <JAT_scaled_usage_list>
+            <scaled>
+              <UA_name>cpu</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>mem</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>io</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>iow</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>vmem</UA_name>
+              <UA_value>1675264.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>maxvmem</UA_name>
+              <UA_value>1675264.000000</UA_value>
+            </scaled>
+          </JAT_scaled_usage_list>
+          <JAT_start_time>1795378821</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
         <ulong_sublist>
@@ -123,6 +175,38 @@
             </scaled>
             <scaled>
               <UA_name>vmem</UA_name>
+              <UA_value>1601536.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>maxvmem</UA_name>
+              <UA_value>1601536.000000</UA_value>
+            </scaled>
+          </JAT_scaled_usage_list>
+          <JAT_start_time>1795378821</JAT_start_time>
+          <JAT_ntix>0.500000</JAT_ntix>
+        </ulong_sublist>
+        <ulong_sublist>
+          <JAT_status>128</JAT_status>
+          <JAT_task_number>5</JAT_task_number>
+          <JAT_scaled_usage_list>
+            <scaled>
+              <UA_name>cpu</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>mem</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>io</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>iow</UA_name>
+              <UA_value>0.000000</UA_value>
+            </scaled>
+            <scaled>
+              <UA_name>vmem</UA_name>
               <UA_value>1687552.000000</UA_value>
             </scaled>
             <scaled>
@@ -130,13 +214,7 @@
               <UA_value>1687552.000000</UA_value>
             </scaled>
           </JAT_scaled_usage_list>
-          <JAT_start_time>1793654282</JAT_start_time>
-          <JAT_ntix>0.500000</JAT_ntix>
-        </ulong_sublist>
-        <ulong_sublist>
-          <JAT_status>512</JAT_status>
-          <JAT_task_number>5</JAT_task_number>
-          <JAT_start_time>1793654282</JAT_start_time>
+          <JAT_start_time>1795378821</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
         <ulong_sublist>
@@ -161,14 +239,20 @@
             </scaled>
             <scaled>
               <UA_name>vmem</UA_name>
-              <UA_value>1736704.000000</UA_value>
+              <UA_value>1560576.000000</UA_value>
             </scaled>
             <scaled>
               <UA_name>maxvmem</UA_name>
-              <UA_value>1736704.000000</UA_value>
+              <UA_value>1560576.000000</UA_value>
             </scaled>
           </JAT_scaled_usage_list>
-          <JAT_start_time>1793654282</JAT_start_time>
+          <JAT_start_time>1795378821</JAT_start_time>
+          <JAT_ntix>0.500000</JAT_ntix>
+        </ulong_sublist>
+        <ulong_sublist>
+          <JAT_status>128</JAT_status>
+          <JAT_task_number>7</JAT_task_number>
+          <JAT_start_time>1795378823</JAT_start_time>
           <JAT_ntix>0.500000</JAT_ntix>
         </ulong_sublist>
       </JB_ja_tasks>
@@ -219,10 +303,6 @@
         </element>
         <element>
           <MES_message_number>37</MES_message_number>
-          <MES_message>queue instance &quot;all.q@exec2&quot; dropped because it is full</MES_message>
-        </element>
-        <element>
-          <MES_message_number>37</MES_message_number>
           <MES_message>queue instance &quot;short.q@exec1&quot; dropped because it is full</MES_message>
         </element>
         <element>
@@ -230,8 +310,8 @@
           <MES_message>queue instance &quot;short.q@exec2&quot; dropped because it is full</MES_message>
         </element>
         <element>
-          <MES_message_number>28</MES_message_number>
-          <MES_message>All queues dropped because of overload or full</MES_message>
+          <MES_message_number>37</MES_message_number>
+          <MES_message>queue instance &quot;all.q@exec2&quot; dropped because it is full</MES_message>
         </element>
       </SME_global_message_list>
     </element>

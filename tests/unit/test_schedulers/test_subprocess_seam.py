@@ -58,6 +58,45 @@ class TestRunCommand:
         assert info.value.timeout == 0.2
         assert info.value.argv[0] == PY
 
+    def test_stdout_lines_are_handed_over_while_the_command_runs(self, tmp_path):
+        """The command prints a line, then waits for what the callback does with it.
+
+        ``print`` goes through buffered stdio, as ``qsub`` does: into a pipe
+        the first line would not leave the command until it exits.
+        """
+        flag = tmp_path / "seen"
+        code = (
+            "import os, sys, time\n"
+            "print('ready')\n"
+            f"while not os.path.exists({str(flag)!r}): time.sleep(0.01)\n"
+            "print('done')\n"
+            "sys.stderr.write('e\\n')\n"
+        )
+        lines: list[str] = []
+
+        def on_line(line: str) -> None:
+            lines.append(line)
+            flag.touch()
+
+        result = run_command([PY, "-c", code], timeout=10, on_stdout_line=on_line)
+        assert lines == ["ready\n", "done\n"]
+        assert (result.returncode, result.stdout, result.stderr) == (0, "ready\ndone\n", "e\n")
+
+    def test_a_streamed_command_keeps_the_seams_errors(self):
+        seen: list[str] = []
+        with pytest.raises(SchedulerCommandError) as info:
+            run_command(["sh", "-c", "echo out; exit 3"], timeout=10, on_stdout_line=seen.append)
+        assert (info.value.returncode, info.value.stdout, seen) == (3, "out\n", ["out\n"])
+        result = run_command(
+            ["sh", "-c", "exit 4"], timeout=10, check=False, on_stdout_line=seen.append
+        )
+        assert result.returncode == 4
+        with pytest.raises(SchedulerTimeoutError) as timed_out:
+            run_command(["sleep", "10"], timeout=0.2, on_stdout_line=seen.append)
+        assert timed_out.value.timeout == 0.2
+        with pytest.raises(SchedulerUnavailableError):
+            run_command(["no-such-binary-xyz"], timeout=5, on_stdout_line=seen.append)
+
     def test_logs_argv_at_debug(self, caplog):
         with caplog.at_level(logging.DEBUG, logger="hpc_runner.schedulers"):
             run_command([PY, "-c", "pass"], timeout=10)

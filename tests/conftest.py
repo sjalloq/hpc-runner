@@ -10,7 +10,20 @@ from pathlib import Path
 import jinja2
 import pytest
 
-from tests.fakes import SGE_FLAVOURS, SGEFixtures, make_host, make_sge_responder, patch_seam
+from tests.fakes import (
+    ALL_FLAVOURS,
+    SGE_FLAVOURS,
+    SLURM_FLAVOURS,
+    Fixtures,
+    SGEFixtures,
+    SlurmFixtures,
+    make_fixtures,
+    make_host,
+    make_responder,
+    make_sge_responder,
+    make_slurm_responder,
+    patch_seam,
+)
 
 
 def pytest_addoption(parser):
@@ -111,6 +124,46 @@ def sge_fixtures(request) -> SGEFixtures:
     (tests/unit/fixtures/sge/<flavour>/); a test that uses them runs once
     per flavour."""
     return SGEFixtures(request.param)
+
+
+@pytest.fixture(scope="session", params=SLURM_FLAVOURS)
+def slurm_fixtures(request) -> SlurmFixtures:
+    """One flavour's Slurm texts captured from the testbed
+    (tests/unit/fixtures/slurm/<flavour>/); a test that uses them runs once
+    per flavour."""
+    return SlurmFixtures(request.param)
+
+
+@pytest.fixture
+def mock_slurm_commands(slurm_fixtures):
+    """Slurm commands at the subprocess seam, answered from the captured fixtures
+    (:func:`tests.fakes.make_slurm_responder`)."""
+    with patch_seam(make_slurm_responder(slurm_fixtures)) as mock_run:
+        yield mock_run
+
+
+@pytest.fixture(scope="session", params=ALL_FLAVOURS, ids=[f"{s}-{f}" for s, f in ALL_FLAVOURS])
+def fixtures(request) -> Fixtures:
+    """Every scheduler's captures in turn, one flavour at a time: a test
+    that is not about one scheduler uses this and runs on each."""
+    return make_fixtures(*request.param)
+
+
+@pytest.fixture
+def scheduler_env(fixtures, monkeypatch, tmp_path):
+    """``hpc`` runs against *fixtures*' scheduler, its script and exit
+    directories out of the real home."""
+    monkeypatch.setenv("HPC_SCHEDULER", fixtures.scheduler)
+    monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
+    monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+
+
+@pytest.fixture
+def mock_commands(fixtures, scheduler_env):
+    """The scheduler's commands at the subprocess seam, answered from
+    *fixtures* (:func:`tests.fakes.make_responder`)."""
+    with patch_seam(make_responder(fixtures)) as mock_run:
+        yield mock_run
 
 
 @pytest.fixture

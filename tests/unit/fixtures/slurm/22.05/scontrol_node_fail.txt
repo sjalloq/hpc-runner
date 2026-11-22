@@ -1,14 +1,14 @@
-JobId=82 JobName=node_fail
+JobId=269 JobName=node_fail
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901698 Nice=0 Account=proj QOS=normal
+   Priority=4294901583 Nice=0 Account=proj QOS=normal
    JobState=NODE_FAIL Reason=NodeDown Dependency=(null)
    Requeue=0 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
-   RunTime=00:00:38 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T17:00:07 EligibleTime=2026-11-22T17:00:07
-   AccrueTime=2026-11-22T17:00:07
-   StartTime=2026-11-22T17:00:09 EndTime=2026-11-22T17:00:47 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T17:00:09 Scheduler=Main
-   Partition=all AllocNode:Sid=login:9532
+   RunTime=00:00:37 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-22T20:21:06 EligibleTime=2026-11-22T20:21:06
+   AccrueTime=2026-11-22T20:21:06
+   StartTime=2026-11-22T20:21:06 EndTime=2026-11-22T20:21:43 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:21:06 Scheduler=Main
+   Partition=all AllocNode:Sid=login:116631
    ReqNodeList=exec1 ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -20,9 +20,9 @@ JobId=82 JobName=node_fail
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/node_fail.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/node_fail.82.out
+   StdErr=/work/capture-jobs/node_fail.269.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/node_fail.82.out
+   StdOut=/work/capture-jobs/node_fail.269.out
    Power=
    
 

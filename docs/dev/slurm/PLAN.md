@@ -201,6 +201,30 @@ the tool's exit code is in `$?`.
 - Interactive runs and `--batch --wait` exit with the job's exit code, on
   every scheduler.
 - `--batch` without `--wait` exits 0 once the job is submitted.
+- `--batch --wait` uses the scheduler's own wait and exits with what it
+  returns (user, 2026-11-22): hpc-runner does not poll and then ask for the
+  code. Slurm: `sbatch --wait` (run on both versions: 0, 3, 137, 200
+  returned exactly, 139 for a crashed child, 1 when the script's shell is
+  killed by a signal; the job id is printed before the wait; SIGINT gives
+  130 and the job carries on). It returns 1 for a time limit, a memory
+  kill or a cancel while running, 0 for a cancel while pending or a
+  skipped dependent, and the highest task code for an array; the status
+  read afterwards keeps the rules above (never 0 unless completed).
+  Built 2026-11-22: `scheduler.submit(job, wait=True, on_submit=...)`,
+  which `hpc run --batch --wait` and the Python API both call. The
+  command's stdout is a pseudo-terminal, because `qsub -sync y` writing
+  to a pipe prints the job id only when the job has ended.
+  - SGE: `qsub -sync y` (user, 2026-11-22: "because it's the correct
+    move"). It returns the same codes on both flavours. Accepted with it:
+    on `ocs` an ordinary user's `qsub` returns 32 s after the job has
+    ended, on every job (a manager's in 1 s; `soge` in 1 s for anyone),
+    and an interrupted `qsub` exits 1 and removes the job. It returns 0
+    for a job deleted before or while it ran, 0 or 1 for an array, and
+    the guard's 113 for a skipped job (`hpc run` exits 1).
+  - The polling wait stays for a job submitted earlier (Python
+    `result.wait()`): a wait flag only works at submit time.
+- Why it matters on Slurm: `sacct` prints an exit status above 128 less
+  128, so a crashed tool (139) would come back as 11.
 - A job that failed with no exit code (cancelled while pending, skipped,
   unknown) exits 1.
 - An array with `--wait` exits 0 only if every task completed, otherwise 1.
@@ -237,7 +261,8 @@ the tool's exit code is in `$?`.
 ## Status and exit codes
 
 - Accounting (slurmdbd) is required, as on SGE.
-- Job status and exit code come from `sacct` only:
+- Job status comes from `sacct` only; the exit code from `scontrol show
+  job` while the controller knows the job, then `sacct`:
   `sacct -P -n -j <ids> --format=...`. It returns pending and running jobs
   too.
 - `squeue` is used only for the live listing (`hpc status`, `hpc monitor`).
@@ -252,6 +277,11 @@ the tool's exit code is in `$?`.
 - A job in which nothing ever ran (cancelled while pending, skipped) has
   no exit code. The exit code is never 0 unless the status is COMPLETED.
 - So `sacct` is read without `-X`: the job row and the `.batch` row.
+- `scontrol show job` has the signal of a timed-out or cancelled-running
+  job itself (`0:15`), so those need no `sacct`. A lost node is `0:1`
+  there on 24.11 and `0:0` on 22.05.
+- `hpc status --history` reads `sacct` alone, so a code above 128 shows
+  128 lower there.
 
 | Slurm state | hpc-runner status |
 |---|---|
@@ -277,7 +307,11 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
   A missing job is UNKNOWN; the wait loop already keeps waiting through
   60 s of UNKNOWN on every scheduler (`core/result.py:173-203`), so
   nothing new is needed.
-- At job end the controller and `sacct` agree within 50 ms (24.11).
+- At job end the controller and `sacct` agree within 50 ms (24.11). On
+  22.05, straight after `sbatch --wait` of an array returned, `sacct` had
+  one row named by the bare job id; the status after a waited submit is
+  read with the polling wait, which is one query when accounting is up to
+  date.
   So the Slurm testbed needs no slow-accounting variant.
 - The `DependencyNeverSatisfied` reason is not in `sacct`: Reason is `None`
   on 24.11 and `Dependency` on 22.05, for both the pending and the
@@ -310,8 +344,9 @@ Measured on the testbeds (2026-11-14, 2026-11-15):
 - `scontrol` gives the output path filled in on both versions. `sacct`
   has no `StdOut` field before 24.11 (man pages) and on 24.11 gives the
   pattern unfilled (`/work/d-%j.out`, testbed run).
-- A pending array's `scontrol` record has the task id unfilled
-  (`4294967294`) in the output path.
+- A record of array tasks that have not started has no node and no real
+  output path (the task id is `4294967294`), also when it stands for one
+  task (`ArrayTaskId=5`). No path is shown for it.
 
 ## Dependencies
 
@@ -371,7 +406,7 @@ Decided 2026-11-15.
 | `${hpc.task_id}` | `$SLURM_ARRAY_TASK_ID` | `%a` |
 | `${hpc.job_name}` | `$SLURM_JOB_NAME` | `%x` |
 | `${hpc.tmpdir}` | `$TMPDIR` | none |
-| `${hpc.host}` | `$HOSTNAME` | `%N` |
+| `${hpc.host}` | `$SLURMD_NODENAME` | `%N` |
 
 - `${hpc.job_id}` is the number submit printed, the same for every task of
   an array, as on SGE. Slurm gives each task its own `SLURM_JOB_ID`
@@ -544,20 +579,7 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-1. Parsing, against the fixtures.
-    - Status and exit code from `sacct`; the SKIPPED rule.
-    - Live listing from `squeue`.
-    - Job details from `scontrol show job`, then `sacct`.
-    - Cancel.
-    - The completed-jobs listing (`hpc status --history`): choose the
-      `sacct` argv, then add its scenario to the capture module.
-    - The capture module's `SACCT_FORMAT` and `SQUEUE_FORMAT` are the
-      field lists the backend sends.
-    - The unit-suite helpers named for SGE (`SGEFixtures`,
-      `make_sge_responder`, `sge_fixtures`, `mock_sge_commands`) serve both
-      schedulers' captures, and the tests that are not about a scheduler
-      (TUI status labels, `--wait` exit code, trace) run on each.
-2. Integration suite on both Slurm versions; CI cells for `24.11` and
+1. Integration suite on both Slurm versions; CI cells for `24.11` and
     `22.05`.
     - Includes: for each kind of finished job with more than one `sacct`
       row (timeout, cancelled while running), hpc-runner reports the
@@ -573,7 +595,7 @@ questions. Results are in the two fact files and `runs/`.
    - Slurm images have never been built in CI. A privileged container on
      the hosted runner can create cgroups and set `memory.max` (probe run
      2026-11-21).
-3. User docs, and a manual checklist on a real cluster.
+2. User docs, and a manual checklist on a real cluster.
     - The Slurm cpu and task model.
     - `inherit_env = false` on an interactive job leaves `HOME`, `USER`
       and `LOGNAME` empty.
@@ -637,5 +659,10 @@ setup is in `../FOLLOW_UPS.md`.
   `COMPLETED` and only the step is `OUT_OF_MEMORY`.
 - `sacct` prints an exit status above 128 less 128 (`exit 137` is `9:0`;
   `src/sacct/print.c`, both versions); `scontrol show job` prints `137:0`.
+- `sacct -j <id>_<n>` gives nothing for a task that has not started; ask
+  by the array's id.
+- `scancel` of an unknown id exits 0; of another user's job, 210.
+- `sacct -S` omits jobs never eligible to run (held or waiting on a
+  dependency until cancelled), so a skipped job is not in the history.
 - `afterok` on an unknown job id is accepted on 22.05 and rejected on
   24.11 (testbed runs). Where between the two it changed was not checked.

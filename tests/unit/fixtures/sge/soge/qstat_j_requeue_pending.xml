@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>21</JB_job_number>
+      <JB_job_number>52</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/21</JB_exec_file>
-      <JB_submission_time>1793654269</JB_submission_time>
+      <JB_exec_file>job_scripts/52</JB_exec_file>
+      <JB_submission_time>1795378816</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -128,7 +128,7 @@
         <element>
           <MES_job_number_list>
             <job ids>
-              <ULNG_value>21</ULNG_value>
+              <ULNG_value>52</ULNG_value>
             </job ids>
           </MES_job_number_list>
           <MES_message_number>44</MES_message_number>
@@ -137,7 +137,7 @@
         <element>
           <MES_job_number_list>
             <job ids>
-              <ULNG_value>21</ULNG_value>
+              <ULNG_value>52</ULNG_value>
             </job ids>
           </MES_job_number_list>
           <MES_message_number>17</MES_message_number>
@@ -146,7 +146,7 @@
         <element>
           <MES_job_number_list>
             <job ids>
-              <ULNG_value>21</ULNG_value>
+              <ULNG_value>52</ULNG_value>
             </job ids>
           </MES_job_number_list>
           <MES_message_number>6</MES_message_number>
@@ -156,7 +156,7 @@
       <SME_global_message_list>
         <element>
           <MES_message_number>26</MES_message_number>
-          <MES_message>queue instance &quot;short.q@exec1&quot; is in suspend alarm: np_load_avg=0.167725 (no load adjustment) &gt;= 0.0</MES_message>
+          <MES_message>queue instance &quot;short.q@exec1&quot; is in suspend alarm: np_load_avg=0.097273 (no load adjustment) &gt;= 0.0</MES_message>
         </element>
       </SME_global_message_list>
     </element>

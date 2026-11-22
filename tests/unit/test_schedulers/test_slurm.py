@@ -1,13 +1,13 @@
 """The Slurm backend: what it renders and how it submits.
 
 What ``sbatch`` prints comes from the captures in
-tests/unit/fixtures/slurm/<flavour>/; every test that reads one runs once
-per flavour.
+tests/unit/fixtures/slurm/<flavour>/ (the ``slurm_fixtures`` fixture);
+every test that reads one runs once per flavour. What the backend reads
+back is in test_slurm_reading.py.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,33 +25,16 @@ from hpc_runner.schedulers import get_scheduler, scheduler_config_keys
 from hpc_runner.schedulers.base import BaseScheduler
 from hpc_runner.schedulers.slurm import SlurmScheduler
 from hpc_runner.schedulers.slurm.parser import parse_sbatch_output
-from tests.fakes import FIXTURES_ROOT, SEAM, make_host, make_job, patch_seam
-
-FLAVOURS = ("22.05", "24.11")
-
-
-def _captured(flavour: str, name: str) -> dict[str, Any]:
-    captured: dict[str, Any] = json.loads((FIXTURES_ROOT / "slurm" / flavour / name).read_text())
-    return captured
-
-
-def _answer(flavour: str, name: str) -> tuple[int, str, str]:
-    captured = _captured(flavour, name)
-    return captured["returncode"], captured["stdout"], captured["stderr"]
-
-
-def _job_id(flavour: str, scenario: str) -> str:
-    job_id: str = _captured(flavour, "manifest.json")["jobs"][scenario]
-    return job_id
+from tests.fakes import SEAM, SlurmFixtures, make_host, make_job, patch_seam
 
 
 def _directives(script: str) -> list[str]:
     return [line for line in script.splitlines() if line.startswith("#SBATCH ")]
 
 
-@pytest.fixture(params=FLAVOURS)
-def flavour(request: pytest.FixtureRequest) -> str:
-    return str(request.param)
+@pytest.fixture
+def fx(slurm_fixtures: SlurmFixtures) -> SlurmFixtures:
+    return slurm_fixtures
 
 
 @pytest.fixture
@@ -434,7 +417,7 @@ class TestHpcVars:
             'export TASK="$SLURM_ARRAY_TASK_ID"',
             'export NAME="$SLURM_JOB_NAME"',
             'export TMP="$TMPDIR"/scratch',
-            'export HOST="$HOSTNAME"',
+            'export HOST="$SLURMD_NODENAME"',
             'export TAG=run-"${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}"-"$SLURM_ARRAY_TASK_ID".log',
         ):
             assert line in lines
@@ -575,23 +558,23 @@ class TestDirectiveValues:
 
 
 class TestSubmitBatch:
-    def test_the_job_id_is_read_from_sbatchs_line(self, flavour):
-        captured = _captured(flavour, "sbatch_ok.json")
-        assert captured["stdout"] == f"Submitted batch job {_job_id(flavour, 'ok')}\n"
-        assert parse_sbatch_output(captured["stdout"]) == _job_id(flavour, "ok")
-        array = _captured(flavour, "sbatch_array.json")
-        assert parse_sbatch_output(array["stdout"]) == _job_id(flavour, "array")
+    def test_the_job_id_is_read_from_sbatchs_line(self, fx):
+        _, stdout, _ = fx.result("sbatch_ok.json")
+        assert stdout == f"Submitted batch job {fx.job('ok')}\n"
+        assert parse_sbatch_output(stdout) == fx.job("ok")
+        _, array, _ = fx.result("sbatch_array.json")
+        assert parse_sbatch_output(array) == fx.job("array")
 
     def test_no_job_id_in_other_text(self):
         assert parse_sbatch_output("") is None
         assert parse_sbatch_output("sbatch: error: Batch job submission failed\n") is None
 
-    def test_sbatch_is_given_the_script_and_the_result_the_id(self, scheduler, flavour, tmp_path):
+    def test_sbatch_is_given_the_script_and_the_result_the_id(self, scheduler, fx, tmp_path):
         seen: list[tuple[list[str], str]] = []
 
         def respond(argv):
             seen.append((argv, Path(argv[-1]).read_text()))
-            return _answer(flavour, "sbatch_ok.json")
+            return fx.result("sbatch_ok.json")
 
         job = make_job("echo hi", name="n", workdir=str(tmp_path), stderr="e/${hpc.job_id}")
         with patch_seam(respond):
@@ -600,18 +583,18 @@ class TestSubmitBatch:
         assert argv == ["sbatch", str(tmp_path / "scripts" / Path(argv[1]).name)]
         assert Path(argv[1]).name.startswith("hpc_batch_") and argv[1].endswith(".sh")
         assert script == scheduler.preview(job)
-        job_id = _job_id(flavour, "ok")
+        job_id = fx.job("ok")
         assert not isinstance(result, ArrayJobResult)
         assert result.job_id == job_id
         assert result.job is job
         assert result.stdout_path == tmp_path / f"n.{job_id}.out"
         assert result.stderr_path == tmp_path / "e" / job_id
 
-    def test_an_array_result_names_its_tasks(self, scheduler, flavour, tmp_path):
+    def test_an_array_result_names_its_tasks(self, scheduler, fx, tmp_path):
         job = make_job(name="a", array="1-4%2", workdir=str(tmp_path))
-        with patch_seam(lambda argv: _answer(flavour, "sbatch_array.json")):
+        with patch_seam(lambda argv: fx.result("sbatch_array.json")):
             result = scheduler.submit(job)
-        job_id = _job_id(flavour, "array")
+        job_id = fx.job("array")
         assert isinstance(result, ArrayJobResult)
         assert result.job_id == job_id
         assert result.array.count == 4
@@ -624,21 +607,21 @@ class TestSubmitBatch:
         assert result.task_stdout_path(3) == tmp_path / f"a.{job_id}.3.out"
         assert result.task_stderr_path(3) is None
 
-    def test_the_script_is_removed_unless_kept(self, scheduler, flavour, tmp_path):
+    def test_the_script_is_removed_unless_kept(self, scheduler, fx, tmp_path):
         scripts = tmp_path / "scripts"
-        with patch_seam(lambda argv: _answer(flavour, "sbatch_ok.json")):
+        with patch_seam(lambda argv: fx.result("sbatch_ok.json")):
             scheduler.submit(make_job(workdir=str(tmp_path)))
             assert list(scripts.iterdir()) == []
             scheduler.submit(make_job(workdir=str(tmp_path)), keep_script=True)
         (kept,) = scripts.iterdir()
         assert kept.read_text() == scheduler.preview(make_job(workdir=str(tmp_path)))
 
-    def test_the_output_directory_exists_before_sbatch(self, scheduler, flavour, tmp_path):
+    def test_the_output_directory_exists_before_sbatch(self, scheduler, fx, tmp_path):
         seen = []
 
         def respond(argv):
             seen.append((tmp_path / "logs" / "n").is_dir())
-            return _answer(flavour, "sbatch_ok.json")
+            return fx.result("sbatch_ok.json")
 
         job = make_job(name="n", workdir=str(tmp_path), stdout="logs/n/${hpc.job_name}.out")
         with patch_seam(respond):
@@ -657,9 +640,9 @@ class TestSubmitBatch:
         assert call.kwargs.get("capture", True) is True
         assert call.kwargs["cwd"] == tmp_path
 
-    def test_the_trace_carries_the_script(self, scheduler, flavour, tmp_path):
+    def test_the_trace_carries_the_script(self, scheduler, fx, tmp_path):
         with patch("hpc_runner.schedulers.slurm.scheduler.recorder.note_script") as note:
-            with patch_seam(lambda argv: _answer(flavour, "sbatch_ok.json")) as seam:
+            with patch_seam(lambda argv: fx.result("sbatch_ok.json")) as seam:
                 scheduler.submit(make_job(workdir=str(tmp_path)))
         ((path, text),) = (call.args for call in note.call_args_list)
         assert str(path) == seam.call_args.args[0][1]
@@ -677,15 +660,15 @@ class TestSubmitBatch:
         ],
     )
     def test_a_rejected_submission_carries_sbatchs_message(
-        self, scheduler, flavour, tmp_path, scenario, headline
+        self, scheduler, fx, tmp_path, scenario, headline
     ):
-        captured = _captured(flavour, f"sbatch_{scenario}.json")
+        _, _, stderr = fx.result(f"sbatch_{scenario}.json")
         job = make_job(workdir=str(tmp_path))
-        with patch_seam(lambda argv: _answer(flavour, f"sbatch_{scenario}.json")):
+        with patch_seam(lambda argv: fx.result(f"sbatch_{scenario}.json")):
             with pytest.raises(SubmissionError) as err:
                 scheduler.submit(job)
         assert str(err.value) == headline
-        assert err.value.stderr == captured["stderr"]
+        assert err.value.stderr == stderr
         assert err.value.script == scheduler.preview(job)
         assert err.value.argv is not None and err.value.argv[0] == "sbatch"
         assert list((tmp_path / "scripts").iterdir()) == []

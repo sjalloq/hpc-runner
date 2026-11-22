@@ -1,14 +1,14 @@
-JobId=72 JobName=dependent_skipped
+JobId=256 JobName=dependent_skipped
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901705 Nice=0 Account=proj QOS=normal
-   JobState=CANCELLED Reason=DependencyNeverSatisfied Dependency=afterok:71(failed)
+   Priority=4294901590 Nice=0 Account=proj QOS=normal
+   JobState=CANCELLED Reason=DependencyNeverSatisfied Dependency=afterok:255(failed)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
-   RunTime=20779-16:59:56 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T16:59:49 EligibleTime=Unknown
+   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-22T20:20:33 EligibleTime=Unknown
    AccrueTime=Unknown
-   StartTime=Unknown EndTime=2026-11-22T16:59:56 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T16:59:49 Scheduler=Main
-   Partition=all AllocNode:Sid=login:9532
+   StartTime=2026-11-22T20:20:40 EndTime=2026-11-22T20:20:40 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:33 Scheduler=Main
+   Partition=all AllocNode:Sid=login:116631
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=
    NumNodes=1 NumCPUs=1 NumTasks=N/A CPUs/Task=1 ReqB:S:C:T=0:0:*:*
@@ -19,9 +19,9 @@ JobId=72 JobName=dependent_skipped
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/dependent_skipped.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/dependent_skipped.72.out
+   StdErr=/work/capture-jobs/dependent_skipped.256.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/dependent_skipped.72.out
+   StdOut=/work/capture-jobs/dependent_skipped.256.out
    Power=
    KillOInInvalidDependent=Yes
    

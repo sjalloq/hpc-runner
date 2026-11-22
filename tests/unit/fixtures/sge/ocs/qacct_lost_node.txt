@@ -6,13 +6,13 @@ owner                              tester
 project                            NONE                
 department                         defaultdepartment   
 jobname                            lost_node           
-jobnumber                          130                 
+jobnumber                          47                  
 taskid                             undefined
 pe_taskid                          NONE
 arid                               undefined
 account                            sge                 
 priority                           0                   
-qsub_time                          2026-11-02 21:01:50.879937
+qsub_time                          2026-11-22 20:22:17.096750
 submit_cmd_line                    qsub -b y -N lost_node -o /dev/null -j y -l hostname=exec1 sleep 300
 start_time                         -/-
 end_time                           -/-
@@ -38,7 +38,7 @@ ru_msgrcv                          0
 ru_nsignals                        0                   
 ru_nvcsw                           0                   
 ru_nivcsw                          0                   
-wallclock                          3.524        
+wallclock                          2.741        
 cpu                                0.000        
 mem                                0.000             
 io                                 0.000             

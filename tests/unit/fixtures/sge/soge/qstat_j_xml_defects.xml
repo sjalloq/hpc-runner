@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="http://arc.liv.ac.uk/repos/darcs/sge/source/dist/util/resources/schemas/qstat/detailed_job_info.xsd">
   <djob_info>
     <element>
-      <JB_job_number>2</JB_job_number>
+      <JB_job_number>27</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/2</JB_exec_file>
-      <JB_submission_time>1793654185</JB_submission_time>
+      <JB_exec_file>job_scripts/27</JB_exec_file>
+      <JB_submission_time>1795378732</JB_submission_time>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -111,7 +111,7 @@
         <element>
           <MES_job_number_list>
             <ulong_sublist>
-              <ULNG_value>2</ULNG_value>
+              <ULNG_value>27</ULNG_value>
             </ulong_sublist>
           </MES_job_number_list>
           <MES_message_number>33</MES_message_number>

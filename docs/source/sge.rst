@@ -265,7 +265,13 @@ appears; ``wait()`` rides that out (see ``unknown_after`` in
 :doc:`programmatic_api`). The base id of a finished array is the reduction
 of the task records ``qacct`` has, which cannot say how many tasks there
 were, so in that interval it can be premature; the ``ArrayJobResult``
-returned at submit knows its range and asks task by task. Sentinels older than
+returned at submit knows its range and asks task by task.
+``hpc run --batch --wait`` and ``submit(job, wait=True)`` submit with ``qsub
+-sync y``, which returns when the job has ended, with its exit code; the
+status is then read from the same records. On some installations ``qsub
+-sync y`` returns a while after the job has ended (about half a minute for
+an ordinary user on Open Cluster Scheduler 9), and interrupting it deletes
+the job. Sentinels older than
 ``[schedulers.sge] sentinel_ttl_days`` (default 30) are removed each time a
 scheduler object is created; the sweep reads file ages only and never asks
 the scheduler, so a dependent submitted after its parent's sentinel was

@@ -2,11 +2,11 @@
 <detailed_job_info  xmlns:xsd="https://github.com/hpc-gridware/clusterscheduler/raw/master/source/dist/util/resources/schemas/qstat/qstat.xsd">
   <djob_info>
     <element>
-      <JB_job_number>141</JB_job_number>
+      <JB_job_number>58</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/141</JB_exec_file>
-      <JB_submission_time>2026-11-02T21:02:18.564992</JB_submission_time>
-      <JB_submission_command_line>qsub -b y -N dependent -o /dev/null -j y -hold_jid 139 sleep 1</JB_submission_command_line>
+      <JB_exec_file>job_scripts/58</JB_exec_file>
+      <JB_submission_time>2026-11-22T20:22:35.439964</JB_submission_time>
+      <JB_submission_command_line>qsub -b y -N dependent -o /dev/null -j y -hold_jid 56 sleep 1</JB_submission_command_line>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
       <JB_group>tester</JB_group>
@@ -58,7 +58,7 @@
       <JB_script_file>sleep</JB_script_file>
       <JB_jid_predecessor_list>
         <job_predecessors>
-          <JRE_job_number>139</JRE_job_number>
+          <JRE_job_number>56</JRE_job_number>
         </job_predecessors>
       </JB_jid_predecessor_list>
       <JB_deadline>0</JB_deadline>
@@ -74,7 +74,7 @@
       <JB_jid_request_list>
         <element>
           <JRE_job_number>0</JRE_job_number>
-          <JRE_job_name>139</JRE_job_name>
+          <JRE_job_name>56</JRE_job_name>
         </element>
       </JB_jid_request_list>
       <JB_verify_suitable_queues>0</JB_verify_suitable_queues>
@@ -107,7 +107,7 @@
         </element>
       </JB_grp_list>
       <JB_sync_options>1</JB_sync_options>
-      <JB_category_id>62</JB_category_id>
+      <JB_category_id>48</JB_category_id>
     </element>
   </djob_info>
   <messages>
@@ -116,7 +116,7 @@
         <element>
           <MES_job_number_list>
             <ulong_sublist>
-              <ULNG_value>141</ULNG_value>
+              <ULNG_value>58</ULNG_value>
             </ulong_sublist>
           </MES_job_number_list>
           <MES_message_number>35</MES_message_number>
@@ -139,6 +139,10 @@
         <element>
           <MES_message_number>37</MES_message_number>
           <MES_message>queue instance &quot;short.q@exec2&quot; dropped because it is full</MES_message>
+        </element>
+        <element>
+          <MES_message_number>28</MES_message_number>
+          <MES_message>All queues dropped because of overload or full</MES_message>
         </element>
       </SME_global_message_list>
     </element>

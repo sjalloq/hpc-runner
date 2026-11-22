@@ -6,7 +6,7 @@ import os
 import re
 import shlex
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +16,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from hpc_runner.core.descriptors import SchedulerArg
 from hpc_runner.core.exceptions import NotSupportedError
 from hpc_runner.core.job import RENDER_ORDER
-from hpc_runner.core.result import TASK_ID_PLACEHOLDER
+from hpc_runner.core.job_info import JobInfo
+from hpc_runner.core.result import (
+    TASK_ID_PLACEHOLDER,
+    ArrayJobResult,
+    JobStatus,
+    reduce_statuses,
+)
 from hpc_runner.schedulers import _subprocess
 from hpc_runner.templates import ShellWord
 
@@ -25,8 +31,7 @@ if TYPE_CHECKING:
 
     from hpc_runner.core.config import HPCConfig
     from hpc_runner.core.job import Job
-    from hpc_runner.core.job_info import JobInfo
-    from hpc_runner.core.result import JobResult, JobStatus
+    from hpc_runner.core.result import JobResult
 
 
 # A ``${hpc.<name>}`` reference (names are checked by resolve()).
@@ -110,6 +115,27 @@ def refuse_interactive_dependencies(job: Job) -> None:
     """
     if job.interactive and job.dependencies:
         raise NotSupportedError("interactive jobs cannot have dependencies; use --batch")
+
+
+def array_job_info(job_id: str, tasks: list[JobInfo]) -> JobInfo:
+    """One ``JobInfo`` for an array from its tasks' own."""
+    first = tasks[0]
+    statuses = [t.status for t in tasks]
+    codes = [t.exit_code for t in tasks if t.exit_code is not None]
+    failed = next((t for t in tasks if t.status is not JobStatus.COMPLETED), None)
+    return JobInfo(
+        job_id=job_id,
+        name=first.name,
+        user=first.user,
+        status=reduce_statuses(statuses),
+        queue=first.queue,
+        exit_code=next((c for c in codes if c != 0), 0) if codes else None,
+        failed_code=failed.failed_code if failed else None,
+        failed_reason=failed.failed_reason if failed else None,
+        submit_time=min((t.submit_time for t in tasks if t.submit_time), default=None),
+        start_time=min((t.start_time for t in tasks if t.start_time), default=None),
+        end_time=max((t.end_time for t in tasks if t.end_time), default=None),
+    )
 
 
 class BaseScheduler(ABC):
@@ -341,15 +367,22 @@ class BaseScheduler(ABC):
         capture: bool = True,
         cwd: Path | None = None,
         input: str | None = None,
+        on_stdout_line: Callable[[str], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run a scheduler command through the one subprocess seam.
 
         *timeout* defaults to ``COMMAND_TIMEOUT``; pass ``None`` explicitly
-        for commands that block for a job's lifetime (interactive runs).
+        for commands that block for a job's lifetime (interactive runs, a
+        waited submission). *on_stdout_line* is passed only when given, so
+        the seam is called as before by every command that does not use it.
         See :func:`hpc_runner.schedulers._subprocess.run_command` for the
         exceptions raised.
         """
         effective = self.COMMAND_TIMEOUT if timeout is ... else timeout
+        if on_stdout_line is not None:
+            return _subprocess.run_command(
+                argv, timeout=effective, check=check, cwd=cwd, on_stdout_line=on_stdout_line
+            )
         return _subprocess.run_command(
             argv, timeout=effective, check=check, capture=capture, cwd=cwd, input=input
         )
@@ -418,7 +451,15 @@ class BaseScheduler(ABC):
     # =========================================================================
 
     @abstractmethod
-    def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
+    def submit(
+        self,
+        job: Job,
+        *,
+        keep_script: bool = False,
+        verbose: bool = False,
+        wait: bool = False,
+        on_submit: Callable[[JobResult], None] | None = None,
+    ) -> JobResult:
         """Submit a job.
 
         Runs it attached (and returns once it has finished) when
@@ -429,7 +470,35 @@ class BaseScheduler(ABC):
             keep_script: If True, don't delete the job script after submission.
             verbose: If True, module commands print their output instead of
                 showing it only when one fails.
+            wait: Submit a batch job with the scheduler's own waiting
+                submit command and return when the job has ended. The
+                result's ``exit_code`` is what that command returned and
+                its ``final_status`` the status read afterwards. An
+                interactive job waits anyway.
+            on_submit: Called with a batch job's handle as soon as it is
+                submitted (before the wait, with *wait*).
         """
+
+    def _waited(self, result: JobResult, returncode: int | None) -> JobResult:
+        """Finish a waited submission: *result* with how the job ended.
+
+        *returncode* is what the scheduler's waiting submit command exited
+        with (a death by signal N becomes ``128 + N``); None when the
+        scheduler has no such command, and the exit code is then asked
+        for. The status is read with :meth:`JobResult.wait`: one query
+        when the scheduler's records already have the job's end, more
+        while they do not.
+        """
+        status = result.wait()
+        if isinstance(result, ArrayJobResult):
+            result.final_tasks = result.task_statuses()
+        if returncode is None:
+            returncode = result.returncode if status.is_terminal else None
+        elif returncode < 0:
+            returncode = 128 - returncode
+        result.final_status = status
+        result.exit_code = returncode
+        return result
 
     @abstractmethod
     def preview(self, job: Job, *, verbose: bool = False) -> str:

@@ -335,3 +335,31 @@ class TestJobTableFromCapturedSnapshots:
             }
         for scenario, label in expected.items():
             assert shown[fx.job(scenario)] == label, (scenario, shown)
+
+
+class TestJobTableOnEveryScheduler:
+    """The status column over each scheduler's captured snapshot of live jobs."""
+
+    @pytest.mark.asyncio
+    async def test_status_column(self, fixtures, mock_commands):
+        from textual.app import App, ComposeResult
+
+        from hpc_runner.core.config import HPCConfig
+        from hpc_runner.schedulers import get_scheduler
+
+        jobs = get_scheduler(fixtures.scheduler, config=HPCConfig()).list_active_jobs()
+
+        class TestApp(App):
+            def compose(self) -> ComposeResult:
+                yield JobTable(id="jobs")
+
+        async with TestApp().run_test() as pilot:
+            table = pilot.app.query_one(JobTable)
+            table.update_jobs(jobs)
+            shown = {
+                str(table.get_row_at(i)[0]): str(table.get_row_at(i)[4])
+                for i in range(table.row_count)
+            }
+        assert fixtures.labels
+        for scenario, label in fixtures.labels.items():
+            assert shown[fixtures.job(scenario)] == label, (scenario, shown)

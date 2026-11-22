@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "qsub",
+    "-sync",
+    "y",
+    "-N",
+    "sync_array_partial",
+    "/work/capture/sync_array_partial.sh"
+  ],
+  "returncode": 1,
+  "stdout": "Your job-array 42.1-3:1 (\"sync_array_partial\") has been submitted\nJob 42.2 exited with exit code 0.\nJob 42.1 exited with exit code 0.\n",
+  "stderr": "Job 42.3 exited with exit code 1.\n"
+}

@@ -12,9 +12,8 @@ stack that is up.
 | `24.11` | Debian trixie `slurm-wlm` 24.11.5 | stack runs; no integration test run yet |
 | `22.05` | Debian bookworm `slurm-wlm` 22.05.8 | stack runs; no integration test run yet |
 
-The Slurm backend renders and submits jobs but does not read their status
-yet (`docs/dev/slurm/PLAN.md`, "Order of work"), so the integration suite
-cannot run here. The stacks are used to run and record Slurm behaviour
+The integration suite has not been run here yet (`docs/dev/slurm/PLAN.md`,
+"Order of work"). The stacks are used to run and record Slurm behaviour
 (`docs/dev/slurm/runs/`) and to take captures ("Captures" below).
 
 ## Bringing a flavour up
@@ -35,7 +34,7 @@ prefix (`hpc-testbed-slurm-22-05-master`) and the subnets differ.
 `hpc-testbed --scheduler slurm --flavour <name> capture` runs
 `tests/integration/capture_slurm.py` in `login` and replaces
 `tests/unit/fixtures/slurm/<name>/` with what it wrote. A run takes about
-three minutes, kills and restarts `exec1`, and leaves the stack clean. Job
+four minutes, kills and restarts `exec1`, and leaves the stack clean. Job
 ids, timestamps and host names change with every run.
 
 Every job is submitted with plain `sbatch`. For each scenario the module
@@ -50,6 +49,7 @@ keeps what a backend reads:
 | `squeue_..._tasks.txt` | the same with `-r`, one line per array task |
 | `scontrol_<scenario>[_<stage>].txt` | `scontrol show job <id>` |
 | `scancel_<scenario>.json` | `scancel <id>`, where the scenario cancels |
+| `sbatch_wait_<scenario>.json` | `sbatch --wait` of the job `wait_<scenario>`: argv, exit status, stdout, stderr |
 
 The two field lists are the constants `SACCT_FIELDS` and `SQUEUE_FIELDS` of
 the module, the job name last in both. Both Slurm versions accept every
@@ -80,11 +80,16 @@ scenario, and for each file what it is and its argv.
 | `running` | a running job | |
 | `pending_resources` | two CPUs asked while no node has two free | |
 | `bad_partition`, `bad_account` | rejected by `sbatch` and by `srun` (`srun_<scenario>.json`) | |
-| `missing` | `sacct`, `squeue`, `scontrol show job` of an id that never existed (JSON) | |
+| `array_list`, `array_stepped`, `array_single` | held arrays, `--array=1,3,7-9:2`, `1-100:3` and `5` | |
+| `missing` | `sacct`, `squeue`, `scontrol show job`, `scancel` of an id that never existed (JSON) | |
+| `not_owner` | `scancel` of another user's job (JSON) | |
+| `wait_ok`, `wait_exit1`, `wait_exit137`, `wait_out_of_memory`, `wait_array_partial`, `wait_cancelled_pending`, `wait_cancelled_running`, `wait_dependent_skipped` | the jobs of the same names, submitted with `sbatch --wait` | |
 
 Also `squeue_empty.txt` (nothing queued), `squeue_all.txt` (running,
-suspended, held and pending-for-resources jobs together) and
-`sacct_several.txt` (`-j` with three ids).
+suspended, held and pending-for-resources jobs together),
+`sacct_several.txt` (`-j` with three ids) and `sacct_history.txt` (`sacct
+-u tester -S <when the capture began>`, taken while the snapshot's jobs
+are live; the time is `history_since` in the manifest).
 
 Both flavours give the same files, with one difference. On 22.05 the first
 `sacct` row of a new job can be an early one, with the name `allocation`
@@ -176,8 +181,7 @@ One row per integration test. The files in `tests/integration/` are the
 generic tests and run on every scheduler; Slurm's own tests will be in
 `tests/integration/slurm/`, which does not exist yet.
 
-No integration test has been run on Slurm: every one needs the backend to
-read a job's status. A test deselected for a flavour with
+No integration test has been run on Slurm. A test deselected for a flavour with
 `@pytest.mark.flavour("slurm/<name>")` would show as such; nothing skips at
 run time.
 

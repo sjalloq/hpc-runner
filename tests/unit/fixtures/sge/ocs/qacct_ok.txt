@@ -6,29 +6,29 @@ owner                              tester
 project                            NONE                
 department                         defaultdepartment   
 jobname                            ok                  
-jobnumber                          120                 
+jobnumber                          31                  
 taskid                             undefined
 pe_taskid                          NONE
 arid                               undefined
 account                            sge                 
 priority                           0                   
-qsub_time                          2026-11-02 21:00:47.976446
+qsub_time                          2026-11-22 20:18:52.779782
 submit_cmd_line                    qsub -b y -N ok -o /dev/null -j y true
-start_time                         2026-11-02 21:00:47.979826
-end_time                           2026-11-02 21:00:48.081971
+start_time                         2026-11-22 20:18:52.784608
+end_time                           2026-11-22 20:18:52.893862
 granted_pe                         NONE                
 slots                              1                   
 failed                             0    
 exit_status                        0                   
 ru_wallclock                       0            
-ru_utime                           0.083        
-ru_stime                           0.031        
-ru_maxrss                          8528                
+ru_utime                           0.081        
+ru_stime                           0.041        
+ru_maxrss                          8228                
 ru_ixrss                           0                   
 ru_ismrss                          0                   
 ru_idrss                           0                   
 ru_isrss                           0                   
-ru_minflt                          10485               
+ru_minflt                          10560               
 ru_majflt                          0                   
 ru_nswap                           0                   
 ru_inblock                         0                   
@@ -36,10 +36,10 @@ ru_oublock                         8
 ru_msgsnd                          0                   
 ru_msgrcv                          0                   
 ru_nsignals                        0                   
-ru_nvcsw                           343                 
-ru_nivcsw                          32                  
-wallclock                          0.819        
-cpu                                0.114        
+ru_nvcsw                           342                 
+ru_nivcsw                          100                 
+wallclock                          0.568        
+cpu                                0.122        
 mem                                0.000             
 io                                 0.000             
 ioops                              0            

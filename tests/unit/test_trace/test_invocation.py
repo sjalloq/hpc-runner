@@ -1,7 +1,7 @@
 """The record of one ``hpc`` command line (``hpc_runner.trace.Invocation``).
 
 ``main()`` is the entry point that writes it, so these tests call ``main()``
-with ``sys.argv`` set, over the captured SGE fixtures.
+with ``sys.argv`` set, over each scheduler's captured fixtures (``fixtures``).
 """
 
 from __future__ import annotations
@@ -34,10 +34,8 @@ def _split(trace: Path) -> tuple[list[dict], list[dict]]:
 
 
 @pytest.fixture
-def sge_env(tmp_path, monkeypatch, mock_sge_commands):
-    monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
-    monkeypatch.setenv("HPC_SCRIPT_DIR", str(tmp_path / "scripts"))
-    monkeypatch.setenv("HPC_SCHEDULER", "sge")
+def env(tmp_path, monkeypatch, mock_commands):
+    """A config file, with the scheduler of ``fixtures`` answering from its captures."""
     monkeypatch.setenv("USER", "tester")
     config = tmp_path / "hpc-runner.toml"
     config.write_text('config_version = 1\n[defaults]\nqueue = "all.q"\n')
@@ -45,10 +43,10 @@ def sge_env(tmp_path, monkeypatch, mock_sge_commands):
 
 
 class TestInvocationRecord:
-    def test_status(self, tmp_path, sge_env, monkeypatch, capsys):
+    def test_status(self, tmp_path, env, fixtures, monkeypatch, capsys):
         trace = tmp_path / "trace"
         monkeypatch.setenv("SBATCH_PARTITION", "debug")
-        code = _run(monkeypatch, "--config", str(sge_env), "--trace", str(trace), "status")
+        code = _run(monkeypatch, "--config", str(env), "--trace", str(trace), "status")
         printed, err = capsys.readouterr()
         assert code == 0
         # stdout stays clean (--json); the trace says so once, on stderr.
@@ -56,38 +54,38 @@ class TestInvocationRecord:
         invocations, calls = _split(trace)
         assert len(invocations) == 1 and len(calls) == 1
         record = invocations[0]
-        assert record["argv"] == ["hpc", "--config", str(sge_env), "--trace", str(trace), "status"]
+        assert record["argv"] == ["hpc", "--config", str(env), "--trace", str(trace), "status"]
         assert record["exit_code"] == 0
         assert record["error"] is None
         # What hpc printed, as printed: the table is in the record.
         assert record["stdout"] == printed and printed.strip()
-        assert record["config"] == [{"path": str(sge_env), "text": sge_env.read_text()}]
-        assert record["env"]["HPC_SCHEDULER"] == "sge"
+        assert record["config"] == [{"path": str(env), "text": env.read_text()}]
+        assert record["env"]["HPC_SCHEDULER"] == fixtures.scheduler
         # The whole environment, not only HPC_*: a scheduler's own variables too.
         assert record["env"]["SBATCH_PARTITION"] == "debug"
         assert list(record["env"]) == sorted(record["env"])
         assert record["pid"] == calls[0]["pid"]
         assert record["output_truncated"] is False
 
-    def test_submit_records_the_script(self, tmp_path, sge_env, monkeypatch, capsys):
+    def test_submit_records_the_script(self, tmp_path, env, fixtures, monkeypatch, capsys):
         trace = tmp_path / "trace"
         code = _run(
             monkeypatch,
-            "--config", str(sge_env), "--trace", str(trace),
+            "--config", str(env), "--trace", str(trace),
             "run", "--batch", "--directory", str(tmp_path), "echo", "hello",
         )  # fmt: skip
         assert code == 0, capsys.readouterr()
         invocations, calls = _split(trace)
         assert invocations[0]["argv"][-2:] == ["echo", "hello"]
-        (qsub,) = [c for c in calls if c["argv"][0] == "qsub"]
-        script = qsub["script"]
-        assert script["path"] == qsub["argv"][1]
+        (submit,) = [c for c in calls if c["argv"][0] == fixtures.submit_command]
+        script = submit["script"]
+        assert script["path"] == submit["argv"][1]
         assert script["text"].startswith("#!/bin/bash")
-        assert "#$ -q all.q" in script["text"]
+        assert fixtures.queue_directive in script["text"]
         assert "echo hello" in script["text"]
         # The file itself is gone; the trace is the only copy.
         assert not Path(script["path"]).exists()
-        assert all("script" not in c for c in calls if c is not qsub)
+        assert all("script" not in c for c in calls if c is not submit)
 
     def test_error_is_recorded(self, tmp_path, monkeypatch, capsys):
         monkeypatch.delenv("HPC_SCHEDULER", raising=False)
@@ -115,30 +113,30 @@ class TestInvocationRecord:
         assert record["exit_code"] == 2
         assert "no-such-option" in record["stderr"]
 
-    def test_config_enabled(self, tmp_path, sge_env, monkeypatch, capsys):
+    def test_config_enabled(self, tmp_path, env, monkeypatch, capsys):
         trace = tmp_path / "cfgtrace"
-        sge_env.write_text(sge_env.read_text() + f'[trace]\nenabled = true\ndir = "{trace}"\n')
-        assert _run(monkeypatch, "--config", str(sge_env), "status") == 0
-        assert _run(monkeypatch, "--config", str(sge_env), "status") == 0
+        env.write_text(env.read_text() + f'[trace]\nenabled = true\ndir = "{trace}"\n')
+        assert _run(monkeypatch, "--config", str(env), "status") == 0
+        assert _run(monkeypatch, "--config", str(env), "status") == 0
         invocations, calls = _split(trace)
         # Every command line has its own scheduler call beside it, identical or not.
         assert len(invocations) == 2 and len(calls) == 2
 
-    def test_nothing_without_a_trace(self, tmp_path, sge_env, monkeypatch, capsys):
+    def test_nothing_without_a_trace(self, tmp_path, env, monkeypatch, capsys):
         out, err = sys.stdout, sys.stderr
-        assert _run(monkeypatch, "--config", str(sge_env), "status") == 0
+        assert _run(monkeypatch, "--config", str(env), "status") == 0
         assert "trace:" not in capsys.readouterr().err
         assert (sys.stdout, sys.stderr) == (out, err)
         assert list(tmp_path.rglob("*-hpc.json")) == []
 
-    def test_a_bug_keeps_its_traceback(self, tmp_path, sge_env, monkeypatch, capsys):
+    def test_a_bug_keeps_its_traceback(self, tmp_path, env, monkeypatch, capsys):
         def boom(*args, **kwargs):
             raise RuntimeError("parser fell over")
 
         monkeypatch.setattr("hpc_runner.schedulers.get_scheduler", boom)
         trace = tmp_path / "trace"
         monkeypatch.setattr(
-            sys, "argv", ["hpc", "--config", str(sge_env), "--trace", str(trace), "status"]
+            sys, "argv", ["hpc", "--config", str(env), "--trace", str(trace), "status"]
         )
         with pytest.raises(RuntimeError):
             cli_main.main()
@@ -167,23 +165,21 @@ class TestMonitorIsNotTraced:
         monkeypatch.setattr("hpc_runner.tui.HpcMonitorApp", FakeApp)
         return ran
 
-    def test_config_enabled_records_nothing(
-        self, tmp_path, sge_env, monkeypatch, capsys, fake_monitor
-    ):
+    def test_config_enabled_records_nothing(self, tmp_path, env, monkeypatch, capsys, fake_monitor):
         trace = tmp_path / "cfgtrace"
-        sge_env.write_text(sge_env.read_text() + f'[trace]\nenabled = true\ndir = "{trace}"\n')
-        assert _run(monkeypatch, "--config", str(sge_env), "monitor") == 0
+        env.write_text(env.read_text() + f'[trace]\nenabled = true\ndir = "{trace}"\n')
+        assert _run(monkeypatch, "--config", str(env), "monitor") == 0
         assert fake_monitor == [True]
         assert list(trace.rglob("*.json")) == []
         # The same config still traces any other command (a new process).
         deactivate()
-        assert _run(monkeypatch, "--config", str(sge_env), "status") == 0
+        assert _run(monkeypatch, "--config", str(env), "status") == 0
         invocations, calls = _split(trace)
         assert len(invocations) == 1 and len(calls) == 1
 
-    def test_flag_is_a_usage_error(self, tmp_path, sge_env, monkeypatch, capsys, fake_monitor):
+    def test_flag_is_a_usage_error(self, tmp_path, env, monkeypatch, capsys, fake_monitor):
         trace = tmp_path / "trace"
-        code = _run(monkeypatch, "--config", str(sge_env), "--trace", str(trace), "monitor")
+        code = _run(monkeypatch, "--config", str(env), "--trace", str(trace), "monitor")
         assert code == 2
         assert "--trace does not apply to 'hpc monitor'" in capsys.readouterr().err
         assert fake_monitor == []

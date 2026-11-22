@@ -47,6 +47,12 @@ run the command by hand:
 
 - An interactive run, and ``--batch --wait``, exit with the job's exit code
   (``128 + N`` for a job killed by signal ``N``).
+- ``--batch --wait`` submits with the scheduler's own waiting submit command
+  (SGE ``qsub -sync y``, Slurm ``sbatch --wait``) and exits with what that
+  command returns. The job id is printed when the job is submitted, and
+  the job's final status when it has ended. A job the scheduler itself
+  ended (a time limit, a memory limit, a cancel) exits with whatever the
+  scheduler's command returns for it, never 0.
 - A job that did not complete and has no exit code of its own exits 1:
   cancelled while pending, skipped because a dependency was not satisfied,
   or one the scheduler can no longer report on.

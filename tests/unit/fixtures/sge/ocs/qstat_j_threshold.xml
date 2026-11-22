@@ -2,10 +2,10 @@
 <detailed_job_info  xmlns:xsd="https://github.com/hpc-gridware/clusterscheduler/raw/master/source/dist/util/resources/schemas/qstat/qstat.xsd">
   <djob_info>
     <element>
-      <JB_job_number>136</JB_job_number>
+      <JB_job_number>53</JB_job_number>
       <JB_ar>0</JB_ar>
-      <JB_exec_file>job_scripts/136</JB_exec_file>
-      <JB_submission_time>2026-11-02T21:02:04.738370</JB_submission_time>
+      <JB_exec_file>job_scripts/53</JB_exec_file>
+      <JB_submission_time>2026-11-22T20:22:30.175744</JB_submission_time>
       <JB_submission_command_line>qsub -b y -N threshold -o /dev/null -j y -q short.q -l hostname=exec1 sleep 600</JB_submission_command_line>
       <JB_owner>tester</JB_owner>
       <JB_uid>1003</JB_uid>
@@ -89,7 +89,7 @@
           <JAT_hold>0</JAT_hold>
           <JAT_task_number>1</JAT_task_number>
           <JAT_job_restarted>0</JAT_job_restarted>
-          <JAT_start_time>2026-11-02T21:02:04.739277</JAT_start_time>
+          <JAT_start_time>2026-11-22T20:22:30.176337</JAT_start_time>
           <JAT_granted_destin_identifier_list>
             <element>
               <JG_qname>short.q@exec1</JG_qname>
@@ -141,7 +141,7 @@
         </element>
       </JB_grp_list>
       <JB_sync_options>1</JB_sync_options>
-      <JB_category_id>59</JB_category_id>
+      <JB_category_id>45</JB_category_id>
     </element>
   </djob_info>
   <messages>
@@ -149,7 +149,7 @@
       <SME_global_message_list>
         <element>
           <MES_message_number>26</MES_message_number>
-          <MES_message>queue instance &quot;short.q@exec1&quot; is in suspend alarm: np_load_avg=0.078571 (no load adjustment) &gt;= 0.0</MES_message>
+          <MES_message>queue instance &quot;short.q@exec1&quot; is in suspend alarm: np_load_avg=0.098571 (no load adjustment) &gt;= 0.0</MES_message>
         </element>
       </SME_global_message_list>
     </element>

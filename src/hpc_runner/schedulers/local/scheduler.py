@@ -11,7 +11,7 @@ import shlex
 import subprocess
 import tempfile
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -120,8 +120,18 @@ class LocalScheduler(BaseScheduler):
             "job_name": shlex.quote(self.job_name(job)),
         }
 
-    def submit(self, job: Job, *, keep_script: bool = False, verbose: bool = False) -> JobResult:
+    def submit(
+        self,
+        job: Job,
+        *,
+        keep_script: bool = False,
+        verbose: bool = False,
+        wait: bool = False,
+        on_submit: Callable[[JobResult], None] | None = None,
+    ) -> JobResult:
         """Run job as a local subprocess; waits for it when ``job.interactive``.
+
+        With *wait* a batch job is started, then polled until it ends.
 
         Raises:
             NotSupportedError: The job is an array job or has dependencies;
@@ -173,7 +183,9 @@ class LocalScheduler(BaseScheduler):
             stderr_path=stderr_path,
         )
         self._results[job_id] = result
-        return result
+        if on_submit is not None:
+            on_submit(result)
+        return self._waited(result, None) if wait else result
 
     def preview(self, job: Job, *, verbose: bool = False) -> str:
         """Return the script :meth:`submit` would write for *job*.

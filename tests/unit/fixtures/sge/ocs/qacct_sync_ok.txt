@@ -1,0 +1,48 @@
+==============================================================
+qname                              all.q               
+hostname                           exec1               
+group                              tester              
+owner                              tester              
+project                            NONE                
+department                         defaultdepartment   
+jobname                            sync_ok             
+jobnumber                          40                  
+taskid                             undefined
+pe_taskid                          NONE
+arid                               undefined
+account                            sge                 
+priority                           0                   
+qsub_time                          2026-11-22 20:19:03.888854
+submit_cmd_line                    qsub -sync y -N sync_ok /work/capture/sync_ok.sh
+start_time                         2026-11-22 20:19:03.893042
+end_time                           2026-11-22 20:19:03.894768
+granted_pe                         NONE                
+slots                              1                   
+failed                             0    
+exit_status                        0                   
+ru_wallclock                       0            
+ru_utime                           0.002        
+ru_stime                           0.000        
+ru_maxrss                          3740                
+ru_ixrss                           0                   
+ru_ismrss                          0                   
+ru_idrss                           0                   
+ru_isrss                           0                   
+ru_minflt                          263                 
+ru_majflt                          0                   
+ru_nswap                           0                   
+ru_inblock                         0                   
+ru_oublock                         8                   
+ru_msgsnd                          0                   
+ru_msgrcv                          0                   
+ru_nsignals                        0                   
+ru_nvcsw                           1                   
+ru_nivcsw                          0                   
+wallclock                          0.819        
+cpu                                0.002        
+mem                                0.000             
+io                                 0.000             
+ioops                              0            
+iow                                0.000             
+maxvmem                            0                 
+maxrss                             0                 

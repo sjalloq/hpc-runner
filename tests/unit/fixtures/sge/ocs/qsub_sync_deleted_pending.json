@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "qsub",
+    "-sync",
+    "y",
+    "-N",
+    "sync_deleted_pending",
+    "/work/capture/sync_deleted_pending.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Your job 45 (\"sync_deleted_pending\") has been submitted\nUnable to run job 45\n",
+  "stderr": ""
+}

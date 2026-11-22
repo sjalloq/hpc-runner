@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "wait_ok",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--wait",
+    "/work/capture-jobs/wait_ok.sh"
+  ],
+  "returncode": 0,
+  "stdout": "Submitted batch job 242\n",
+  "stderr": ""
+}

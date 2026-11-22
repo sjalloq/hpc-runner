@@ -20,6 +20,7 @@ from tests.integration.capture_slurm import (
     SACCT_FORMAT,
     SQUEUE_FIELDS,
     SQUEUE_FORMAT,
+    history_argv,
     is_stub,
     job_rows,
     sacct_argv,
@@ -108,6 +109,43 @@ def test_squeue_is_asked_for_pipe_delimited_text_without_a_header() -> None:
     assert squeue_argv() == ["squeue", "-h", "-o", SQUEUE_FORMAT]
     assert squeue_argv("12") == ["squeue", "-h", "-j", "12", "-o", SQUEUE_FORMAT]
     assert squeue_argv("12", tasks=True) == ["squeue", "-h", "-r", "-j", "12", "-o", SQUEUE_FORMAT]
+
+
+def test_the_history_is_asked_by_user_and_start_time() -> None:
+    assert history_argv("tester", "2026-11-22T20:09:12") == [
+        "sacct",
+        "-P",
+        "-n",
+        "-u",
+        "tester",
+        "-S",
+        "2026-11-22T20:09:12",
+        f"--format={SACCT_FORMAT}",
+    ]
+
+
+#: The jobs submitted with ``sbatch --wait``: scenario and what sbatch exited with.
+WAITED = {
+    "ok": 0,
+    "exit1": 1,
+    "exit137": 137,
+    "out_of_memory": 1,
+    "array_partial": 1,
+    "cancelled_pending": 0,
+    "cancelled_running": 1,
+    "dependent_skipped": 0,
+}
+
+
+def test_sbatch_wait_prints_the_job_id_and_exits_as_the_job_did(flavour: str) -> None:
+    manifest = _manifest(flavour)
+    for scenario, returncode in WAITED.items():
+        waited = json.loads((FIXTURES / flavour / f"sbatch_wait_{scenario}.json").read_text())
+        assert "--wait" in waited["argv"], scenario
+        assert waited["returncode"] == returncode, scenario
+        assert waited["stdout"] == f"Submitted batch job {manifest['jobs'][f'wait_{scenario}']}\n"
+        assert waited["stderr"] == "", scenario
+        assert f"sacct_wait_{scenario}.txt" in manifest["files"], scenario
 
 
 def test_scontrol_and_sbatch_argv() -> None:

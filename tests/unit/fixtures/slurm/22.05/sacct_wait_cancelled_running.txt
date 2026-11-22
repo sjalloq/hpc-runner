@@ -1,0 +1,2 @@
+250|250|tester|proj|all|CANCELLED by 1003|0:0|None|2026-11-22T20:20:21|2026-11-22T20:20:21|2026-11-22T20:20:22|00:00:01|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_cancelled_running
+250.batch|250.batch||proj||CANCELLED|0:15||2026-11-22T20:20:21|2026-11-22T20:20:21|2026-11-22T20:20:22|00:00:01||exec2|1|1||3520K||cpu=1,mem=100M,node=1||batch

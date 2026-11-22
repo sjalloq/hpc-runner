@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "scancel",
+    "241"
+  ],
+  "returncode": 210,
+  "stdout": "",
+  "stderr": "scancel: error: Kill job error on job id 241: Access/permission denied\n"
+}

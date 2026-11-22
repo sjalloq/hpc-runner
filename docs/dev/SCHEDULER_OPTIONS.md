@@ -98,3 +98,21 @@ command.
 | `srun` | `--kill-on-invalid-dep` | Rejected |
 | `srun` | `--dependency` | Honoured; if the parent failed, `srun` waits for ever |
 | `srun` | `--export=NONE`, `--export=NAME=...` | No login environment is built (`sbatch` builds one) |
+
+## Waiting for a batch job
+
+`hpc run --batch --wait` and `scheduler.submit(job, wait=True)` submit with
+the scheduler's own waiting submit command. The job id is shown when the
+job is submitted; the command's exit status is the job's exit code; the
+status is read once the command has returned.
+
+| Scheduler | Command | Returns |
+|---|---|---|
+| SGE | `qsub -sync y <script>` | the job's exit code; 0 for a job deleted before or while it ran; for an array, 0 or 1 |
+| Slurm | `sbatch --wait <script>` | the job's exit code; 1 for a job killed at its time or memory limit or cancelled while running; 0 for a job cancelled while pending or skipped; for an array, the highest task code |
+| local | none: the job is started, then polled | |
+
+- A job that did not complete never exits 0, whatever the command returned.
+- A skipped job exits 1: on SGE `qsub` returns the guard's 113, which is
+  never shown.
+- An array exits 0 only if every task completed, otherwise 1.

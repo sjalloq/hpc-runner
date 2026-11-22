@@ -146,7 +146,7 @@ name uses ``HPC_SCHEDULER``, else the config's ``scheduler`` key, and raises
    print(scheduler.preview(job))
 
 Every scheduler has the same contract:
-``submit(job, *, keep_script=False, verbose=False)``,
+``submit(job, *, keep_script=False, verbose=False, wait=False, on_submit=None)``,
 ``preview(job, *, verbose=False)`` (``verbose`` shows module command output
 in the job instead of only on failure), ``cancel(job_id)``,
 ``get_statuses(job_ids)`` (one bulk query, a dict of id to status),
@@ -167,6 +167,37 @@ config, and the spec wins over config. An interactive job runs attached
 
    result = scheduler.submit(resolve(JobSpec("make sim", interactive=True), config, host))
    print(result.exit_code)
+
+
+Two ways to wait
+^^^^^^^^^^^^^^^^
+
+``submit(job, wait=True)`` waits at submit, through the scheduler: the job
+is submitted with the scheduler's own waiting submit command (SGE ``qsub
+-sync y``, Slurm ``sbatch --wait``; the local scheduler starts the job and
+polls it) and the call returns when the job has ended. The handle's
+``exit_code`` is what that command returned and ``final_status`` the status
+read after it; ``status`` and ``returncode`` give the same two without
+asking the scheduler again. ``on_submit`` is called with the handle as soon
+as the job has an id, before the wait. ``hpc run --batch --wait`` is this
+call.
+
+.. code-block:: python
+
+   result = scheduler.submit(job, wait=True, on_submit=lambda r: print("submitted", r.job_id))
+   print(result.final_status, result.exit_code)
+
+``result.wait()`` (below) polls a job that was submitted earlier, without
+the flag, and ``result.returncode`` then asks the scheduler's accounting
+for the exit code. The two can differ for a job the scheduler ended
+itself: on Slurm a job killed at its time limit has ``returncode`` 143,
+while ``sbatch --wait`` returns 1 for it. Slurm's accounting also reports
+an exit status above 128 less 128 once the controller has forgotten the
+job; the waiting submit returns it as it was.
+
+An array handle from ``submit(job, wait=True)`` has every task's status in
+``final_tasks`` (what ``task_statuses()`` returns) and the submit command's
+exit code in ``exit_code``.
 
 
 Monitoring jobs

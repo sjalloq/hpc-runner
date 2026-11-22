@@ -19,10 +19,10 @@ down with its reason.
 
 Where things stand, from a pass over `testbed/`, `tests/` and CI on
 2026-11-16. There is no PBS backend (`schedulers/__init__.py` names a
-`pbs` module that does not exist), and the Slurm backend renders and
-submits but reads no status yet, so most of this cannot be closed today.
+`pbs` module that does not exist), and no integration test has been run on
+Slurm, so most of this cannot be closed today.
 It is the list of what a backend must bring with it.
-For Slurm that work is step 2 of `slurm/PLAN.md`, "Order of
+For Slurm that work is step 1 of `slurm/PLAN.md`, "Order of
 work". For PBS nothing is planned.
 
 ### Integration suite (`tests/integration/`)
@@ -31,9 +31,9 @@ work". For PBS nothing is planned.
   (run on every scheduler, scheduler words from the cluster class), SGE's
   own in `tests/integration/sge/`. No generic test can run on Slurm or PBS
   yet:
-  - Slurm has its testbed config and its cluster class; what is missing is
-    the backend's reading of status, exit codes and listings
-    (`slurm/PLAN.md`, "Order of work").
+  - Slurm has its testbed config, its cluster class and a backend that
+    reads status, exit codes and listings; the suite has not been run on it
+    (`slurm/PLAN.md`, "Order of work", step 2).
   - PBS: `cluster.config()` reads
     `testbed/<scheduler>/<flavour>/hpc-runner-testbed.toml`
     (`cluster.py`, `config_path`) and `pbs/openpbs` has no such file; its
@@ -64,27 +64,17 @@ work". For PBS nothing is planned.
   - Slurm: the module takes every scenario of `slurm/PLAN.md`, "Captures
     to take", on both flavours (`testbed/slurm/README.md`, "Captures").
   - PBS: not planned anywhere.
-- `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (46 files each),
-  `slurm/24.11` (119 files) and `slurm/22.05` (121 files). Of the Slurm
-  ones only the `sbatch_*.json` files are read (`test_slurm.py`: the job
-  id, the two rejections); `test_slurm_capture_files.py` checks the file
-  set.
-- Slurm texts no capture provides:
-  - A completed-jobs listing (`sacct` by user and start time, what
-    `hpc status --history` will ask). The argv is the backend's to choose;
-    the capture follows it.
-- `hpc-testbed capture` now empties the fixture folder before it copies.
-  Not run on SGE since that change.
-- The helpers that serve fixtures are SGE by name and by content:
-  `SGEFixtures`, `make_sge_responder` (`tests/fakes.py`), the
-  `sge_fixtures` and `mock_sge_commands` fixtures (`tests/conftest.py`).
-  The tests that are not about SGE but run on them see only SGE answers:
-  `test_tui/test_job_table.py`, `test_trace/test_invocation.py`,
-  `test_trace/test_config_and_cli.py`.
-- `capture` has not been run since the containers were renamed
-  (2026-11-16). Its two `pause_node`/`unpause_node` calls are new and
-  untested. Closes with one run of `hpc-testbed --scheduler sge capture`
-  and an empty or explained fixture diff.
+- `tests/unit/fixtures/` holds `sge/soge` and `sge/ocs` (60 files each),
+  `slurm/24.11` (158 files) and `slurm/22.05` (160 files), all taken again
+  on 2026-11-22.
+- The SGE captures were taken again on both flavours on 2026-11-22 (the
+  first run since the containers were renamed; the run ended clean). The
+  texts differ from the ones before in more than ids and times: the order
+  of jobs in a snapshot, which array task is `r` and which `t`, column
+  widths, host names. Nobody has read the whole diff.
+- A waited SGE submission has no capture of a rejection (`qsub -sync y`
+  refused); its test uses the text the other SGE tests type by hand
+  (`QSUB_REJECT`, `test_subprocess_seam.py`).
 
 ### Unit suite
 
@@ -92,7 +82,14 @@ work". For PBS nothing is planned.
   `slurm_interactive` and `local` (`tests/unit/golden/`, `CASES` in
   `test_golden.py`). None for PBS.
 - Scheduler unit tests are `test_sge*.py`, `test_slurm.py` (rendering and
-  submission only) and `test_local.py` (`tests/unit/test_schedulers/`).
+  submission), `test_slurm_reading.py`, `test_waited_submission.py` (both
+  schedulers) and `test_local.py` (`tests/unit/test_schedulers/`).
+- The unit tests that are not about one scheduler and run on every
+  flavour of both: the waited submission, `TestExitCode` in
+  `test_cli/test_run.py`, `test_trace/test_invocation.py`, `TestTraceFlag`
+  in `test_trace/test_config_and_cli.py` and one status-column test in
+  `test_tui/test_job_table.py`. The other tests that use `sge_fixtures`
+  or `mock_sge_commands` are SGE's own.
 - `test-review/LIFECYCLE_MATRIX.md` (every job state against every reader,
   with the test for each cell) covers SGE only. It is what caught the
   gaps on SGE; there is no such table for another scheduler.
@@ -177,14 +174,19 @@ Each bears on a line of `slurm/PLAN.md`; nothing is decided.
 
 - `sacct` prints an exit status above 128 less 128: a script that exits 137
   is `ExitCode 9:0` (`sacct_exit137.txt`); `scontrol show job` says
-  `137:0`. A batch shell killed by SIGKILL is `0:9` in both. The plan's
-  rule gives 9 for the first and 137 for the second.
+  `137:0`. A batch shell killed by SIGKILL is `0:9` in both. Built: the
+  exit code is read from `scontrol show job` while the controller knows
+  the job. After that, and in `hpc status --history` always, it is
+  `sacct`'s number: 137 shows as 9.
 - A job whose node dies is requeued by default (`JobRequeue=1`): its
   `sacct` row is `PENDING` again, and `NODE_FAIL` is seen only with `-D`
   (`sacct_node_fail_requeued*.txt`). It ends `NODE_FAIL` only when
   submitted with `--no-requeue`.
 - `NODE_FAIL` has `ExitCode 1:0` on 24.11 and `0:0` on 22.05 on the job's
   own row; the `.batch` row is `CANCELLED` with an empty `ExitCode`.
+  `scontrol show job` says `0:1` on 24.11 and `0:0` on 22.05. So the exit
+  code hpc-runner gives a job whose node died is 129 while the 24.11
+  controller knows it, 1 after that, and none on 22.05.
 - On 22.05 the early `sacct` row of a running job says `PENDING` while its
   `.batch` row says `RUNNING` (`sacct_running_stub.txt`). The plan says
   the state in that row is right.
@@ -209,11 +211,6 @@ Run on 24.11 and 22.05 while the backend's rendering was built. Nothing
 here is decided; where something was built to keep a job from going wrong
 silently, it says so.
 
-- `${hpc.host}` is `$HOSTNAME` (`slurm/PLAN.md`, "`${hpc.*}` variables").
-  In an interactive job that inherits the environment it is the submit
-  host's name: `srun` passes `HOSTNAME=login` on. `$SLURMD_NODENAME` was
-  the node in all four cases run (`sbatch` and `srun`, `--export=ALL` and
-  `NONE`).
 - A `#SBATCH` line does not carry every character: `'`, `"` and `\` are
   taken out of the value, `#` ends the line, an unmatched `'` is fatal.
   The plan refuses whitespace only. Built: those four are refused with
@@ -239,8 +236,123 @@ silently, it says so.
 - The plan says `SRUN_CPUS_PER_TASK` is needed on 22.05. Not reproduced
   here: with cgroups on, an `srun` step inside a two-CPU job saw two CPUs
   without it on both versions. It is exported as the plan says.
-- Nothing above has an integration test; they belong with step 2 of
+- Nothing above has an integration test; they belong with step 1 of
   `slurm/PLAN.md`.
+
+## The exit code of a batch job: to be revisited
+
+The user may revisit this (2026-11-22: "it doesn't seem clean"). Built as
+decided that day; everything below was run on the testbeds or is in the
+captures.
+
+What was decided:
+
+- The exit code is what a shell would have reported for the job's command.
+- `hpc run --batch --wait` and `submit(job, wait=True)` submit with the
+  scheduler's own wait (`sbatch --wait`, `qsub -sync y`) and return what
+  it returns. hpc-runner does not poll and then ask.
+- `result.wait()` on a job submitted earlier polls, then reads the code
+  from the scheduler's records.
+
+Why it is not clean: one job can have three different numbers, depending
+on who is asked.
+
+| Job (Slurm, both versions) | `sbatch --wait` returns | `scontrol show job` | `sacct` |
+|---|---|---|---|
+| Script exits 3 | 3 | `3:0` | `3:0` |
+| Script exits 137, or its tool is killed by SIGKILL | 137 | `137:0` | `9:0` |
+| Tool segfaults | 139 | not captured | `11:0` |
+| Script's own shell killed by SIGKILL | 1 | `0:9` | `0:9` |
+| Time limit | 1 | `0:15` | job row `0:0`, `.batch` row `0:15` |
+| Cancelled while running | 1 | `0:15` | job row `0:0`, `.batch` row `0:15` |
+| Over its memory | 1 | `0:125` | `0:125` |
+| Cancelled while pending, or skipped | 0 | `0:0` | `0:0` |
+
+So, as built:
+
+| Where the user looks | Time limit | Over memory | Exit 137 |
+|---|---|---|---|
+| `hpc run --batch --wait`, `submit(job, wait=True)` | 1 | 1 | 137 |
+| `result.wait()` then `result.returncode`; `hpc status <id>` while Slurm remembers the job | 143 | 253 | 137 |
+| `hpc status <id>` after Slurm has forgotten the job; `hpc status --history` always | 143 | 253 | 9 |
+
+- The cause of the last column: `sacct` takes 128 off an exit status above
+  128 when it prints (`src/sacct/print.c`, "if (tmp_int >= 128) tmp_int -=
+  128", in 22.05.8 and 24.11.5). The stored value is right; `scontrol`
+  prints it as it is.
+- The 0 that `sbatch --wait` and `qsub -sync y` return for a job that never
+  ran or was deleted is never passed up: the status is read after the wait
+  and a job that did not complete exits 1.
+- SGE has one number everywhere: `qacct` holds 137 as 137, and `qsub -sync
+  y` returns it. What SGE costs instead: on `ocs` 9.1.7 an ordinary
+  user's `qsub -sync y` returns 32 s after the job has ended, every job
+  (a manager's in 1 s; `soge` in 1 s for anyone); an interrupted `qsub
+  -sync y` exits 1 and removes the job, where `sbatch --wait` exits 130
+  and leaves it running.
+- Getting the job id at submit time needed a pseudo-terminal on the waiting
+  command's stdout: `qsub -sync y` writing to a pipe prints the id only
+  when the job has ended.
+- Not run: Ctrl-C during a waited `hpc run` on either scheduler.
+
+Ways it could be made one number, none chosen:
+
+- Make the waited form agree with the records: after the wait, report the
+  code from `scontrol` (143 for a time limit) and use the scheduler's
+  return only for what the records get wrong.
+- Have the job script write its own exit code to a file on the shared
+  filesystem and read that everywhere, as SGE's dependency guard already
+  does for skipped jobs.
+- Correct `--history` with one `scontrol show job` for jobs Slurm still
+  remembers.
+
+## Left open by the reading step and the waited submission (2026-11-22)
+
+Read from the captures or run on the testbeds that day. Nothing here is
+decided.
+
+- `hpc run --batch --wait` exits with what the scheduler's waiting submit
+  returns, and a handle polled later gives the code in accounting. They
+  differ for a job the scheduler ended. Slurm, both versions: time limit 1
+  against 143, cancelled while running 1 against 143, out of memory 1
+  against 253.
+- After the waiting submit returns the status is read with the polling
+  wait, not with one query. Seen on 22.05: straight after `sbatch --wait`
+  of an array returned, `sacct` had one row, named by the bare job id, in
+  place of the three task rows. On SGE the accounting record of a job is
+  written some time after `qsub -sync y` returns. One query is what
+  happens when the record is already whole.
+- A job deleted while pending under `qsub -sync y`: `qsub` exits 0 and
+  there is never an accounting record, so `hpc run --batch --wait` prints
+  UNKNOWN and exits 1 only after the 60 s the wait gives an unknown job.
+- `sacct -S <time>` leaves out a job that was never eligible to run: one
+  held, or waiting on a dependency, until it was cancelled (`sacct_history.txt`
+  has no `cancelled_pending`, `dependent_skipped` or `array_cancelled_pending`).
+  So `hpc status --history` on Slurm does not show a skipped job. A job
+  cancelled while pending for resources is shown.
+- `hpc status <id>` shows Slurm's own state (`OUT_OF_MEMORY`,
+  `CANCELLED by 1003`) only in the extra details: with `--verbose`, and
+  under `details` in `--json`. The plain table of a job killed for memory
+  says KILLED and nothing more.
+- `hpc status <id>` of an array lists every task, also while tasks are
+  pending or running. SGE lists tasks for a finished array only.
+- `hpc status`, `hpc monitor` and `hpc cancel` see an array as one entry
+  under its own id, as on SGE. One task cannot be cancelled by `hpc
+  cancel <id>_<n>`: the id is not in the listing.
+- `JobInfo.memory` is not filled on Slurm. `sacct` ReqMem and `squeue`
+  MinMemory are per CPU or per node depending on how the job asked, and
+  the early row of 22.05 prints `16?`.
+- `scancel` of an id that never existed exits 0 without a word
+  (`scancel_missing.json`), so `cancel()` returns True for it.
+- The waiting submit command's stdout is a pseudo-terminal, because `qsub
+  -sync y` writing to a pipe prints the job id only when the job has
+  ended. Not run: whether a site's `qsub` or `sbatch` wrapper behaves
+  differently when its stdout is a terminal.
+- Slurm states with no capture, mapped from the names `squeue --helpstate`
+  lists on 24.11.5 (22.05 has no such option): `REQUEUE_HOLD`,
+  `REQUEUE_FED`, `RESV_DEL_HOLD`, `CONFIGURING`, `COMPLETING`,
+  `SIGNALING`, `STAGE_OUT`, `RESIZING`, `STOPPED`, `BOOT_FAIL`,
+  `SPECIAL_EXIT`, `PREEMPTED`, `REVOKED`, `DEADLINE`. `REQUEUED` is seen
+  only with `sacct -D`, which hpc-runner does not ask for.
 
 ## Trace
 

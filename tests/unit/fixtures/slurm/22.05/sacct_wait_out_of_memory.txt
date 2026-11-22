@@ -1,0 +1,2 @@
+245|245|tester|proj|all|OUT_OF_MEMORY|0:125|None|2026-11-22T20:20:06|2026-11-22T20:20:07|2026-11-22T20:20:07|00:00:00|UNLIMITED|exec2|1|1|50M||billing=1,cpu=1,mem=50M,node=1|billing=1,cpu=1,mem=50M,node=1|/work/capture-jobs|wait_out_of_memory
+245.batch|245.batch||proj||OUT_OF_MEMORY|0:125||2026-11-22T20:20:07|2026-11-22T20:20:07|2026-11-22T20:20:07|00:00:00||exec2|1|1||3260K||cpu=1,mem=50M,node=1||batch

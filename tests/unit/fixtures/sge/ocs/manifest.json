@@ -1,31 +1,37 @@
 {
-  "captured": "2026-11-02T21:04:13Z",
+  "captured": "2026-11-22T20:24:15Z",
   "flavour": "ocs",
   "scheduler": "OCS 9.1.7 (191026-0541)",
   "jobs": {
-    "xml_defects": "118",
-    "timeout": "119",
-    "ok": "120",
-    "exit1": "121",
-    "array_done": "122",
-    "bob": "123",
-    "skipped": "124",
-    "vmem": "127",
-    "deleted_pending": "128",
-    "signal": "129",
-    "lost_node": "130",
-    "suspended": "132",
-    "queue_suspended": "133",
-    "requeued": "134",
-    "deleting": "135",
-    "threshold": "136",
-    "requeue_pending": "137",
-    "deleting_transfer": "138",
-    "running": "139",
-    "held": "140",
-    "dependent": "141",
-    "eqw": "142",
-    "array": "143"
+    "xml_defects": "29",
+    "timeout": "30",
+    "ok": "31",
+    "exit1": "32",
+    "array_done": "33",
+    "bob": "34",
+    "skipped": "35",
+    "vmem": "38",
+    "deleted_pending": "39",
+    "sync_ok": "40",
+    "sync_exit1": "41",
+    "sync_exit137": "42",
+    "sync_skipped": "43",
+    "sync_array_partial": "44",
+    "sync_deleted_pending": "45",
+    "signal": "46",
+    "lost_node": "47",
+    "suspended": "49",
+    "queue_suspended": "50",
+    "requeued": "51",
+    "deleting": "52",
+    "threshold": "53",
+    "requeue_pending": "54",
+    "deleting_transfer": "55",
+    "running": "56",
+    "held": "57",
+    "dependent": "58",
+    "eqw": "59",
+    "array": "60"
   },
   "files": {
     "qstat_empty.xml": {
@@ -59,7 +65,7 @@
       "argv": [
         "qstat",
         "-j",
-        "118",
+        "29",
         "-xml"
       ]
     },
@@ -82,7 +88,7 @@
       "argv": [
         "qacct",
         "-j",
-        "120"
+        "31"
       ]
     },
     "qacct_exit1.txt": {
@@ -90,7 +96,7 @@
       "argv": [
         "qacct",
         "-j",
-        "121"
+        "32"
       ]
     },
     "qacct_array_task.txt": {
@@ -98,7 +104,7 @@
       "argv": [
         "qacct",
         "-j",
-        "122",
+        "33",
         "-t",
         "2"
       ]
@@ -108,7 +114,7 @@
       "argv": [
         "qacct",
         "-j",
-        "122"
+        "33"
       ]
     },
     "qacct_skipped.txt": {
@@ -116,7 +122,7 @@
       "argv": [
         "qacct",
         "-j",
-        "124"
+        "35"
       ]
     },
     "qacct_owner_bob.txt": {
@@ -135,14 +141,14 @@
       "argv": [
         "qacct",
         "-j",
-        "127"
+        "38"
       ]
     },
     "qdel_pending.txt": {
       "what": "qdel stdout for a job that never ran",
       "argv": [
         "qdel",
-        "128"
+        "39"
       ]
     },
     "qacct_deleted_pending.txt": {
@@ -150,14 +156,150 @@
       "argv": [
         "qacct",
         "-j",
-        "128"
+        "39"
+      ]
+    },
+    "qsub_sync_ok.json": {
+      "what": "qsub -sync y of the sync_ok job (JSON)",
+      "argv": [
+        "qsub",
+        "-sync",
+        "y",
+        "-N",
+        "sync_ok",
+        "/work/capture/sync_ok.sh"
+      ]
+    },
+    "qacct_sync_ok.txt": {
+      "what": "qacct -j of the sync_ok job: exited 0",
+      "argv": [
+        "qacct",
+        "-j",
+        "40"
+      ]
+    },
+    "qsub_sync_exit1.json": {
+      "what": "qsub -sync y of the sync_exit1 job (JSON)",
+      "argv": [
+        "qsub",
+        "-sync",
+        "y",
+        "-N",
+        "sync_exit1",
+        "/work/capture/sync_exit1.sh"
+      ]
+    },
+    "qacct_sync_exit1.txt": {
+      "what": "qacct -j of the sync_exit1 job: exited 1",
+      "argv": [
+        "qacct",
+        "-j",
+        "41"
+      ]
+    },
+    "qsub_sync_exit137.json": {
+      "what": "qsub -sync y of the sync_exit137 job (JSON)",
+      "argv": [
+        "qsub",
+        "-sync",
+        "y",
+        "-N",
+        "sync_exit137",
+        "/work/capture/sync_exit137.sh"
+      ]
+    },
+    "qacct_sync_exit137.txt": {
+      "what": "qacct -j of the sync_exit137 job: exited 137",
+      "argv": [
+        "qacct",
+        "-j",
+        "42"
+      ]
+    },
+    "qsub_sync_skipped.json": {
+      "what": "qsub -sync y of the sync_skipped job (JSON)",
+      "argv": [
+        "qsub",
+        "-sync",
+        "y",
+        "-N",
+        "sync_skipped",
+        "/work/capture/sync_skipped.sh"
+      ]
+    },
+    "qacct_sync_skipped.txt": {
+      "what": "qacct -j of the sync_skipped job: exited 113, the dependency guard's skip code",
+      "argv": [
+        "qacct",
+        "-j",
+        "43"
+      ]
+    },
+    "qsub_sync_array_partial.json": {
+      "what": "qsub -sync y of the sync_array_partial job (JSON)",
+      "argv": [
+        "qsub",
+        "-sync",
+        "y",
+        "-N",
+        "sync_array_partial",
+        "/work/capture/sync_array_partial.sh"
+      ]
+    },
+    "qacct_sync_array_partial.txt": {
+      "what": "qacct -j of the sync_array_partial job: task 3 exited 1",
+      "argv": [
+        "qacct",
+        "-j",
+        "44"
+      ]
+    },
+    "qacct_sync_array_partial_task1.txt": {
+      "what": "qacct -j <id> -t 1 of the sync_array_partial job",
+      "argv": [
+        "qacct",
+        "-j",
+        "44",
+        "-t",
+        "1"
+      ]
+    },
+    "qacct_sync_array_partial_task2.txt": {
+      "what": "qacct -j <id> -t 2 of the sync_array_partial job",
+      "argv": [
+        "qacct",
+        "-j",
+        "44",
+        "-t",
+        "2"
+      ]
+    },
+    "qacct_sync_array_partial_task3.txt": {
+      "what": "qacct -j <id> -t 3 of the sync_array_partial job",
+      "argv": [
+        "qacct",
+        "-j",
+        "44",
+        "-t",
+        "3"
+      ]
+    },
+    "qsub_sync_deleted_pending.json": {
+      "what": "qsub -sync y of the sync_deleted_pending job (JSON)",
+      "argv": [
+        "qsub",
+        "-sync",
+        "y",
+        "-N",
+        "sync_deleted_pending",
+        "/work/capture/sync_deleted_pending.sh"
       ]
     },
     "qdel.txt": {
       "what": "qdel stdout",
       "argv": [
         "qdel",
-        "129"
+        "46"
       ]
     },
     "qacct_signal.txt": {
@@ -165,7 +307,7 @@
       "argv": [
         "qacct",
         "-j",
-        "129"
+        "46"
       ]
     },
     "qacct_timeout.txt": {
@@ -173,7 +315,7 @@
       "argv": [
         "qacct",
         "-j",
-        "119"
+        "30"
       ]
     },
     "qacct_lost_node.txt": {
@@ -181,7 +323,7 @@
       "argv": [
         "qacct",
         "-j",
-        "130"
+        "47"
       ]
     },
     "qstat_lifecycle.xml": {
@@ -206,7 +348,7 @@
       "argv": [
         "qstat",
         "-j",
-        "132",
+        "49",
         "-xml"
       ]
     },
@@ -215,7 +357,7 @@
       "argv": [
         "qstat",
         "-j",
-        "133",
+        "50",
         "-xml"
       ]
     },
@@ -224,7 +366,7 @@
       "argv": [
         "qstat",
         "-j",
-        "134",
+        "51",
         "-xml"
       ]
     },
@@ -232,7 +374,7 @@
       "what": "qdel stdout when execd is away",
       "argv": [
         "qdel",
-        "135"
+        "52"
       ]
     },
     "qstat_deleting.xml": {
@@ -249,7 +391,7 @@
       "argv": [
         "qstat",
         "-j",
-        "135",
+        "52",
         "-xml"
       ]
     },
@@ -258,7 +400,7 @@
       "argv": [
         "qacct",
         "-j",
-        "134"
+        "51"
       ]
     },
     "qstat_transient.xml": {
@@ -283,7 +425,7 @@
       "argv": [
         "qstat",
         "-j",
-        "136",
+        "53",
         "-xml"
       ]
     },
@@ -292,7 +434,7 @@
       "argv": [
         "qstat",
         "-j",
-        "137",
+        "54",
         "-xml"
       ]
     },
@@ -301,7 +443,7 @@
       "argv": [
         "qstat",
         "-j",
-        "138",
+        "55",
         "-xml"
       ]
     },
@@ -327,7 +469,7 @@
       "argv": [
         "qstat",
         "-j",
-        "139",
+        "56",
         "-xml"
       ]
     },
@@ -336,7 +478,7 @@
       "argv": [
         "qstat",
         "-j",
-        "140",
+        "57",
         "-xml"
       ]
     },
@@ -345,7 +487,7 @@
       "argv": [
         "qstat",
         "-j",
-        "141",
+        "58",
         "-xml"
       ]
     },
@@ -354,7 +496,7 @@
       "argv": [
         "qstat",
         "-j",
-        "142",
+        "59",
         "-xml"
       ]
     },
@@ -363,7 +505,7 @@
       "argv": [
         "qstat",
         "-j",
-        "143",
+        "60",
         "-xml"
       ]
     },
@@ -390,7 +532,7 @@
       "argv": [
         "qacct",
         "-j",
-        "120"
+        "31"
       ]
     },
     "qacct_history_master_down.json": {
@@ -409,7 +551,7 @@
       "argv": [
         "qstat",
         "-j",
-        "120",
+        "31",
         "-xml"
       ]
     }

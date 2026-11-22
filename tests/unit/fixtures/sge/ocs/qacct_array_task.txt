@@ -1,34 +1,34 @@
 ==============================================================
-qname                              short.q             
-hostname                           exec1               
+qname                              all.q               
+hostname                           exec2               
 group                              tester              
 owner                              tester              
 project                            NONE                
 department                         defaultdepartment   
 jobname                            array_done          
-jobnumber                          122                 
+jobnumber                          33                  
 taskid                             2                   
 pe_taskid                          NONE
 arid                               undefined
 account                            sge                 
 priority                           0                   
-qsub_time                          2026-11-02 21:00:47.982065
+qsub_time                          2026-11-22 20:18:52.787080
 submit_cmd_line                    qsub -N array_done /work/capture/array_done.sh
-start_time                         2026-11-02 21:00:47.986908
-end_time                           2026-11-02 21:00:47.988559
+start_time                         2026-11-22 20:18:52.793960
+end_time                           2026-11-22 20:18:52.796317
 granted_pe                         NONE                
 slots                              1                   
 failed                             0    
 exit_status                        0                   
 ru_wallclock                       0            
-ru_utime                           0.000        
-ru_stime                           0.002        
-ru_maxrss                          4708                
+ru_utime                           0.001        
+ru_stime                           0.001        
+ru_maxrss                          3848                
 ru_ixrss                           0                   
 ru_ismrss                          0                   
 ru_idrss                           0                   
 ru_isrss                           0                   
-ru_minflt                          267                 
+ru_minflt                          266                 
 ru_majflt                          0                   
 ru_nswap                           0                   
 ru_inblock                         0                   
@@ -36,9 +36,9 @@ ru_oublock                         8
 ru_msgsnd                          0                   
 ru_msgrcv                          0                   
 ru_nsignals                        0                   
-ru_nvcsw                           3                   
-ru_nivcsw                          0                   
-wallclock                          0.009        
+ru_nvcsw                           1                   
+ru_nivcsw                          3                   
+wallclock                          0.011        
 cpu                                0.002        
 mem                                0.000             
 io                                 0.000             

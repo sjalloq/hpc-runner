@@ -1,34 +1,34 @@
 ==============================================================
 qname                              short.q             
-hostname                           exec1               
+hostname                           exec2               
 group                              bob                 
 owner                              bob                 
 project                            NONE                
 department                         defaultdepartment   
 jobname                            bob                 
-jobnumber                          123                 
+jobnumber                          34                  
 taskid                             undefined
 pe_taskid                          NONE
 arid                               undefined
 account                            sge                 
 priority                           0                   
-qsub_time                          2026-11-02 21:00:47.991455
+qsub_time                          2026-11-22 20:18:52.799188
 submit_cmd_line                    qsub -b y -N bob -o /dev/null -j y sleep 2
-start_time                         2026-11-02 21:00:47.995766
-end_time                           2026-11-02 21:00:50.084863
+start_time                         2026-11-22 20:18:52.803997
+end_time                           2026-11-22 20:18:54.905384
 granted_pe                         NONE                
 slots                              1                   
 failed                             0    
 exit_status                        0                   
 ru_wallclock                       2            
 ru_utime                           0.077        
-ru_stime                           0.024        
-ru_maxrss                          8540                
+ru_stime                           0.036        
+ru_maxrss                          8252                
 ru_ixrss                           0                   
 ru_ismrss                          0                   
 ru_idrss                           0                   
 ru_isrss                           0                   
-ru_minflt                          10580               
+ru_minflt                          10446               
 ru_majflt                          0                   
 ru_nswap                           0                   
 ru_inblock                         0                   
@@ -36,16 +36,16 @@ ru_oublock                         8
 ru_msgsnd                          0                   
 ru_msgrcv                          0                   
 ru_nsignals                        0                   
-ru_nvcsw                           351                 
-ru_nivcsw                          30                  
-wallclock                          2.831        
-cpu                                0.101        
+ru_nvcsw                           333                 
+ru_nivcsw                          69                  
+wallclock                          2.111        
+cpu                                0.113        
 mem                                0.000             
 io                                 0.000             
 ioops                              0            
 iow                                0.000             
 maxvmem                            2650112           
-maxrss                             1437696           
+maxrss                             1572864           
 OWNER     WALLCLOCK         UTIME         STIME           CPU             MEMORY                 IO                IOW
 ======================================================================================================================
-bob               2         0.077         0.024         0.101              0.000              0.000              0.000
+bob               2         0.077         0.036         0.113              0.000              0.000              0.000

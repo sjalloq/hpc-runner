@@ -88,9 +88,14 @@ Schedulers (``src/hpc_runner/schedulers/``)
   ``scheduler.py`` is submit, status and cancel. The PE name and the
   resource names come from ``[schedulers.sge]``; nothing is hard-coded.
 - ``slurm/``: the same shape as ``sge/``. ``args.py`` renders each option
-  as the words ``sbatch`` and ``srun`` take; ``scheduler.py`` writes the
-  script and submits it; ``parser.py`` reads the job id ``sbatch`` prints.
-  Status, listings and cancel are not built yet.
+  as the words ``sbatch`` and ``srun`` take; ``scheduler.py`` is submit,
+  status and cancel; ``parser.py`` reads what ``sbatch``, ``sacct``,
+  ``squeue`` and ``scontrol show job`` print.
+- ``submit(job, wait=True)`` runs the scheduler's waiting submit command
+  (``qsub -sync y``, ``sbatch --wait``) through the seam with
+  ``on_stdout_line``, which hands over each line as it is printed, so the
+  job id is known before the command ends. ``BaseScheduler._waited`` then
+  reads the status and stores it on the handle.
 - ``local/``: runs the job as a subprocess on this machine with the same
   rendered environment.
 - The scheduler is named, never detected: ``get_scheduler(name)``, else
@@ -171,7 +176,12 @@ extend the capture. Regenerate a flavour against its running stack when a
 scenario changes. The manifest also records the argv behind every file.
 Slurm's captures are written the same way by
 ``tests/integration/capture_slurm.py`` into
-``tests/unit/fixtures/slurm/<flavour>/`` (``24.11``, ``22.05``).
+``tests/unit/fixtures/slurm/<flavour>/`` (``24.11``, ``22.05``), and read
+through ``slurm_fixtures``, ``mock_slurm_commands`` and
+``make_slurm_responder``. A test that is not about one scheduler uses
+``fixtures`` and ``mock_commands`` instead: it runs once for every flavour
+of every scheduler, and asks the ``Fixtures`` object for the scheduler's
+own words (``submit_command``, ``listing_file``, ``waited_answer()``).
 
 The docs are tested too: every Python snippet in the README and the API
 guide compiles (those marked ``# doctest: local`` run against the local

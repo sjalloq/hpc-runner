@@ -27,6 +27,14 @@ texts do not depend on hpc-runner's own rendering:
   setrlimit, so the process fails by itself (``failed 0``, non-zero exit).
 * ``deleted_pending``: a held job deleted with ``qdel`` before it ran: no
   accounting record ever (``qacct`` "not found", JSON).
+* ``sync_ok``, ``sync_exit1``, ``sync_exit137``, ``sync_skipped``,
+  ``sync_array_partial``, ``sync_deleted_pending``: jobs submitted with
+  ``qsub -sync y <script>``, which returns when the job has ended
+  (``qsub_sync_<scenario>.json``: exit status, stdout, stderr; and the job's
+  ``qacct -j`` as ``qacct_sync_<scenario>.txt``, but for the deleted one,
+  which has no record; the array's tasks also one by one,
+  ``qacct_sync_array_partial_task<n>.txt``). They exit 0, 1, 137 and 113; the array's task 3
+  exits 1; the last is held and deleted with ``qdel`` before it ran.
 * ``suspended``, ``queue_suspended``, ``requeued``: alive together for one
   snapshot (``qstat_lifecycle.xml``/``.txt``): ``qmod -sj`` (``s``), its
   queue instance suspended with ``qmod -sq`` (``S``), and a ``-r y`` job
@@ -65,6 +73,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -309,6 +318,65 @@ class Capture:
             as_json=True,
         )
 
+    def synced(self) -> None:
+        """``qsub -sync y``: what it prints, and what it exits with when the job has ended.
+
+        On ``ocs`` an ordinary user's ``qsub -sync y`` returns about half a
+        minute after the job has ended, so each of these is given two.
+        """
+
+        def submit(scenario: str, body: str) -> None:
+            name = f"sync_{scenario}"
+            path = self.out / f"{name}.sh"
+            path.write_text(f"#!/bin/bash\n#$ -o /dev/null\n#$ -j y\n{body}")
+            argv = ["qsub", "-sync", "y", "-N", name, str(path)]
+            proc = self.cluster.run(argv, check=False, timeout=120)
+            self.save(
+                f"qsub_{name}.json", _as_json(proc), f"qsub -sync y of the {name} job (JSON)", argv
+            )
+            match = re.search(r"Your job(?:-array)? (\d+)", proc.stdout)
+            assert match, (proc.stdout, proc.stderr)
+            self.jobs[name] = match.group(1)
+            self.log(f"{name}: job {match.group(1)}, qsub exited {proc.returncode}")
+
+        for scenario, body, records, what in (
+            ("ok", "true\n", 1, "exited 0"),
+            ("exit1", "exit 1\n", 1, "exited 1"),
+            ("exit137", "exit 137\n", 1, "exited 137"),
+            ("skipped", "exit 113\n", 1, "exited 113, the dependency guard's skip code"),
+            ("array_partial", '#$ -t 1-3\ntest "$SGE_TASK_ID" -ne 3\n', 3, "task 3 exited 1"),
+        ):
+            submit(scenario, body)
+            job_id = self.jobs[f"sync_{scenario}"]
+            self.save(
+                f"qacct_sync_{scenario}.txt",
+                self.qacct(job_id, records=records),
+                f"qacct -j of the sync_{scenario} job: {what}",
+                ["qacct", "-j", job_id],
+            )
+        array = self.jobs["sync_array_partial"]
+        for task in ("1", "2", "3"):
+            self.save(
+                f"qacct_sync_array_partial_task{task}.txt",
+                self.qacct(array, "-t", task),
+                f"qacct -j <id> -t {task} of the sync_array_partial job",
+                ["qacct", "-j", array, "-t", task],
+            )
+
+        thread = threading.Thread(target=submit, args=("deleted_pending", "#$ -h\nsleep 600\n"))
+        thread.start()
+        deadline = time.monotonic() + STATE_WAIT
+        while True:
+            listed = self.cluster.run(["qstat"], check=False).stdout
+            match = re.search(r"^\s*(\d+)\s+\S+\s+sync_delet", listed, re.MULTILINE)
+            if match:
+                break
+            assert time.monotonic() < deadline, f"sync_deleted_pending not in qstat:\n{listed}"
+            time.sleep(POLL)
+        self.wait_state(match.group(1), {"hqw"})
+        self.cluster.run(["qdel", match.group(1)])
+        thread.join()
+
     def lifecycle(self) -> None:
         """Suspended, queue-suspended, requeued, then deleting (``dr``)."""
         susp = self.qsub("suspended", "-l", "hostname=exec1", "sleep", "600")
@@ -549,6 +617,7 @@ class Capture:
         self.finished_jobs()
         self.vmem()
         self.deleted_pending()
+        self.synced()
         self.signal()
         self.timeout_collect(timeout)
         self.lost_node()

@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "sbatch",
+    "-J",
+    "wait_cancelled_running",
+    "--chdir=/work/capture-jobs",
+    "-o",
+    "%x.%j.out",
+    "--wait",
+    "/work/capture-jobs/wait_cancelled_running.sh"
+  ],
+  "returncode": 1,
+  "stdout": "Submitted batch job 250\n",
+  "stderr": ""
+}

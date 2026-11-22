@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "qsub",
+    "-sync",
+    "y",
+    "-N",
+    "sync_exit137",
+    "/work/capture/sync_exit137.sh"
+  ],
+  "returncode": 137,
+  "stdout": "Your job 40 (\"sync_exit137\") has been submitted\n",
+  "stderr": "Job 40 exited with exit code 137.\n"
+}
