@@ -90,9 +90,10 @@ what a backend must bring with it. For PBS nothing is planned.
   in `test_trace/test_config_and_cli.py` and one status-column test in
   `test_tui/test_job_table.py`. The other tests that use `sge_fixtures`
   or `mock_sge_commands` are SGE's own.
-- `test-review/LIFECYCLE_MATRIX.md` (every job state against every reader,
-  with the test for each cell) covers SGE only. It is what caught the
-  gaps on SGE; there is no such table for another scheduler.
+- Every job state against every reader, with the test for each cell:
+  `test-review/LIFECYCLE_MATRIX.md` for SGE, `slurm/LIFECYCLE_MATRIX.md`
+  for Slurm. The Slurm table lists its empty cells in its section 3;
+  nothing there is planned. There is no table for PBS.
 
 ### Testbed stacks
 
@@ -299,7 +300,30 @@ So, as built:
 - Getting the job id at submit time needed a pseudo-terminal on the waiting
   command's stdout: `qsub -sync y` writing to a pipe prints the id only
   when the job has ended.
-- Not run: Ctrl-C during a waited `hpc run` on either scheduler.
+- Not run: Ctrl-C during a waited `hpc run` on either scheduler. For
+  Slurm it is an item of `slurm/MANUAL_CHECKLIST.md`.
+
+Undecided: the exit code of a job that never ran (user, 2026-11-22).
+
+- Built: `None`, in both the polled and the waited result. The waiting
+  submit returns 0 for such a job (Slurm: a skipped dependent, a job
+  cancelled while pending; SGE: a job deleted before or while it ran) and
+  `_waited` (`schedulers/base.py`) turns a 0 on a job that did not
+  complete into `None`. `hpc run` prints the status and exits 1.
+- The alternative is 1, as `hpc run` exits.
+
+| Caller's check | `None` | 1 |
+|---|---|---|
+| `if result.exit_code == 0:` success | not success | not success |
+| `if not result.exit_code:` success | wrongly success | not success |
+| Can tell "never ran" from a tool that exited 1, by the number | yes | no |
+
+- Either way the status says what happened (`SKIPPED`, `CANCELLED`) and
+  `result.result()` raises `JobFailedError`.
+- Uneven today: a skipped job on SGE has `exit_code` 113 in a waited
+  Python result (the dependency guard's code, which `qsub -sync y`
+  returns) and `None` on Slurm. `hpc run` exits 1 on both. The user said
+  on 2026-11-17 that the special codes are internal to hpc-runner.
 
 Ways it could be made one number, none chosen:
 
@@ -375,11 +399,6 @@ Nothing here is decided.
   `test_signal_exit_code` does for `qacct`. Ways to close it, none chosen:
   read the code from a `COMPLETING` record; ask again before giving a
   final status with no code; leave it to the caller.
-- `submit(job, wait=True)` of a job that is skipped gives `final_status`
-  SKIPPED and `exit_code` 0, the 0 `sbatch --wait` returned. `hpc run`
-  exits 1 for it. `slurm/test_waited.py` asserts the status and not the
-  code. Either the handle keeps what the submit command returned, or a job
-  that did not complete never has 0 (None, or 1 as `hpc run` gives).
 - `hpc status --history` did not list a job for about a second after
   `sacct -j <id>` had it as FAILED (22.05, seen once; the cause was not
   looked for). The tests poll the history.
@@ -388,6 +407,61 @@ Nothing here is decided.
   on 22.05). `hpc run --batch --wait` of one would not return. Not tested.
 - `sacct -X` straight after `scontrol requeue` said `REQUEUED` on 22.05 and
   `PENDING` on 24.11; hpc-runner reports PENDING for both.
+
+## Slurm: left out of the user docs for want of a test (2026-11-22)
+
+`docs/source/slurm.rst` states only what a test proves. Each item below is
+something the plan wanted said, or a reason the page would have given,
+that no test proves. It is unproven until the test named exists; the page
+then gets the sentence. Items the testbed cannot show are in
+`slurm/MANUAL_CHECKLIST.md`.
+
+- An interactive job with `inherit_env = false` has `HOME`, `USER` and
+  `LOGNAME` empty and bash's default `PATH` (`srun --export=NONE` builds
+  no login environment). Seen in research runs only. The page gives the
+  advice (name them in `env_passthrough`) and not the fact. Test: an
+  interactive job in the testbed that prints the three. Note "Testbed
+  stacks" above: a job started through `docker exec` gets no `USER` or
+  `LOGNAME` from the caller, so the test must set them first.
+- `SBATCH_*` variables in the submitting shell override the `#SBATCH`
+  lines hpc-runner writes. Seen in a research run only. The page says not
+  to combine them and does not say what happens. Test: `SBATCH_PARTITION`
+  set to `short`, a job with `queue = "all"`, `scontrol show job` says
+  which partition.
+- `${hpc.job_id}` in the job script is the id `sbatch` printed for every
+  task of an array. The rendering (`${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}`)
+  is tested and the value on a node is not; the output-path form (`%A`)
+  is proven by `test_array_1_to_5`. Test: an array whose tasks echo
+  `${hpc.job_id}` through `env_vars`.
+- `$TMPDIR` on Slurm is shared between jobs and not cleaned. The page
+  says only that hpc-runner makes and removes nothing. The testbed sets
+  no `TMPDIR`; this is a manual check.
+- `scheduler_args` with `--nodes` or `--ntasks` replaces the
+  `--ntasks=1` hpc-runner always sends. The page tells an MPI job to use
+  `scheduler_args` and shows an example; that the later flag wins is not
+  proven. Test: `scheduler_args = ["--ntasks=2"]`, then `NumTasks` in
+  `scontrol show job`.
+- What `SRUN_CPUS_PER_TASK` and `SLURM_EXPORT_ENV=ALL` do for an `srun`
+  inside a job. The page says the script exports them, and what for, and
+  nothing about their effect. Test: a job whose command is `srun env`
+  with a module loaded, and one with `srun nproc`.
+- `--mem=0` means the whole node, which is why the request is never 0.
+  The page says "never 0" with no reason.
+- `sbatch --export=NONE` still gives the job the user's login environment
+  on the node. The page says only that the submitting shell's variables do
+  not reach the job.
+- The default script directory, `~/.cache/hpc-runner/scripts`
+  (`schedulers/base.py`, `get_script_dir`): every test sets
+  `HPC_SCRIPT_DIR`. The page names the variable only.
+- `scancel <array id>` cancels every task: the capture shows it
+  (`sacct_array_throttled_cancelled.txt`) and no test says so task by
+  task. The page says the array is then CANCELLED.
+- The `after` dependency type is rendered (`--dependency=after:<id>`) and
+  has never been run on the testbed.
+- How long the controller remembers a finished job, and how far back
+  accounting goes: site settings, in the manual checklist.
+- `hpc monitor` beyond its listing (the detail panel, the Completed tab)
+  has not been run on Slurm: manual checklist.
 
 ## Trace
 
