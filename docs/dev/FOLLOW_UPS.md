@@ -112,12 +112,6 @@ what a backend must bring with it. For PBS nothing is planned.
 - CI has cells for `soge`, `ocs`, Slurm `24.11` and Slurm `22.05`
   (`.github/workflows/ci.yml`, the `integration` matrix). The PBS image is
   never built there, so a broken one is not noticed.
-- Unverified: the Slurm CI cells, added 2026-11-22, have never run. The
-  Slurm images have never been built on the hosted runner, slurmd has
-  never run in a privileged container there (only a probe of cgroup
-  creation and `memory.max` did, 2026-11-21), and the 30-minute timeout
-  of a Slurm cell is an estimate. The first push closes this or shows
-  what is wrong.
 - Not run since the container renaming of 2026-11-16: the CI workflow's
   log-copy step, rewritten 2026-11-22 to take the scheduler and the
   flavour from the matrix. The PBS, `ocs` and

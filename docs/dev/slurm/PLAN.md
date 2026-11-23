@@ -584,8 +584,9 @@ Done before this list: the research, run on real schedulers (SGE, Slurm
 company), the three testbeds, and the answers to the first round of
 questions. Results are in the two fact files and `runs/`.
 
-1. Push, and see the two Slurm CI cells run: the Slurm images have never
-   been built on the hosted runner. Push is not authorised yet.
+No step is left: the backend is built and the Slurm CI cells pass. What
+remains is outside this list: `MANUAL_CHECKLIST.md` on a real cluster and
+the Slurm items in `../FOLLOW_UPS.md`.
 
 ## Open questions
 
