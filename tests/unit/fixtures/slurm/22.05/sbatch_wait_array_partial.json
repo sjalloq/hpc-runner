@@ -11,6 +11,6 @@
     "/work/capture-jobs/wait_array_partial.sh"
   ],
   "returncode": 1,
-  "stdout": "Submitted batch job 246\n",
+  "stdout": "Submitted batch job 24\n",
   "stderr": ""
 }

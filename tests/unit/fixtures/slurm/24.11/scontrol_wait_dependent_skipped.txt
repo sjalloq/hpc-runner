@@ -1,14 +1,14 @@
-JobId=307 JobName=wait_dependent_skipped
+JobId=40 JobName=wait_dependent_skipped
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
    Priority=1 Nice=0 Account=proj QOS=normal
-   JobState=CANCELLED Reason=DependencyNeverSatisfied Dependency=afterok:306(failed)
+   JobState=CANCELLED Reason=DependencyNeverSatisfied Dependency=afterok:39(failed)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:17 EligibleTime=Unknown
+   SubmitTime=2026-11-23T08:37:22 EligibleTime=Unknown
    AccrueTime=Unknown
-   StartTime=2026-11-22T20:20:20 EndTime=2026-11-22T20:20:20 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:17 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
+   StartTime=2026-11-23T08:37:27 EndTime=2026-11-23T08:37:27 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:37:22 Scheduler=Main
+   Partition=all AllocNode:Sid=login:157
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=
    NumNodes=1 NumCPUs=1 NumTasks=N/A CPUs/Task=1 ReqB:S:C:T=0:0:*:*
@@ -20,9 +20,9 @@ JobId=307 JobName=wait_dependent_skipped
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/wait_dependent_skipped.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/wait_dependent_skipped.307.out
+   StdErr=/work/capture-jobs/wait_dependent_skipped.40.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/wait_dependent_skipped.307.out
+   StdOut=/work/capture-jobs/wait_dependent_skipped.40.out
    KillOInInvalidDependent=Yes
    
 

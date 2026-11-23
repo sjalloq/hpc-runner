@@ -1,14 +1,14 @@
-JobId=270 JobName=timeout
+JobId=2 JobName=timeout
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
    Priority=1 Nice=0 Account=proj QOS=normal
    JobState=TIMEOUT Reason=TimeLimit Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:15
-   RunTime=00:01:00 TimeLimit=00:01:00 TimeMin=N/A
-   SubmitTime=2026-11-22T20:19:17 EligibleTime=2026-11-22T20:19:17
-   AccrueTime=2026-11-22T20:19:17
-   StartTime=2026-11-22T20:19:17 EndTime=2026-11-22T20:20:17 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:19:17 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
+   RunTime=00:01:14 TimeLimit=00:01:00 TimeMin=N/A
+   SubmitTime=2026-11-23T08:36:21 EligibleTime=2026-11-23T08:36:21
+   AccrueTime=2026-11-23T08:36:21
+   StartTime=2026-11-23T08:36:23 EndTime=2026-11-23T08:37:37 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:36:23 Scheduler=Main
+   Partition=all AllocNode:Sid=login:157
    ReqNodeList=exec2 ExcNodeList=(null)
    NodeList=exec2
    BatchHost=exec2
@@ -21,8 +21,8 @@ JobId=270 JobName=timeout
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/timeout.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/timeout.270.out
+   StdErr=/work/capture-jobs/timeout.2.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/timeout.270.out
+   StdOut=/work/capture-jobs/timeout.2.out
    
 

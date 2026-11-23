@@ -1,14 +1,14 @@
-JobId=244 JobName=wait_exit137
+JobId=22 JobName=wait_exit137
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901597 Nice=0 Account=proj QOS=normal
+   Priority=4294901743 Nice=0 Account=proj QOS=normal
    JobState=FAILED Reason=NonZeroExitCode Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=137:0
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:01 EligibleTime=2026-11-22T20:20:01
-   AccrueTime=2026-11-22T20:20:01
-   StartTime=2026-11-22T20:20:01 EndTime=2026-11-22T20:20:01 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:01 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   SubmitTime=2026-11-23T08:39:49 EligibleTime=2026-11-23T08:39:49
+   AccrueTime=2026-11-23T08:39:49
+   StartTime=2026-11-23T08:39:49 EndTime=2026-11-23T08:39:49 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:39:49 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec2
    BatchHost=exec2
@@ -20,9 +20,9 @@ JobId=244 JobName=wait_exit137
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/wait_exit137.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/wait_exit137.244.out
+   StdErr=/work/capture-jobs/wait_exit137.22.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/wait_exit137.244.out
+   StdOut=/work/capture-jobs/wait_exit137.22.out
    Power=
    
 

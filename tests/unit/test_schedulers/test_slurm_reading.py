@@ -2,7 +2,8 @@
 
 Every Slurm text comes from the captures in
 tests/unit/fixtures/slurm/<flavour>/ (``slurm_fixtures``); each test runs
-once per flavour. The waited submission is in test_slurm_wait.py.
+once per flavour. The waited submission is in test_slurm_wait.py. The
+backend's clock is ``slurm_clock`` (tests/unit/conftest.py): no test sleeps.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from hpc_runner.schedulers.slurm.parser import (
     parse_time,
     state_to_status,
 )
-from tests.fakes import Responder, SlurmFixtures, patch_seam
+from tests.fakes import FakeClock, Responder, SlurmFixtures, patch_seam
 
 S = JobStatus
 
@@ -38,6 +39,33 @@ def fx(slurm_fixtures: SlurmFixtures) -> SlurmFixtures:
 @pytest.fixture
 def scheduler() -> SlurmScheduler:
     return SlurmScheduler(HPCConfig())
+
+
+def _sacct_argv(job_ids: str) -> list[str]:
+    return ["sacct", "-P", "-n", "-j", job_ids, f"--format={SACCT_FORMAT}"]
+
+
+def _in_turn(fx: SlurmFixtures, *, sacct: list[str], scontrol: list[str]) -> Responder:
+    """Each command answers with the next of its texts, the last one from then on.
+
+    A text is a capture's file name; ``""`` is ``sacct`` with no row, and
+    ``scontrol`` of a job the controller does not know.
+    """
+    asked = {"sacct": 0, "scontrol": 0}
+
+    def respond(argv: list[str]) -> tuple[int, str, str]:
+        names = {"sacct": sacct, "scontrol": scontrol}[argv[0]]
+        name = names[min(asked[argv[0]], len(names) - 1)]
+        asked[argv[0]] += 1
+        if name:
+            return 0, fx.text(name), ""
+        return fx.result(f"{argv[0]}_missing.json")
+
+    return respond
+
+
+def _commands(seam) -> list[str]:
+    return [call.args[0][0] for call in seam.call_args_list]
 
 
 def _stage(fx: SlurmFixtures, stage: str, *, controller: bool = True) -> Responder:
@@ -153,6 +181,7 @@ SCENARIOS = [
     ("out_of_memory_step", "out_of_memory_step", S.COMPLETED, 0, 0),
     ("cancelled_pending", "cancelled_pending", S.CANCELLED, None, None),
     ("cancelled_running", "cancelled_running", S.CANCELLED, 143, 143),
+    ("completing", "completing", S.CANCELLED, 143, 143),
     ("held", "held", S.PENDING, None, None),
     ("running", "running", S.RUNNING, None, None),
     ("suspended", "suspended", S.SUSPENDED, None, None),
@@ -242,8 +271,8 @@ class TestStatusAndExitCode:
             ids[2]: S.FAILED,
             "999999": S.UNKNOWN,
         }
-        (call,) = seam.call_args_list
-        assert call.args[0] == [
+        first, *again = (call.args[0] for call in seam.call_args_list)
+        assert first == [
             "sacct",
             "-P",
             "-n",
@@ -251,6 +280,8 @@ class TestStatusAndExitCode:
             ",".join([*ids, "999999"]),
             f"--format={SACCT_FORMAT}",
         ]
+        # The id with no row is asked for again, alone (TestAskingAgain).
+        assert again == [_sacct_argv("999999")] * 10
 
     def test_tasks_are_asked_by_the_id_of_their_array(self, scheduler, fx):
         base = fx.job("array_throttled")
@@ -295,6 +326,128 @@ class TestStatusAndExitCode:
             with patch_seam(_stage(fx, stage)) as seam:
                 scheduler.get_exit_code(fx.job(stage))
             assert [call.args[0][0] for call in seam.call_args_list] == ["scontrol", "sacct"]
+
+
+class TestAskingAgain:
+    """A new job reaches ``sacct`` a moment after the queue, and a job just
+    ended is ``COMPLETING`` to the controller for a moment: the same command
+    is asked again after a sleep."""
+
+    def test_sacct_with_no_row_answers_nothing(self, fx):
+        assert fx.result("sacct_missing.json") == (0, "", "")
+
+    def test_a_row_that_comes_on_the_second_ask(self, scheduler, fx, slurm_clock: FakeClock):
+        ok, late = fx.job("ok"), fx.job("exit1")
+        respond = _in_turn(fx, sacct=["sacct_ok.txt", "sacct_exit1.txt"], scontrol=[])
+        with patch_seam(respond) as seam:
+            statuses = scheduler.get_statuses([ok, late])
+        assert statuses == {ok: S.COMPLETED, late: S.FAILED}
+        assert [call.args[0] for call in seam.call_args_list] == [
+            _sacct_argv(f"{ok},{late}"),
+            _sacct_argv(late),
+        ]
+        assert slurm_clock.sleeps == [1.0]
+
+    def test_a_row_that_never_comes_is_unknown_after_ten_seconds(
+        self, scheduler, fx, slurm_clock: FakeClock
+    ):
+        ok = fx.job("ok")
+        with patch_seam(_in_turn(fx, sacct=["sacct_ok.txt", ""], scontrol=[])) as seam:
+            statuses = scheduler.get_statuses([ok, "999999"])
+        assert statuses == {ok: S.COMPLETED, "999999": S.UNKNOWN}
+        assert [call.args[0] for call in seam.call_args_list] == [
+            _sacct_argv(f"{ok},999999"),
+            *([_sacct_argv("999999")] * 10),
+        ]
+        assert slurm_clock.sleeps == [1.0] * 10
+
+    def test_one_sacct_when_every_job_has_a_row(self, scheduler, fx, slurm_clock: FakeClock):
+        ids = [fx.job("ok"), fx.job("exit1"), fx.job("array_partial")]
+        with patch_seam(lambda argv: (0, fx.text("sacct_several.txt"), "")) as seam:
+            statuses = scheduler.get_statuses(ids)
+        assert list(statuses.values()) == [S.COMPLETED, S.FAILED, S.FAILED]
+        assert seam.call_count == 1
+        assert slurm_clock.sleeps == []
+
+    def test_details_of_a_job_whose_row_comes_late(self, scheduler, fx, slurm_clock: FakeClock):
+        job_id = fx.job("running")
+        respond = _in_turn(fx, sacct=["", "sacct_running.txt"], scontrol=["scontrol_running.txt"])
+        with patch_seam(respond) as seam:
+            info, extra = scheduler.get_job_details(job_id)
+        assert (info.job_id, info.name, info.status) == (job_id, "running", S.RUNNING)
+        assert info.start_time is not None
+        assert extra["state"] == "RUNNING"
+        assert _commands(seam) == ["scontrol", "sacct", "sacct"]
+        assert slurm_clock.sleeps == [1.0]
+
+    def test_a_job_neither_command_knows_is_not_waited_for(
+        self, scheduler, fx, slurm_clock: FakeClock
+    ):
+        with (
+            patch_seam(_in_turn(fx, sacct=[""], scontrol=[""])) as seam,
+            pytest.raises(JobNotFoundError, match="job 999999 not found"),
+        ):
+            scheduler.get_job_details("999999")
+        assert _commands(seam) == ["scontrol", "sacct"]
+        assert slurm_clock.sleeps == []
+
+    def test_the_capture_of_a_job_just_cancelled_says_completing(self, fx):
+        assert "JobState=COMPLETING" in fx.text("scontrol_completing_just_cancelled.txt")
+        assert "JobState=CANCELLED" in fx.text("scontrol_completing.txt")
+
+    def test_the_exit_code_of_a_job_that_is_completing(self, scheduler, fx, slurm_clock: FakeClock):
+        respond = _in_turn(
+            fx,
+            sacct=[],
+            scontrol=["scontrol_completing_just_cancelled.txt", "scontrol_completing.txt"],
+        )
+        with patch_seam(respond) as seam:
+            assert scheduler.get_exit_code(fx.job("completing")) == 143
+        assert _commands(seam) == ["scontrol", "scontrol"]
+        assert slurm_clock.sleeps == [0.5]
+
+    def test_the_details_of_a_job_that_is_completing(self, scheduler, fx, slurm_clock: FakeClock):
+        respond = _in_turn(
+            fx,
+            sacct=["sacct_completing.txt"],
+            scontrol=["scontrol_completing_just_cancelled.txt", "scontrol_completing.txt"],
+        )
+        with patch_seam(respond) as seam:
+            info, _ = scheduler.get_job_details(fx.job("completing"))
+        assert (info.status, info.exit_code) == (S.CANCELLED, 143)
+        assert _commands(seam) == ["scontrol", "scontrol", "sacct"]
+        assert slurm_clock.sleeps == [0.5]
+
+    def test_completing_and_then_forgotten_is_sacct_to_answer(
+        self, scheduler, fx, slurm_clock: FakeClock
+    ):
+        respond = _in_turn(
+            fx,
+            sacct=["sacct_completing.txt"],
+            scontrol=["scontrol_completing_just_cancelled.txt", ""],
+        )
+        with patch_seam(respond) as seam:
+            assert scheduler.get_exit_code(fx.job("completing")) == 143
+        assert _commands(seam) == ["scontrol", "scontrol", "sacct"]
+        assert slurm_clock.sleeps == [0.5]
+
+    def test_still_completing_after_five_seconds_has_no_exit_code(
+        self, scheduler, fx, slurm_clock: FakeClock
+    ):
+        respond = _in_turn(fx, sacct=[], scontrol=["scontrol_completing_just_cancelled.txt"])
+        with patch_seam(respond) as seam:
+            assert scheduler.get_exit_code(fx.job("completing")) is None
+        assert _commands(seam) == ["scontrol"] * 11
+        assert slurm_clock.sleeps == [0.5] * 10
+
+    @pytest.mark.parametrize("scenario", ["running", "held"])
+    def test_a_running_or_pending_job_is_not_waited_for(
+        self, scheduler, fx, slurm_clock: FakeClock, scenario
+    ):
+        with patch_seam(_stage(fx, scenario)) as seam:
+            assert scheduler.get_exit_code(fx.job(scenario)) is None
+        assert _commands(seam) == ["scontrol"]
+        assert slurm_clock.sleeps == []
 
 
 class TestActiveListing:
@@ -657,8 +810,9 @@ class TestDetails:
         with patch_seam(respond), pytest.raises(JobNotFoundError, match="job 999999 not found"):
             scheduler.get_job_details("999999")
 
-    def test_a_job_accounting_does_not_have_yet(self, scheduler, fx):
-        """The controller knows it; the status is sacct's to give, so UNKNOWN."""
+    def test_a_job_accounting_does_not_have_yet(self, scheduler, fx, slurm_clock: FakeClock):
+        """The controller knows it; the status is sacct's to give, so UNKNOWN
+        once sacct has been asked again for ten seconds."""
         job_id = fx.job("running")
 
         def respond(argv):
@@ -666,8 +820,10 @@ class TestDetails:
                 return fx.result("sacct_missing.json")
             return 0, fx.text("scontrol_running.txt"), ""
 
-        with patch_seam(respond):
+        with patch_seam(respond) as seam:
             info, extra = scheduler.get_job_details(job_id)
+        assert _commands(seam) == ["scontrol", *(["sacct"] * 11)]
+        assert slurm_clock.sleeps == [1.0] * 10
         assert (info.job_id, info.name, info.user, info.status) == (
             job_id,
             "running",

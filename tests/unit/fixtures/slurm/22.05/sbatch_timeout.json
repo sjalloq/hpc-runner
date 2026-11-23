@@ -12,6 +12,6 @@
     "/work/capture-jobs/timeout.sh"
   ],
   "returncode": 0,
-  "stdout": "Submitted batch job 225\n",
+  "stdout": "Submitted batch job 2\n",
   "stderr": ""
 }

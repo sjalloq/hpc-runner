@@ -390,15 +390,6 @@ decided.
 Run on 24.11 and 22.05 through hpc-runner in the `login` containers.
 Nothing here is decided.
 
-- For a moment after Slurm ends a running job (`scancel`, seen on 24.11)
-  the status is final and there is no exit code: `sacct` already says
-  `CANCELLED by <uid>` while `scontrol show job` says `COMPLETING` (with
-  `ExitCode=0:15`) and the `.batch` row still says `0:0`. `wait()` then
-  returns CANCELLED and `returncode` is None; about 0.2 s later it is 143.
-  The Slurm tests poll for the code (`exit_code_once_known`), as SGE's
-  `test_signal_exit_code` does for `qacct`. Ways to close it, none chosen:
-  read the code from a `COMPLETING` record; ask again before giving a
-  final status with no code; leave it to the caller.
 - `hpc status --history` did not list a job for about a second after
   `sacct -j <id>` had it as FAILED (22.05, seen once; the cause was not
   looked for). The tests poll the history.

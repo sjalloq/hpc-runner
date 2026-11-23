@@ -11,6 +11,6 @@
     "/work/capture-jobs/wait_out_of_memory.sh"
   ],
   "returncode": 1,
-  "stdout": "Submitted batch job 245\n",
+  "stdout": "Submitted batch job 23\n",
   "stderr": ""
 }

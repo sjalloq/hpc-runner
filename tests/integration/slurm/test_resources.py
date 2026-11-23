@@ -21,7 +21,6 @@ from tests.integration.slurm.slurm import (
     ALLOCATED,
     TESTER_UID,
     TIME_LIMIT_KILL_TIMEOUT,
-    exit_code_once_known,
     job_id,
     scontrol_job,
     submit,
@@ -130,8 +129,7 @@ def test_licences_devices_and_features(cluster: Cluster) -> None:
         result = submit(cluster, spec)
         wait_squeue_state(cluster, job_id(result), f"PENDING|{reason}")
         assert scontrol_job(cluster, job_id(result))[field] in recorded, spec.name
-        # 22.05's accounting has a new job up to a second after squeue does.
-        assert cluster.wait_for(job_id(result), JobStatus.PENDING, timeout=10) is JobStatus.PENDING
+        assert cluster.scheduler().get_status(job_id(result)) is JobStatus.PENDING
         assert result.cancel()
 
     # exec2 was free all along: a job that asks for none of the three runs there.
@@ -156,7 +154,7 @@ def test_time_limit_kill(cluster: Cluster) -> None:
     status = cluster.wait_for(job, JobStatus.TIMEOUT, timeout=TIME_LIMIT_KILL_TIMEOUT)
     assert status is JobStatus.TIMEOUT
     wait_rows(cluster, job, [f"{job}|TIMEOUT|0:0", f"{job}.batch|CANCELLED|0:15"])
-    assert exit_code_once_known(cluster, job) == 143
+    assert cluster.scheduler().get_exit_code(job) == 143
     assert result.wait(poll_interval=0.5, timeout=10) is JobStatus.TIMEOUT
     assert result.returncode == 143
     info, extra = cluster.scheduler().get_job_details(job)
@@ -177,7 +175,7 @@ def test_cancelled_while_running(cluster: Cluster) -> None:
     assert result.cancel()
     assert cluster.wait_for(job, JobStatus.CANCELLED, timeout=30) is JobStatus.CANCELLED
     wait_rows(cluster, job, [f"{job}|CANCELLED by {TESTER_UID}|0:0", f"{job}.batch|CANCELLED|0:15"])
-    assert exit_code_once_known(cluster, job) == 143
+    assert cluster.scheduler().get_exit_code(job) == 143
     assert result.wait(poll_interval=0.5, timeout=10) is JobStatus.CANCELLED
     assert result.returncode == 143
     done = history_entry(cluster, job)
@@ -197,7 +195,7 @@ def test_over_its_memory_is_killed(cluster: Cluster) -> None:
     info, extra = cluster.scheduler().get_job_details(job)
     assert (info.status, extra["state"]) == (JobStatus.KILLED, "OUT_OF_MEMORY")
     # Slurm's 0:125, read as a shell would report a death by signal 125.
-    assert exit_code_once_known(cluster, job) == 253
+    assert cluster.scheduler().get_exit_code(job) == 253
     # The allocation never finished.
     assert ALLOCATED not in (result.read_stdout() or "").split()
     done = history_entry(cluster, job)

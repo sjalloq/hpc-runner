@@ -1,14 +1,14 @@
-JobId=272 JobName=running
+JobId=50 JobName=running
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901580 Nice=0 Account=proj QOS=normal
+   Priority=4294901726 Nice=0 Account=proj QOS=normal
    JobState=RUNNING Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:10 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:21:52 EligibleTime=2026-11-22T20:21:52
-   AccrueTime=2026-11-22T20:21:52
-   StartTime=2026-11-22T20:21:52 EndTime=Unknown Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:21:52 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   SubmitTime=2026-11-23T08:41:45 EligibleTime=2026-11-23T08:41:45
+   AccrueTime=2026-11-23T08:41:45
+   StartTime=2026-11-23T08:41:45 EndTime=Unknown Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:41:45 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=exec1 ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -20,9 +20,9 @@ JobId=272 JobName=running
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/running.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/running.272.out
+   StdErr=/work/capture-jobs/running.50.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/running.272.out
+   StdOut=/work/capture-jobs/running.50.out
    Power=
    
 

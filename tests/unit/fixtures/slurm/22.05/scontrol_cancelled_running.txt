@@ -1,14 +1,14 @@
-JobId=239 JobName=cancelled_running
+JobId=16 JobName=cancelled_running
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901600 Nice=0 Account=proj QOS=normal
+   Priority=4294901747 Nice=0 Account=proj QOS=normal
    JobState=CANCELLED Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:15
-   RunTime=00:00:05 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:19:40 EligibleTime=2026-11-22T20:19:40
-   AccrueTime=2026-11-22T20:19:40
-   StartTime=2026-11-22T20:19:41 EndTime=2026-11-22T20:19:46 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:19:41 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   RunTime=00:00:04 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-23T08:39:29 EligibleTime=2026-11-23T08:39:29
+   AccrueTime=2026-11-23T08:39:29
+   StartTime=2026-11-23T08:39:31 EndTime=2026-11-23T08:39:35 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:39:31 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec2
    BatchHost=exec2
@@ -20,9 +20,9 @@ JobId=239 JobName=cancelled_running
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/cancelled_running.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/cancelled_running.239.out
+   StdErr=/work/capture-jobs/cancelled_running.16.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/cancelled_running.239.out
+   StdOut=/work/capture-jobs/cancelled_running.16.out
    Power=
    
 

@@ -8,7 +8,6 @@ from tests.integration.helpers import history_entry, hpc, hpc_json, run_batch, s
 from tests.integration.slurm.slurm import (
     ALLOC_200M,
     TESTER_UID,
-    exit_code_once_known,
     wait_rows,
     wait_squeue_state,
 )
@@ -36,7 +35,7 @@ def test_status_shows_slurms_own_state(cluster: Cluster) -> None:
     hpc(cluster, "cancel", "--force", cancelled)
     done = history_entry(cluster, cancelled)
     assert done["status"] == "CANCELLED"
-    assert exit_code_once_known(cluster, cancelled) == 143
+    assert cluster.scheduler().get_exit_code(cancelled) == 143
     details = hpc_json(cluster, "status", cancelled)
     assert (details["status"], details["exit_code"]) == ("CANCELLED", 143)
     assert details["details"]["state"] == f"CANCELLED by {TESTER_UID}"

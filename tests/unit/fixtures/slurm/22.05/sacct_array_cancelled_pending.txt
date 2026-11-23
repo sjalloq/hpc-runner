@@ -1,1 +1,1 @@
-240_[1-4]|240|tester|proj|all|CANCELLED by 1003|0:0|JobHeldUser|2026-11-22T20:19:40|None|2026-11-22T20:19:46|00:00:00|Partition_Limit|None assigned|1|1|100M||billing=1,cpu=1,mem=100M,node=1||/work/capture-jobs|array_cancelled_pending
+17_[1-4]|17|tester|proj|all|CANCELLED by 1003|0:0|JobHeldUser|2026-11-23T08:39:29|None|2026-11-23T08:39:35|00:00:00|Partition_Limit|None assigned|1|1|100M||billing=1,cpu=1,mem=100M,node=1||/work/capture-jobs|array_cancelled_pending

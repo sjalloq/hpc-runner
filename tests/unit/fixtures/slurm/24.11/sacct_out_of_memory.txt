@@ -1,2 +1,2 @@
-288|288|tester|proj|all|OUT_OF_MEMORY|0:125|None|2026-11-22T20:19:43|2026-11-22T20:19:44|2026-11-22T20:19:44|00:00:00|UNLIMITED|exec2|1|1|50M||billing=1,cpu=1,mem=50M,node=1|billing=1,cpu=1,mem=50M,node=1|/work/capture-jobs|out_of_memory
-288.batch|288.batch||proj||OUT_OF_MEMORY|0:125||2026-11-22T20:19:44|2026-11-22T20:19:44|2026-11-22T20:19:44|00:00:00||exec2|1|1||3812K||cpu=1,mem=50M,node=1||batch
+20|20|tester|proj|all|OUT_OF_MEMORY|0:125|None|2026-11-23T08:36:45|2026-11-23T08:36:47|2026-11-23T08:36:48|00:00:01|UNLIMITED|exec2|1|1|50M||billing=1,cpu=1,mem=50M,node=1|billing=1,cpu=1,mem=50M,node=1|/work/capture-jobs|out_of_memory
+20.batch|20.batch||proj||OUT_OF_MEMORY|0:125||2026-11-23T08:36:47|2026-11-23T08:36:47|2026-11-23T08:36:48|00:00:01||exec2|1|1||4212K||cpu=1,mem=50M,node=1||batch

@@ -10,6 +10,6 @@
     "/work/capture-jobs/wait_cancelled_running.sh"
   ],
   "returncode": 1,
-  "stdout": "Submitted batch job 305\n",
+  "stdout": "Submitted batch job 38\n",
   "stderr": ""
 }

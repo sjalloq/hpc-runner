@@ -1,70 +1,14 @@
-JobId=314 ArrayJobId=314 ArrayTaskId=4 JobName=array
+JobId=47 ArrayJobId=47 ArrayTaskId=4 JobName=array
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
    Priority=1 Nice=0 Account=proj QOS=normal
    JobState=COMPLETED Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:34 EligibleTime=2026-11-22T20:20:36
-   AccrueTime=2026-11-22T20:20:36
-   StartTime=2026-11-22T20:20:36 EndTime=2026-11-22T20:20:36 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:36 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
-   ReqNodeList=(null) ExcNodeList=(null)
-   NodeList=exec2
-   BatchHost=exec2
-   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
-   ReqTRES=cpu=1,mem=100M,node=1,billing=1
-   AllocTRES=cpu=1,mem=100M,node=1,billing=1
-   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
-   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
-   Features=(null) DelayBoot=00:00:00
-   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
-   Command=/work/capture-jobs/array.sh
-   WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array.314.4.out
-   StdIn=/dev/null
-   StdOut=/work/capture-jobs/array.314.4.out
-   
-
-JobId=318 ArrayJobId=314 ArrayTaskId=3 JobName=array
-   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=1 Nice=0 Account=proj QOS=normal
-   JobState=COMPLETED Reason=None Dependency=(null)
-   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
-   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:34 EligibleTime=2026-11-22T20:20:36
-   AccrueTime=2026-11-22T20:20:36
-   StartTime=2026-11-22T20:20:36 EndTime=2026-11-22T20:20:36 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:36 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
-   ReqNodeList=(null) ExcNodeList=(null)
-   NodeList=exec2
-   BatchHost=exec2
-   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
-   ReqTRES=cpu=1,mem=100M,node=1,billing=1
-   AllocTRES=cpu=1,mem=100M,node=1,billing=1
-   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
-   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
-   Features=(null) DelayBoot=00:00:00
-   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
-   Command=/work/capture-jobs/array.sh
-   WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array.314.3.out
-   StdIn=/dev/null
-   StdOut=/work/capture-jobs/array.314.3.out
-   
-
-JobId=317 ArrayJobId=314 ArrayTaskId=2 JobName=array
-   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=1 Nice=0 Account=proj QOS=normal
-   JobState=COMPLETED Reason=None Dependency=(null)
-   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
-   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:34 EligibleTime=2026-11-22T20:20:36
-   AccrueTime=2026-11-22T20:20:36
-   StartTime=2026-11-22T20:20:36 EndTime=2026-11-22T20:20:36 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:36 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
+   SubmitTime=2026-11-23T08:37:36 EligibleTime=2026-11-23T08:37:37
+   AccrueTime=2026-11-23T08:37:37
+   StartTime=2026-11-23T08:37:38 EndTime=2026-11-23T08:37:38 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:37:38 Scheduler=Main
+   Partition=all AllocNode:Sid=login:157
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -77,22 +21,22 @@ JobId=317 ArrayJobId=314 ArrayTaskId=2 JobName=array
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array.314.2.out
+   StdErr=/work/capture-jobs/array.47.4.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array.314.2.out
+   StdOut=/work/capture-jobs/array.47.4.out
    
 
-JobId=316 ArrayJobId=314 ArrayTaskId=1 JobName=array
+JobId=51 ArrayJobId=47 ArrayTaskId=3 JobName=array
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
    Priority=1 Nice=0 Account=proj QOS=normal
    JobState=COMPLETED Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
-   RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:34 EligibleTime=2026-11-22T20:20:36
-   AccrueTime=2026-11-22T20:20:36
-   StartTime=2026-11-22T20:20:36 EndTime=2026-11-22T20:20:36 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:36 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
+   RunTime=00:00:00 TimeLimit=365-00:00:00 TimeMin=N/A
+   SubmitTime=2026-11-23T08:37:36 EligibleTime=2026-11-23T08:37:37
+   AccrueTime=Unknown
+   StartTime=2026-11-23T08:37:37 EndTime=2026-11-23T08:37:37 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:37:37 Scheduler=Backfill
+   Partition=all AllocNode:Sid=login:157
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -105,8 +49,64 @@ JobId=316 ArrayJobId=314 ArrayTaskId=1 JobName=array
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array.314.1.out
+   StdErr=/work/capture-jobs/array.47.3.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array.314.1.out
+   StdOut=/work/capture-jobs/array.47.3.out
+   
+
+JobId=50 ArrayJobId=47 ArrayTaskId=2 JobName=array
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=1 Nice=0 Account=proj QOS=normal
+   JobState=COMPLETED Reason=None Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:00 TimeLimit=365-00:00:00 TimeMin=N/A
+   SubmitTime=2026-11-23T08:37:36 EligibleTime=2026-11-23T08:37:37
+   AccrueTime=Unknown
+   StartTime=2026-11-23T08:37:37 EndTime=2026-11-23T08:37:37 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:37:37 Scheduler=Backfill
+   Partition=all AllocNode:Sid=login:157
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=exec1
+   BatchHost=exec1
+   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=1,mem=100M,node=1,billing=1
+   AllocTRES=cpu=1,mem=100M,node=1,billing=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/work/capture-jobs/array.sh
+   WorkDir=/work/capture-jobs
+   StdErr=/work/capture-jobs/array.47.2.out
+   StdIn=/dev/null
+   StdOut=/work/capture-jobs/array.47.2.out
+   
+
+JobId=49 ArrayJobId=47 ArrayTaskId=1 JobName=array
+   UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
+   Priority=1 Nice=0 Account=proj QOS=normal
+   JobState=COMPLETED Reason=None Dependency=(null)
+   Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   RunTime=00:00:00 TimeLimit=365-00:00:00 TimeMin=N/A
+   SubmitTime=2026-11-23T08:37:36 EligibleTime=2026-11-23T08:37:37
+   AccrueTime=Unknown
+   StartTime=2026-11-23T08:37:37 EndTime=2026-11-23T08:37:37 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:37:37 Scheduler=Backfill
+   Partition=all AllocNode:Sid=login:157
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=exec2
+   BatchHost=exec2
+   NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=1,mem=100M,node=1,billing=1
+   AllocTRES=cpu=1,mem=100M,node=1,billing=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryCPU=100M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/work/capture-jobs/array.sh
+   WorkDir=/work/capture-jobs
+   StdErr=/work/capture-jobs/array.47.1.out
+   StdIn=/dev/null
+   StdOut=/work/capture-jobs/array.47.1.out
    
 

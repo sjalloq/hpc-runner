@@ -191,7 +191,7 @@ check that hpc-runner drives Slurm correctly and that Slurm does what
 hpc-runner says, and run only with `--scheduler slurm`.
 
 Each column is the result of `hpc-testbed --scheduler slurm --flavour <name>
-pytest` on 2026-11-22 (73 passed and 1 skipped on `24.11`, 74 passed on
+pytest` on 2026-11-23 (74 passed and 1 skipped on `24.11`, 75 passed on
 `22.05`). A test deselected for a flavour with
 `@pytest.mark.flavour("slurm/<name>")` would show as such (none so far). One
 test skips at run time, by the cluster class's answer: the check of the
@@ -248,6 +248,7 @@ output lines only 22.05 adds.
 | | test_within_its_memory_runs | pass | pass |
 | slurm/test_status.py | test_cancelled_while_pending_is_cancelled_with_no_exit_code | pass | pass |
 | | test_requeued_job_is_waited_through_to_its_second_run (`scontrol requeue`; about two and a half minutes) | pass | pass |
+| | test_a_job_just_submitted_has_a_status_at_once (`get_status` on the line after `submit`: PENDING, not UNKNOWN) | pass | pass |
 | slurm/test_dependencies.py | test_every_skipped_job_is_cancelled_by_slurm_with_no_exit_code | pass | pass |
 | | test_without_kill_invalid_dependents_the_child_stays_pending | pass | pass |
 | slurm/test_waited.py | test_hpc_run_wait_exits_as_the_job_did[exit 3, exit 137, segfault, over its memory] | pass | pass |

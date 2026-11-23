@@ -1,2 +1,2 @@
-298|298|tester|proj|all|FAILED|1:0|None|2026-11-22T20:19:53|2026-11-22T20:19:56|2026-11-22T20:19:57|00:00:01|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_exit1
-298.batch|298.batch||proj||FAILED|1:0||2026-11-22T20:19:56|2026-11-22T20:19:56|2026-11-22T20:19:57|00:00:01||exec2|1|1||3976K||cpu=1,mem=100M,node=1||batch
+31|31|tester|proj|all|FAILED|1:0|None|2026-11-23T08:37:06|2026-11-23T08:37:06|2026-11-23T08:37:07|00:00:01|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_exit1
+31.batch|31.batch||proj||FAILED|1:0||2026-11-23T08:37:06|2026-11-23T08:37:06|2026-11-23T08:37:07|00:00:01||exec2|1|1||3956K||cpu=1,mem=100M,node=1||batch

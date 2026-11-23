@@ -1,14 +1,14 @@
-JobId=231 JobName=signal
+JobId=8 JobName=signal
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901605 Nice=0 Account=proj QOS=normal
+   Priority=4294901752 Nice=0 Account=proj QOS=normal
    JobState=FAILED Reason=JobLaunchFailure Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:9
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:19:30 EligibleTime=2026-11-22T20:19:30
-   AccrueTime=2026-11-22T20:19:30
-   StartTime=2026-11-22T20:19:30 EndTime=2026-11-22T20:19:30 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:19:30 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   SubmitTime=2026-11-23T08:39:22 EligibleTime=2026-11-23T08:39:22
+   AccrueTime=2026-11-23T08:39:22
+   StartTime=2026-11-23T08:39:23 EndTime=2026-11-23T08:39:23 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:39:23 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -20,9 +20,9 @@ JobId=231 JobName=signal
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/signal.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/signal.231.out
+   StdErr=/work/capture-jobs/signal.8.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/signal.231.out
+   StdOut=/work/capture-jobs/signal.8.out
    Power=
    
 

@@ -42,6 +42,10 @@ not in that list):
   ``out_of_memory_step`` +: the same inside an ``srun`` step, script exits 0.
 * ``cancelled_pending``, ``cancelled_running``: ``scancel`` of a held job and
   of a running one.
+* ``completing`` +: ``scancel`` of a running job, read at once (stage
+  ``just_cancelled``): ``scontrol show job`` says ``JobState=COMPLETING``
+  for a moment. Submitted again until it is seen (:data:`COMPLETING_ATTEMPTS`
+  jobs at most), then read once it has ended.
 * ``held``: ``--hold``, never released.
 * ``dependent_ok``, ``dependent_skipped``, ``dependent_pending``: ``afterok``
   on a parent that exits 0, and on one that exits 1 with and without
@@ -162,6 +166,8 @@ WAIT = 60.0
 POLL = 0.2
 #: How many jobs a stub hunt submits before it gives up.
 STUB_ATTEMPTS = 6
+#: How many jobs are cancelled to see ``JobState=COMPLETING`` before the capture fails.
+COMPLETING_ATTEMPTS = 5
 
 _JOB_ID = SACCT_FIELDS.index("JobID")
 _PARTITION = SACCT_FIELDS.index("Partition")
@@ -467,6 +473,45 @@ class Capture:
             self.wait_ended(scenario, "CANCELLED")
             self.stage(scenario, what)
 
+    def completing(self) -> None:
+        """A running job just cancelled, while the controller still says ``COMPLETING``.
+
+        ``scontrol show job`` and then ``sacct`` are read straight after
+        ``scancel`` returns. The whole scenario is run again with a new job
+        when the record does not say ``JobState=COMPLETING``.
+
+        Raises:
+            AssertionError: No job of :data:`COMPLETING_ATTEMPTS` showed it.
+        """
+        for _ in range(COMPLETING_ATTEMPTS):
+            job_id = self.sbatch("completing", "sleep 600\n")
+            self.wait_live("completing", "RUNNING")
+            self.scancel("completing")
+            scontrol = self.cluster.run(scontrol_argv(job_id), check=False).stdout
+            sacct = self.cluster.run(sacct_argv(job_id)).stdout
+            self.wait_ended("completing", "CANCELLED")
+            if "JobState=COMPLETING" not in scontrol:
+                self.log(f"completing: job {job_id} was not seen COMPLETING")
+                continue
+            label = "the completing job: just cancelled while running, still COMPLETING"
+            self.save(
+                "scontrol_completing_just_cancelled.txt",
+                scontrol,
+                f"scontrol show job of {label}",
+                scontrol_argv(job_id),
+            )
+            self.save(
+                "sacct_completing_just_cancelled.txt",
+                sacct,
+                f"sacct of {label}",
+                sacct_argv(job_id),
+            )
+            self.stage("completing", "cancelled while running, once it has ended")
+            return
+        raise AssertionError(
+            f"no job said JobState=COMPLETING after scancel in {COMPLETING_ATTEMPTS} attempts"
+        )
+
     def not_owner(self) -> None:
         """``scancel``, as tester, of a job that is alice's."""
         argv = ["sbatch", "-J", "not_owner", "--hold", "-o", "/dev/null", "--wrap", "sleep 600"]
@@ -769,6 +814,7 @@ class Capture:
         self.stubs()
         self.finished_jobs()
         self.cancelled()
+        self.completing()
         self.not_owner()
         self.waited()
         self.dependents()

@@ -1,3 +1,3 @@
-270|270|tester|proj|all|NODE_FAIL|0:0|None|2026-11-22T20:21:06|2026-11-22T20:21:06|2026-11-22T20:21:43|00:00:37|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|node_fail_requeued
-270.batch|270.batch||proj||CANCELLED|||2026-11-22T20:21:06|2026-11-22T20:21:06|2026-11-22T20:21:43|00:00:37||exec1|1|1||||cpu=1,mem=100M,node=1||batch
-270|270|tester|proj|all|PENDING|0:0|None|2026-11-22T20:21:43|Unknown|Unknown|00:00:00|UNLIMITED|None assigned|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|node_fail_requeued
+48|48|tester|proj|all|NODE_FAIL|0:0|None|2026-11-23T08:40:55|2026-11-23T08:40:55|2026-11-23T08:41:35|00:00:40|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|node_fail_requeued
+48.batch|48.batch||proj||CANCELLED|||2026-11-23T08:40:55|2026-11-23T08:40:55|2026-11-23T08:41:35|00:00:40||exec1|1|1||||cpu=1,mem=100M,node=1||batch
+48|48|tester|proj|all|PENDING|0:0|None|2026-11-23T08:41:35|Unknown|Unknown|00:00:00|UNLIMITED|None assigned|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|node_fail_requeued

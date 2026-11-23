@@ -105,17 +105,3 @@ def wait_squeue_state(cluster: Cluster, job_id: str, expected: str, timeout: flo
     while (seen := squeue_state(cluster, job_id)) != expected:
         assert time.monotonic() < deadline, f"job {job_id} is {seen!r}, not {expected!r}"
         time.sleep(0.5)
-
-
-def exit_code_once_known(cluster: Cluster, job_id: str, timeout: float = 30) -> int:
-    """``get_exit_code`` of a job Slurm ended, once it gives one.
-
-    For a moment after ``sacct`` first says ``CANCELLED`` or ``TIMEOUT`` the
-    controller still says ``COMPLETING`` and the ``.batch`` row ``0:0``, and
-    there is no code yet.
-    """
-    deadline = time.monotonic() + timeout
-    while (code := cluster.scheduler().get_exit_code(job_id)) is None:
-        assert time.monotonic() < deadline, f"no exit code for {job_id} after {timeout}s"
-        time.sleep(0.2)
-    return code

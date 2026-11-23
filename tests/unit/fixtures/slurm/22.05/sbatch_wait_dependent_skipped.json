@@ -7,11 +7,11 @@
     "-o",
     "%x.%j.out",
     "--wait",
-    "--dependency=afterok:251",
+    "--dependency=afterok:29",
     "--kill-on-invalid-dep=yes",
     "/work/capture-jobs/wait_dependent_skipped.sh"
   ],
   "returncode": 0,
-  "stdout": "Submitted batch job 252\n",
+  "stdout": "Submitted batch job 30\n",
   "stderr": ""
 }

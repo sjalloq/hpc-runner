@@ -104,9 +104,6 @@ fill.
 - **Row 31**: fourteen state names are mapped from `squeue --helpstate` on
   24.11.5 and have never been seen in a capture (`../FOLLOW_UPS.md`, "Left
   open by the reading step").
-- **`COMPLETING` straight after `scancel`**: the status is final and there
-  is no exit code for about 0.2 s. No capture; the integration tests poll
-  through it (`exit_code_once_known`).
 - **`hpc monitor`** is tested for its listing only. Its detail panel and
   its Completed tab have not been run on Slurm
   (`MANUAL_CHECKLIST.md`).

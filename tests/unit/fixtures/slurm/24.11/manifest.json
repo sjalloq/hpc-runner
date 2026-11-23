@@ -1,50 +1,51 @@
 {
-  "captured": "2026-11-22T20:21:35Z",
+  "captured": "2026-11-23T08:38:35Z",
   "flavour": "24.11",
   "scheduler": "slurm-wlm 24.11.5",
   "sacct_format": "JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName",
   "squeue_format": "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j",
-  "history_since": "2026-11-22T20:19:17",
+  "history_since": "2026-11-23T08:36:21",
   "jobs": {
-    "timeout": "270",
-    "requeued": "271",
-    "ok": "284",
-    "exit1": "285",
-    "signal": "286",
-    "exit137": "287",
-    "out_of_memory": "288",
-    "out_of_memory_step": "289",
-    "array_partial": "290",
-    "cancelled_pending": "293",
-    "cancelled_running": "294",
-    "array_cancelled_pending": "295",
-    "wait_ok": "297",
-    "wait_exit1": "298",
-    "wait_exit137": "299",
-    "wait_out_of_memory": "300",
-    "wait_array_partial": "301",
-    "wait_dependent_skipped_parent": "306",
-    "wait_cancelled_pending": "304",
-    "wait_cancelled_running": "305",
-    "wait_dependent_skipped": "307",
-    "dependent_ok_parent": "308",
-    "dependent_ok": "309",
-    "dependent_skipped_parent": "310",
-    "dependent_skipped": "311",
-    "dependent_pending_parent": "312",
-    "dependent_pending": "313",
-    "array": "314",
-    "array_throttled": "315",
-    "array_list": "321",
-    "array_stepped": "322",
-    "array_single": "323",
-    "node_fail": "324",
-    "node_fail_requeued": "325",
-    "running": "327",
-    "suspended": "328",
-    "filler": "329",
-    "held": "330",
-    "pending_resources": "331"
+    "timeout": "2",
+    "requeued": "3",
+    "ok": "16",
+    "exit1": "17",
+    "signal": "18",
+    "exit137": "19",
+    "out_of_memory": "20",
+    "out_of_memory_step": "21",
+    "array_partial": "22",
+    "cancelled_pending": "25",
+    "cancelled_running": "26",
+    "array_cancelled_pending": "27",
+    "completing": "28",
+    "wait_ok": "30",
+    "wait_exit1": "31",
+    "wait_exit137": "32",
+    "wait_out_of_memory": "33",
+    "wait_array_partial": "34",
+    "wait_dependent_skipped_parent": "39",
+    "wait_cancelled_pending": "37",
+    "wait_cancelled_running": "38",
+    "wait_dependent_skipped": "40",
+    "dependent_ok_parent": "41",
+    "dependent_ok": "42",
+    "dependent_skipped_parent": "43",
+    "dependent_skipped": "44",
+    "dependent_pending_parent": "45",
+    "dependent_pending": "46",
+    "array": "47",
+    "array_throttled": "48",
+    "array_list": "54",
+    "array_stepped": "55",
+    "array_single": "56",
+    "node_fail": "57",
+    "node_fail_requeued": "58",
+    "running": "60",
+    "suspended": "61",
+    "filler": "62",
+    "held": "63",
+    "pending_resources": "64"
   },
   "files": {
     "squeue_empty.txt": {
@@ -128,7 +129,7 @@
       "argv": [
         "scontrol",
         "requeue",
-        "271"
+        "3"
       ]
     },
     "sacct_requeued.txt": {
@@ -138,7 +139,7 @@
         "-P",
         "-n",
         "-j",
-        "271",
+        "3",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -150,7 +151,7 @@
         "-n",
         "-D",
         "-j",
-        "271",
+        "3",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -160,7 +161,7 @@
         "squeue",
         "-h",
         "-j",
-        "271",
+        "3",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -171,7 +172,7 @@
         "scontrol",
         "show",
         "job",
-        "271"
+        "3"
       ]
     },
     "sbatch_ok.json": {
@@ -268,7 +269,7 @@
         "-P",
         "-n",
         "-j",
-        "284",
+        "16",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -278,7 +279,7 @@
         "scontrol",
         "show",
         "job",
-        "284"
+        "16"
       ]
     },
     "sacct_exit1.txt": {
@@ -288,7 +289,7 @@
         "-P",
         "-n",
         "-j",
-        "285",
+        "17",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -298,7 +299,7 @@
         "scontrol",
         "show",
         "job",
-        "285"
+        "17"
       ]
     },
     "sacct_signal.txt": {
@@ -308,7 +309,7 @@
         "-P",
         "-n",
         "-j",
-        "286",
+        "18",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -318,7 +319,7 @@
         "scontrol",
         "show",
         "job",
-        "286"
+        "18"
       ]
     },
     "sacct_exit137.txt": {
@@ -328,7 +329,7 @@
         "-P",
         "-n",
         "-j",
-        "287",
+        "19",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -338,7 +339,7 @@
         "scontrol",
         "show",
         "job",
-        "287"
+        "19"
       ]
     },
     "sacct_out_of_memory.txt": {
@@ -348,7 +349,7 @@
         "-P",
         "-n",
         "-j",
-        "288",
+        "20",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -358,7 +359,7 @@
         "scontrol",
         "show",
         "job",
-        "288"
+        "20"
       ]
     },
     "sacct_out_of_memory_step.txt": {
@@ -368,7 +369,7 @@
         "-P",
         "-n",
         "-j",
-        "289",
+        "21",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -378,7 +379,7 @@
         "scontrol",
         "show",
         "job",
-        "289"
+        "21"
       ]
     },
     "sacct_array_partial.txt": {
@@ -388,7 +389,7 @@
         "-P",
         "-n",
         "-j",
-        "290",
+        "22",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -398,7 +399,7 @@
         "scontrol",
         "show",
         "job",
-        "290"
+        "22"
       ]
     },
     "sacct_several.txt": {
@@ -408,7 +409,7 @@
         "-P",
         "-n",
         "-j",
-        "284,285,290",
+        "16,17,22",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -455,7 +456,7 @@
       "what": "scancel of the cancelled_pending job (JSON)",
       "argv": [
         "scancel",
-        "293"
+        "25"
       ]
     },
     "sacct_cancelled_pending.txt": {
@@ -465,7 +466,7 @@
         "-P",
         "-n",
         "-j",
-        "293",
+        "25",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -475,14 +476,14 @@
         "scontrol",
         "show",
         "job",
-        "293"
+        "25"
       ]
     },
     "scancel_cancelled_running.json": {
       "what": "scancel of the cancelled_running job (JSON)",
       "argv": [
         "scancel",
-        "294"
+        "26"
       ]
     },
     "sacct_cancelled_running.txt": {
@@ -492,7 +493,7 @@
         "-P",
         "-n",
         "-j",
-        "294",
+        "26",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -502,14 +503,14 @@
         "scontrol",
         "show",
         "job",
-        "294"
+        "26"
       ]
     },
     "scancel_array_cancelled_pending.json": {
       "what": "scancel of the array_cancelled_pending job (JSON)",
       "argv": [
         "scancel",
-        "295"
+        "27"
       ]
     },
     "sacct_array_cancelled_pending.txt": {
@@ -519,7 +520,7 @@
         "-P",
         "-n",
         "-j",
-        "295",
+        "27",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -529,14 +530,73 @@
         "scontrol",
         "show",
         "job",
-        "295"
+        "27"
+      ]
+    },
+    "sbatch_completing.json": {
+      "what": "sbatch of the completing job (JSON)",
+      "argv": [
+        "sbatch",
+        "-J",
+        "completing",
+        "--chdir=/work/capture-jobs",
+        "-o",
+        "%x.%j.out",
+        "/work/capture-jobs/completing.sh"
+      ]
+    },
+    "scancel_completing.json": {
+      "what": "scancel of the completing job (JSON)",
+      "argv": [
+        "scancel",
+        "28"
+      ]
+    },
+    "scontrol_completing_just_cancelled.txt": {
+      "what": "scontrol show job of the completing job: just cancelled while running, still COMPLETING",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "28"
+      ]
+    },
+    "sacct_completing_just_cancelled.txt": {
+      "what": "sacct of the completing job: just cancelled while running, still COMPLETING",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "28",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "sacct_completing.txt": {
+      "what": "sacct of the completing job: cancelled while running, once it has ended",
+      "argv": [
+        "sacct",
+        "-P",
+        "-n",
+        "-j",
+        "28",
+        "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
+      ]
+    },
+    "scontrol_completing.txt": {
+      "what": "scontrol show job of the completing job: cancelled while running, once it has ended",
+      "argv": [
+        "scontrol",
+        "show",
+        "job",
+        "28"
       ]
     },
     "scancel_not_owner.json": {
       "what": "scancel of another user's job (JSON)",
       "argv": [
         "scancel",
-        "296"
+        "29"
       ]
     },
     "sbatch_wait_ok.json": {
@@ -559,7 +619,7 @@
         "-P",
         "-n",
         "-j",
-        "297",
+        "30",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -569,7 +629,7 @@
         "scontrol",
         "show",
         "job",
-        "297"
+        "30"
       ]
     },
     "sbatch_wait_exit1.json": {
@@ -592,7 +652,7 @@
         "-P",
         "-n",
         "-j",
-        "298",
+        "31",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -602,7 +662,7 @@
         "scontrol",
         "show",
         "job",
-        "298"
+        "31"
       ]
     },
     "sbatch_wait_exit137.json": {
@@ -625,7 +685,7 @@
         "-P",
         "-n",
         "-j",
-        "299",
+        "32",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -635,7 +695,7 @@
         "scontrol",
         "show",
         "job",
-        "299"
+        "32"
       ]
     },
     "sbatch_wait_out_of_memory.json": {
@@ -659,7 +719,7 @@
         "-P",
         "-n",
         "-j",
-        "300",
+        "33",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -669,7 +729,7 @@
         "scontrol",
         "show",
         "job",
-        "300"
+        "33"
       ]
     },
     "sbatch_wait_array_partial.json": {
@@ -693,7 +753,7 @@
         "-P",
         "-n",
         "-j",
-        "301",
+        "34",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -703,7 +763,7 @@
         "scontrol",
         "show",
         "job",
-        "301"
+        "34"
       ]
     },
     "sbatch_wait_cancelled_pending.json": {
@@ -743,7 +803,7 @@
         "-o",
         "%x.%j.out",
         "--wait",
-        "--dependency=afterok:306",
+        "--dependency=afterok:39",
         "--kill-on-invalid-dep=yes",
         "/work/capture-jobs/wait_dependent_skipped.sh"
       ]
@@ -755,7 +815,7 @@
         "-P",
         "-n",
         "-j",
-        "304",
+        "37",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -765,7 +825,7 @@
         "scontrol",
         "show",
         "job",
-        "304"
+        "37"
       ]
     },
     "sacct_wait_cancelled_running.txt": {
@@ -775,7 +835,7 @@
         "-P",
         "-n",
         "-j",
-        "305",
+        "38",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -785,7 +845,7 @@
         "scontrol",
         "show",
         "job",
-        "305"
+        "38"
       ]
     },
     "sacct_wait_dependent_skipped.txt": {
@@ -795,7 +855,7 @@
         "-P",
         "-n",
         "-j",
-        "307",
+        "40",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -805,7 +865,7 @@
         "scontrol",
         "show",
         "job",
-        "307"
+        "40"
       ]
     },
     "sbatch_dependent_ok.json": {
@@ -817,7 +877,7 @@
         "--chdir=/work/capture-jobs",
         "-o",
         "%x.%j.out",
-        "--dependency=afterok:308",
+        "--dependency=afterok:41",
         "/work/capture-jobs/dependent_ok.sh"
       ]
     },
@@ -830,7 +890,7 @@
         "--chdir=/work/capture-jobs",
         "-o",
         "%x.%j.out",
-        "--dependency=afterok:310",
+        "--dependency=afterok:43",
         "--kill-on-invalid-dep=yes",
         "/work/capture-jobs/dependent_skipped.sh"
       ]
@@ -844,7 +904,7 @@
         "--chdir=/work/capture-jobs",
         "-o",
         "%x.%j.out",
-        "--dependency=afterok:312",
+        "--dependency=afterok:45",
         "--kill-on-invalid-dep=no",
         "/work/capture-jobs/dependent_pending.sh"
       ]
@@ -856,7 +916,7 @@
         "-P",
         "-n",
         "-j",
-        "309",
+        "42",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -866,7 +926,7 @@
         "squeue",
         "-h",
         "-j",
-        "309",
+        "42",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -877,7 +937,7 @@
         "scontrol",
         "show",
         "job",
-        "309"
+        "42"
       ]
     },
     "sacct_dependent_skipped_before.txt": {
@@ -887,7 +947,7 @@
         "-P",
         "-n",
         "-j",
-        "311",
+        "44",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -897,7 +957,7 @@
         "squeue",
         "-h",
         "-j",
-        "311",
+        "44",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -908,7 +968,7 @@
         "scontrol",
         "show",
         "job",
-        "311"
+        "44"
       ]
     },
     "sacct_dependent_pending_before.txt": {
@@ -918,7 +978,7 @@
         "-P",
         "-n",
         "-j",
-        "313",
+        "46",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -928,7 +988,7 @@
         "squeue",
         "-h",
         "-j",
-        "313",
+        "46",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -939,7 +999,7 @@
         "scontrol",
         "show",
         "job",
-        "313"
+        "46"
       ]
     },
     "sacct_dependent_ok.txt": {
@@ -949,7 +1009,7 @@
         "-P",
         "-n",
         "-j",
-        "309",
+        "42",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -959,7 +1019,7 @@
         "scontrol",
         "show",
         "job",
-        "309"
+        "42"
       ]
     },
     "sacct_dependent_skipped.txt": {
@@ -969,7 +1029,7 @@
         "-P",
         "-n",
         "-j",
-        "311",
+        "44",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -979,7 +1039,7 @@
         "scontrol",
         "show",
         "job",
-        "311"
+        "44"
       ]
     },
     "sacct_dependent_pending.txt": {
@@ -989,7 +1049,7 @@
         "-P",
         "-n",
         "-j",
-        "313",
+        "46",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -999,7 +1059,7 @@
         "squeue",
         "-h",
         "-j",
-        "313",
+        "46",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1010,14 +1070,14 @@
         "scontrol",
         "show",
         "job",
-        "313"
+        "46"
       ]
     },
     "scancel_dependent_pending.json": {
       "what": "scancel of the dependent_pending job (JSON)",
       "argv": [
         "scancel",
-        "313"
+        "46"
       ]
     },
     "sacct_dependent_pending_cancelled.txt": {
@@ -1027,7 +1087,7 @@
         "-P",
         "-n",
         "-j",
-        "313",
+        "46",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1037,7 +1097,7 @@
         "scontrol",
         "show",
         "job",
-        "313"
+        "46"
       ]
     },
     "sbatch_array.json": {
@@ -1074,7 +1134,7 @@
         "-P",
         "-n",
         "-j",
-        "314",
+        "47",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1084,7 +1144,7 @@
         "squeue",
         "-h",
         "-j",
-        "314",
+        "47",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1096,7 +1156,7 @@
         "-h",
         "-r",
         "-j",
-        "314",
+        "47",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1107,7 +1167,7 @@
         "scontrol",
         "show",
         "job",
-        "314"
+        "47"
       ]
     },
     "sacct_array_throttled.txt": {
@@ -1117,7 +1177,7 @@
         "-P",
         "-n",
         "-j",
-        "315",
+        "48",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1127,7 +1187,7 @@
         "squeue",
         "-h",
         "-j",
-        "315",
+        "48",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1139,7 +1199,7 @@
         "-h",
         "-r",
         "-j",
-        "315",
+        "48",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1150,14 +1210,14 @@
         "scontrol",
         "show",
         "job",
-        "315"
+        "48"
       ]
     },
     "scancel_array_throttled.json": {
       "what": "scancel of the array_throttled job (JSON)",
       "argv": [
         "scancel",
-        "315"
+        "48"
       ]
     },
     "sacct_array_throttled_cancelled.txt": {
@@ -1167,7 +1227,7 @@
         "-P",
         "-n",
         "-j",
-        "315",
+        "48",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1177,7 +1237,7 @@
         "scontrol",
         "show",
         "job",
-        "315"
+        "48"
       ]
     },
     "sacct_array.txt": {
@@ -1187,7 +1247,7 @@
         "-P",
         "-n",
         "-j",
-        "314",
+        "47",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1197,7 +1257,7 @@
         "scontrol",
         "show",
         "job",
-        "314"
+        "47"
       ]
     },
     "sbatch_array_list.json": {
@@ -1221,7 +1281,7 @@
         "-P",
         "-n",
         "-j",
-        "321",
+        "54",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1231,7 +1291,7 @@
         "squeue",
         "-h",
         "-j",
-        "321",
+        "54",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1242,7 +1302,7 @@
         "scontrol",
         "show",
         "job",
-        "321"
+        "54"
       ]
     },
     "sbatch_array_stepped.json": {
@@ -1266,7 +1326,7 @@
         "-P",
         "-n",
         "-j",
-        "322",
+        "55",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1276,7 +1336,7 @@
         "squeue",
         "-h",
         "-j",
-        "322",
+        "55",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1287,7 +1347,7 @@
         "scontrol",
         "show",
         "job",
-        "322"
+        "55"
       ]
     },
     "sbatch_array_single.json": {
@@ -1311,7 +1371,7 @@
         "-P",
         "-n",
         "-j",
-        "323",
+        "56",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1321,7 +1381,7 @@
         "squeue",
         "-h",
         "-j",
-        "323",
+        "56",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1332,7 +1392,7 @@
         "scontrol",
         "show",
         "job",
-        "323"
+        "56"
       ]
     },
     "sbatch_node_fail.json": {
@@ -1371,7 +1431,7 @@
         "-P",
         "-n",
         "-j",
-        "324",
+        "57",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1381,7 +1441,7 @@
         "scontrol",
         "show",
         "job",
-        "324"
+        "57"
       ]
     },
     "sacct_node_fail_requeued.txt": {
@@ -1391,7 +1451,7 @@
         "-P",
         "-n",
         "-j",
-        "325",
+        "58",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1403,7 +1463,7 @@
         "-n",
         "-D",
         "-j",
-        "325",
+        "58",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1413,7 +1473,7 @@
         "squeue",
         "-h",
         "-j",
-        "325",
+        "58",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1424,7 +1484,7 @@
         "scontrol",
         "show",
         "job",
-        "325"
+        "58"
       ]
     },
     "sacct_timeout.txt": {
@@ -1434,7 +1494,7 @@
         "-P",
         "-n",
         "-j",
-        "270",
+        "2",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1444,7 +1504,7 @@
         "scontrol",
         "show",
         "job",
-        "270"
+        "2"
       ]
     },
     "sacct_requeued_running.txt": {
@@ -1454,7 +1514,7 @@
         "-P",
         "-n",
         "-j",
-        "271",
+        "3",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1466,7 +1526,7 @@
         "-n",
         "-D",
         "-j",
-        "271",
+        "3",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1476,7 +1536,7 @@
         "squeue",
         "-h",
         "-j",
-        "271",
+        "3",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1487,7 +1547,7 @@
         "scontrol",
         "show",
         "job",
-        "271"
+        "3"
       ]
     },
     "sbatch_running.json": {
@@ -1550,7 +1610,7 @@
       "argv": [
         "scontrol",
         "suspend",
-        "328"
+        "61"
       ]
     },
     "sacct_running.txt": {
@@ -1560,7 +1620,7 @@
         "-P",
         "-n",
         "-j",
-        "327",
+        "60",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1570,7 +1630,7 @@
         "squeue",
         "-h",
         "-j",
-        "327",
+        "60",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1581,7 +1641,7 @@
         "scontrol",
         "show",
         "job",
-        "327"
+        "60"
       ]
     },
     "sacct_suspended.txt": {
@@ -1591,7 +1651,7 @@
         "-P",
         "-n",
         "-j",
-        "328",
+        "61",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1601,7 +1661,7 @@
         "squeue",
         "-h",
         "-j",
-        "328",
+        "61",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1612,7 +1672,7 @@
         "scontrol",
         "show",
         "job",
-        "328"
+        "61"
       ]
     },
     "sacct_held.txt": {
@@ -1622,7 +1682,7 @@
         "-P",
         "-n",
         "-j",
-        "330",
+        "63",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1632,7 +1692,7 @@
         "squeue",
         "-h",
         "-j",
-        "330",
+        "63",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1643,7 +1703,7 @@
         "scontrol",
         "show",
         "job",
-        "330"
+        "63"
       ]
     },
     "sacct_pending_resources.txt": {
@@ -1653,7 +1713,7 @@
         "-P",
         "-n",
         "-j",
-        "331",
+        "64",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },
@@ -1663,7 +1723,7 @@
         "squeue",
         "-h",
         "-j",
-        "331",
+        "64",
         "-o",
         "%i|%F|%K|%u|%a|%P|%T|%r|%V|%S|%e|%M|%l|%C|%m|%N|%E|%b|%Z|%j"
       ]
@@ -1674,7 +1734,7 @@
         "scontrol",
         "show",
         "job",
-        "331"
+        "64"
       ]
     },
     "squeue_all.txt": {
@@ -1695,7 +1755,7 @@
         "-u",
         "tester",
         "-S",
-        "2026-11-22T20:19:17",
+        "2026-11-23T08:36:21",
         "--format=JobID,JobIDRaw,User,Account,Partition,State,ExitCode,Reason,Submit,Start,End,Elapsed,Timelimit,NodeList,AllocCPUS,ReqCPUS,ReqMem,MaxRSS,ReqTRES,AllocTRES,WorkDir,JobName"
       ]
     },

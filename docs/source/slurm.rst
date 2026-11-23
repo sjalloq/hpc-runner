@@ -467,8 +467,12 @@ life.
   job's details: ``hpc status <id> --verbose`` shows ``OUT_OF_MEMORY``, and
   ``--json`` has it under ``details``. The same place shows who cancelled a
   job (``CANCELLED by 1003``).
-- **A job** ``sacct`` **has no row for** is ``UNKNOWN``. ``wait()`` rides a
-  short ``UNKNOWN`` out (see ``unknown_after`` in :doc:`programmatic_api`).
+- **A job** ``sacct`` **has no row for** is ``UNKNOWN``, after hpc-runner
+  has asked ``sacct`` again for up to ten seconds: a new job reaches
+  accounting a moment after it reaches the queue. So ``get_status`` of an
+  id that does not exist takes ten seconds to answer ``UNKNOWN``.
+  ``wait()`` rides a short ``UNKNOWN`` out (see ``unknown_after`` in
+  :doc:`programmatic_api`).
 - **A requeued job** is ``PENDING`` again, and ``wait()`` goes on to the
   end of its next run. ``hpc status --history`` lists it once.
 - **A job on a node that dies** is requeued where the site requeues jobs,

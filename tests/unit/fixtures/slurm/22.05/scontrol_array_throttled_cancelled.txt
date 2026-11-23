@@ -1,14 +1,14 @@
-JobId=260 ArrayJobId=260 ArrayTaskId=3-4%2 ArrayTaskThrottle=2 JobName=array_throttled
+JobId=38 ArrayJobId=38 ArrayTaskId=3-4%2 ArrayTaskThrottle=2 JobName=array_throttled
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901585 Nice=0 Account=proj QOS=normal
+   Priority=4294901731 Nice=0 Account=proj QOS=normal
    JobState=CANCELLED Reason=JobArrayTaskLimit Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:42 EligibleTime=Unknown
-   AccrueTime=2026-11-22T20:20:43
-   StartTime=2026-11-22T20:20:46 EndTime=2026-11-22T20:20:46 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:43 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   SubmitTime=2026-11-23T08:40:30 EligibleTime=Unknown
+   AccrueTime=2026-11-23T08:40:31
+   StartTime=2026-11-23T08:40:35 EndTime=2026-11-23T08:40:35 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:40:31 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=
    NumNodes=1 NumCPUs=1 NumTasks=N/A CPUs/Task=1 ReqB:S:C:T=0:0:*:*
@@ -19,23 +19,23 @@ JobId=260 ArrayJobId=260 ArrayTaskId=3-4%2 ArrayTaskThrottle=2 JobName=array_thr
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array_throttled.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array_throttled.260.4294967294.out
+   StdErr=/work/capture-jobs/array_throttled.38.4294967294.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array_throttled.260.4294967294.out
+   StdOut=/work/capture-jobs/array_throttled.38.4294967294.out
    Power=
    
 
-JobId=262 ArrayJobId=260 ArrayTaskId=2 ArrayTaskThrottle=2 JobName=array_throttled
+JobId=40 ArrayJobId=38 ArrayTaskId=2 ArrayTaskThrottle=2 JobName=array_throttled
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901585 Nice=0 Account=proj QOS=normal
+   Priority=4294901731 Nice=0 Account=proj QOS=normal
    JobState=CANCELLED Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:15
-   RunTime=00:00:03 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:42 EligibleTime=2026-11-22T20:20:43
-   AccrueTime=2026-11-22T20:20:43
-   StartTime=2026-11-22T20:20:43 EndTime=2026-11-22T20:20:46 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:43 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   RunTime=00:00:04 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-23T08:40:30 EligibleTime=2026-11-23T08:40:31
+   AccrueTime=2026-11-23T08:40:31
+   StartTime=2026-11-23T08:40:31 EndTime=2026-11-23T08:40:35 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:40:31 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -47,23 +47,23 @@ JobId=262 ArrayJobId=260 ArrayTaskId=2 ArrayTaskThrottle=2 JobName=array_throttl
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array_throttled.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array_throttled.260.2.out
+   StdErr=/work/capture-jobs/array_throttled.38.2.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array_throttled.260.2.out
+   StdOut=/work/capture-jobs/array_throttled.38.2.out
    Power=
    
 
-JobId=261 ArrayJobId=260 ArrayTaskId=1 ArrayTaskThrottle=2 JobName=array_throttled
+JobId=39 ArrayJobId=38 ArrayTaskId=1 ArrayTaskThrottle=2 JobName=array_throttled
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
-   Priority=4294901585 Nice=0 Account=proj QOS=normal
+   Priority=4294901731 Nice=0 Account=proj QOS=normal
    JobState=CANCELLED Reason=None Dependency=(null)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:15
-   RunTime=00:00:03 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:42 EligibleTime=2026-11-22T20:20:43
-   AccrueTime=2026-11-22T20:20:43
-   StartTime=2026-11-22T20:20:43 EndTime=2026-11-22T20:20:46 Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:43 Scheduler=Main
-   Partition=all AllocNode:Sid=login:116631
+   RunTime=00:00:04 TimeLimit=UNLIMITED TimeMin=N/A
+   SubmitTime=2026-11-23T08:40:30 EligibleTime=2026-11-23T08:40:31
+   AccrueTime=2026-11-23T08:40:31
+   StartTime=2026-11-23T08:40:31 EndTime=2026-11-23T08:40:35 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:40:31 Scheduler=Main
+   Partition=all AllocNode:Sid=login:156
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=exec1
    BatchHost=exec1
@@ -75,9 +75,9 @@ JobId=261 ArrayJobId=260 ArrayTaskId=1 ArrayTaskThrottle=2 JobName=array_throttl
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/array_throttled.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/array_throttled.260.1.out
+   StdErr=/work/capture-jobs/array_throttled.38.1.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/array_throttled.260.1.out
+   StdOut=/work/capture-jobs/array_throttled.38.1.out
    Power=
    
 

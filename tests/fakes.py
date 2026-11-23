@@ -63,6 +63,24 @@ def patch_seam(respond: Responder) -> Any:
     return patch(SEAM, side_effect=make_fake_run_command(respond))
 
 
+class FakeClock:
+    """A stand-in for the ``time`` module: ``sleep`` returns at once and moves the clock.
+
+    ``sleeps`` is every sleep asked for, in order.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
 def make_host(
     env: dict[str, str] | None = None, cwd: Path | None = None, user: str = "alice"
 ) -> Host:

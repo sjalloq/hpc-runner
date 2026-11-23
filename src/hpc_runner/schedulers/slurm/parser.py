@@ -457,6 +457,11 @@ def scontrol_has_ended(record: Row) -> bool:
     return state_to_status(record.get("JobState", "")).is_terminal
 
 
+def scontrol_is_completing(record: Row) -> bool:
+    """Whether the job of *record* has ended and is not yet cleaned up (``COMPLETING``)."""
+    return record.get("JobState") == "COMPLETING"
+
+
 def scontrol_exit_code(record: Row) -> int | None:
     """The exit code *record* settles, None when it settles none.
 

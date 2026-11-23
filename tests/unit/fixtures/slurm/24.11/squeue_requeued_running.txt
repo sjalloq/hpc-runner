@@ -1,1 +1,1 @@
-271|271|N/A|tester|proj|all|RUNNING|None|2026-11-22T20:19:18|2026-11-22T20:21:26|NONE|0:03|UNLIMITED|1|100M|exec2|(null)|N/A|/work/capture-jobs|requeued
+3|3|N/A|tester|proj|all|RUNNING|None|2026-11-23T08:36:23|2026-11-23T08:38:26|NONE|0:01|UNLIMITED|1|100M|exec2|(null)|N/A|/work/capture-jobs|requeued

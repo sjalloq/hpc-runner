@@ -1,14 +1,14 @@
-JobId=309 JobName=dependent_ok
+JobId=42 JobName=dependent_ok
    UserId=tester(1003) GroupId=tester(1003) MCS_label=N/A
    Priority=1 Nice=0 Account=proj QOS=normal
-   JobState=PENDING Reason=Dependency Dependency=afterok:308(unfulfilled)
+   JobState=PENDING Reason=Dependency Dependency=afterok:41(unfulfilled)
    Requeue=1 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
    RunTime=00:00:00 TimeLimit=UNLIMITED TimeMin=N/A
-   SubmitTime=2026-11-22T20:20:27 EligibleTime=Unknown
+   SubmitTime=2026-11-23T08:37:32 EligibleTime=Unknown
    AccrueTime=Unknown
    StartTime=Unknown EndTime=Unknown Deadline=N/A
-   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-22T20:20:27 Scheduler=Main
-   Partition=all AllocNode:Sid=login:134735
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2026-11-23T08:37:32 Scheduler=Main
+   Partition=all AllocNode:Sid=login:157
    ReqNodeList=(null) ExcNodeList=(null)
    NodeList=
    NumNodes=1 NumCPUs=1 NumTasks=1 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
@@ -20,8 +20,8 @@ JobId=309 JobName=dependent_ok
    OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
    Command=/work/capture-jobs/dependent_ok.sh
    WorkDir=/work/capture-jobs
-   StdErr=/work/capture-jobs/dependent_ok.309.out
+   StdErr=/work/capture-jobs/dependent_ok.42.out
    StdIn=/dev/null
-   StdOut=/work/capture-jobs/dependent_ok.309.out
+   StdOut=/work/capture-jobs/dependent_ok.42.out
    
 

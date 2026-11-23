@@ -40,6 +40,16 @@ def test_cancelled_while_pending_is_cancelled_with_no_exit_code(cluster: Cluster
     assert not list(cluster.workdir.glob("cancelpend.*.out"))
 
 
+def test_a_job_just_submitted_has_a_status_at_once(cluster: Cluster) -> None:
+    """``get_status`` on the line after the submission: a held job is PENDING,
+    not UNKNOWN, though ``sacct`` has its row a moment after ``squeue`` does."""
+    result = submit(cluster, JobSpec("echo ran", name="justsubmitted", scheduler_args=["--hold"]))
+    try:
+        assert cluster.scheduler().get_status(job_id(result)) is JobStatus.PENDING
+    finally:
+        assert result.cancel()
+
+
 def test_requeued_job_is_waited_through_to_its_second_run(cluster: Cluster) -> None:
     """``scontrol requeue`` of a running job: it is PENDING again, not finished,
     and ``wait()`` goes on to the end of its second run. ``sacct`` keeps the

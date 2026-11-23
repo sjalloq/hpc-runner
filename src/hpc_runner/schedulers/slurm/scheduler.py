@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -66,6 +67,7 @@ from hpc_runner.schedulers.slurm.parser import (
     scontrol_base,
     scontrol_exit_code,
     scontrol_has_ended,
+    scontrol_is_completing,
     scontrol_output_paths,
     scontrol_tasks,
     select_jobs,
@@ -87,6 +89,15 @@ _PREVIEW_SCRIPT_PATH = "<script>"
 #: line, quotes and backslashes are taken out, ``#`` ends it (run on the
 #: testbed, 24.11 and 22.05).
 _NOT_IN_A_DIRECTIVE = re.compile(r"""[\s'"\\#]""")
+
+#: A new job reaches accounting a moment after the queue: how long ``sacct``
+#: is asked again for a job it has no row for, and how often (seconds).
+ACCOUNTING_WAIT = 10.0
+ACCOUNTING_POLL = 1.0
+#: A job that has just ended is ``COMPLETING`` to the controller for a moment,
+#: with no exit code yet: how long ``scontrol`` is asked again, and how often.
+EXIT_CODE_WAIT = 5.0
+EXIT_CODE_POLL = 0.5
 
 _TO_THE_TERMINAL = NotApplicable("an interactive job's output is the terminal; no file is named")
 
@@ -563,18 +574,52 @@ class SlurmScheduler(BaseScheduler):
         argv = ["sacct", "-P", "-n", "-j", ",".join(bases), f"--format={SACCT_FORMAT}"]
         return parse_sacct(self._run(argv).stdout)
 
+    def _sacct_again(self, job_ids: Sequence[str], jobs: list[SacctJob]) -> list[SacctJob]:
+        """*jobs*, the ``sacct`` rows of *job_ids*, with the rows that come late.
+
+        ``sacct`` is asked again every :data:`ACCOUNTING_POLL` seconds, for
+        the ids with no row only, until each has one or
+        :data:`ACCOUNTING_WAIT` seconds have gone.
+        """
+        deadline = time.monotonic() + ACCOUNTING_WAIT
+        while time.monotonic() < deadline:
+            missing = [job_id for job_id in job_ids if not select_jobs(jobs, job_id)]
+            if not missing:
+                break
+            time.sleep(ACCOUNTING_POLL)
+            asked = {split_job_id(job_id)[0] for job_id in missing}
+            jobs = [job for job in jobs if job.base not in asked] + [
+                job for job in self._sacct(missing) if job.base in asked
+            ]
+        return jobs
+
     def _scontrol(self, job_id: str) -> list[Row]:
         """The ``scontrol show job`` records of *job_id*; empty once the controller forgot it."""
         result = self._run(["scontrol", "show", "job", job_id], check=False)
         return parse_scontrol_job(result.stdout) if result.returncode == 0 else []
+
+    def _scontrol_settled(self, job_id: str) -> list[Row]:
+        """:meth:`_scontrol`, asked again while its one record is ``COMPLETING``.
+
+        Every :data:`EXIT_CODE_POLL` seconds for up to :data:`EXIT_CODE_WAIT`.
+        """
+        records = self._scontrol(job_id)
+        deadline = time.monotonic() + EXIT_CODE_WAIT
+        while (
+            len(records) == 1 and scontrol_is_completing(records[0]) and time.monotonic() < deadline
+        ):
+            time.sleep(EXIT_CODE_POLL)
+            records = self._scontrol(job_id)
+        return records
 
     def get_statuses(self, job_ids: Sequence[str]) -> dict[str, JobStatus]:
         """Statuses from one ``sacct``, which has pending and running jobs too.
 
         The status is read from the job's own row (see
         :func:`~hpc_runner.schedulers.slurm.parser.state_to_status`). A job
-        ``sacct`` has no row for is UNKNOWN: a job just submitted may not
-        be there yet, and ``wait()`` rides that out with ``unknown_after``.
+        just submitted may not be there yet, so ``sacct`` is asked again
+        for the ids with no row, every second for up to ten seconds; a job
+        with no row after that is UNKNOWN.
 
         A task id (``123_4``) reports that task's own state: its own row
         once it has started, before that the row the waiting tasks share.
@@ -582,7 +627,7 @@ class SlurmScheduler(BaseScheduler):
         reduction of its rows
         (:func:`~hpc_runner.core.result.reduce_statuses`).
         """
-        jobs = self._sacct(job_ids)
+        jobs = self._sacct_again(job_ids, self._sacct(job_ids))
         return {job_id: sacct_status(jobs, job_id) for job_id in job_ids}
 
     def get_exit_code(self, job_id: str) -> int | None:
@@ -595,11 +640,16 @@ class SlurmScheduler(BaseScheduler):
         array (the controller may have forgotten some of its tasks);
         ``sacct`` prints an exit status above 128 less 128.
 
+        A job that has just ended is ``COMPLETING`` to the controller for
+        a moment, with no exit code yet: ``scontrol`` is asked again every
+        half second, for up to five seconds, until its one record says
+        something else or the controller has forgotten the job.
+
         Never 0 unless the job is COMPLETED, and None for a job that has
         not ended or in which nothing ran. The base id of an array gives
         the first non-zero task code, 0 when every task is COMPLETED.
         """
-        return self._exit_code(job_id, self._scontrol(job_id), None)
+        return self._exit_code(job_id, self._scontrol_settled(job_id), None)
 
     def _exit_code(
         self, job_id: str, records: list[Row], jobs: list[SacctJob] | None
@@ -725,8 +775,11 @@ class SlurmScheduler(BaseScheduler):
         exit status as the script gave it (see :meth:`get_exit_code`),
         and the reason, dependency and command in the extra details.
         ``sacct`` has no output path, so a job the controller has forgotten
-        has none. A job ``sacct`` has no row for yet is UNKNOWN, with what
-        the controller says of it.
+        has none. A job the controller says is ``COMPLETING`` is waited for
+        as in :meth:`get_exit_code`. When the controller knows the job and ``sacct`` has no
+        row for it yet, ``sacct`` is asked again every second for up to ten
+        seconds; a job with no row after that is UNKNOWN, with what the
+        controller says of it.
 
         The base id of an array gives the array as a whole (status and
         exit code reduced over the tasks) and every task's own
@@ -739,12 +792,14 @@ class SlurmScheduler(BaseScheduler):
         Raises:
             JobNotFoundError: Neither command knows *job_id*.
         """
-        records = self._scontrol(job_id)
+        records = self._scontrol_settled(job_id)
         jobs = self._sacct([job_id])
-        selected = select_jobs(jobs, job_id)
-        if not selected:
+        if not select_jobs(jobs, job_id):
             if not records:
                 raise JobNotFoundError(f"job {job_id} not found")
+            jobs = self._sacct_again([job_id], jobs)
+        selected = select_jobs(jobs, job_id)
+        if not selected:
             return self._details_without_accounting(job_id, records[0])
 
         if not selected[0].tasks or split_job_id(job_id)[1] is not None:
@@ -810,7 +865,7 @@ class SlurmScheduler(BaseScheduler):
     def _details_without_accounting(
         self, job_id: str, record: Row
     ) -> tuple[JobInfo, dict[str, object]]:
-        """Details of a job the controller knows and ``sacct`` has no row for yet."""
+        """Details of a job the controller knows and ``sacct`` still has no row for."""
         stdout_path, stderr_path = scontrol_output_paths(record)
         cpus = record.get("NumCPUs", "")
         info = JobInfo(

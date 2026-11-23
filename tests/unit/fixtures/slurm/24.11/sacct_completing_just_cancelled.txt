@@ -1,0 +1,2 @@
+28|28|tester|proj|all|CANCELLED by 1003|0:0|None|2026-11-23T08:36:53|2026-11-23T08:36:56|2026-11-23T08:36:56|00:00:00|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|completing
+28.batch|28.batch||proj||CANCELLED|0:15||2026-11-23T08:36:56|2026-11-23T08:36:56|2026-11-23T08:36:56|00:00:00||exec2|1|1||4040K||cpu=1,mem=100M,node=1||batch

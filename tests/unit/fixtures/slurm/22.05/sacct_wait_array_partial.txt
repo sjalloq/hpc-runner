@@ -1,6 +1,6 @@
-246_1|247|tester|proj|all|COMPLETED|0:0|None|2026-11-22T20:20:11|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
-246_1.batch|247.batch||proj||COMPLETED|0:0||2026-11-22T20:20:13|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00||exec2|1|1||3280K||cpu=1,mem=100M,node=1||batch
-246_2|248|tester|proj|all|COMPLETED|0:0|None|2026-11-22T20:20:11|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
-246_2.batch|248.batch||proj||COMPLETED|0:0||2026-11-22T20:20:13|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00||exec1|1|1||3304K||cpu=1,mem=100M,node=1||batch
-246_3|246|tester|proj|all|FAILED|1:0|None|2026-11-22T20:20:11|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
-246_3.batch|246.batch||proj||FAILED|1:0||2026-11-22T20:20:13|2026-11-22T20:20:13|2026-11-22T20:20:13|00:00:00||exec1|1|1||3472K||cpu=1,mem=100M,node=1||batch
+24_1|25|tester|proj|all|COMPLETED|0:0|None|2026-11-23T08:40:00|2026-11-23T08:40:02|2026-11-23T08:40:02|00:00:00|UNLIMITED|exec2|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
+24_1.batch|25.batch||proj||COMPLETED|0:0||2026-11-23T08:40:02|2026-11-23T08:40:02|2026-11-23T08:40:02|00:00:00||exec2|1|1||3444K||cpu=1,mem=100M,node=1||batch
+24_2|26|tester|proj|all|COMPLETED|0:0|None|2026-11-23T08:40:00|2026-11-23T08:40:02|2026-11-23T08:40:02|00:00:00|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
+24_2.batch|26.batch||proj||COMPLETED|0:0||2026-11-23T08:40:02|2026-11-23T08:40:02|2026-11-23T08:40:02|00:00:00||exec1|1|1||3304K||cpu=1,mem=100M,node=1||batch
+24_3|24|tester|proj|all|FAILED|1:0|None|2026-11-23T08:40:00|2026-11-23T08:40:02|2026-11-23T08:40:02|00:00:00|UNLIMITED|exec1|1|1|100M||billing=1,cpu=1,mem=100M,node=1|billing=1,cpu=1,mem=100M,node=1|/work/capture-jobs|wait_array_partial
+24_3.batch|24.batch||proj||FAILED|1:0||2026-11-23T08:40:02|2026-11-23T08:40:02|2026-11-23T08:40:02|00:00:00||exec1|1|1||3548K||cpu=1,mem=100M,node=1||batch

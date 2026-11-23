@@ -11,6 +11,6 @@
     "/work/capture-jobs/node_fail_requeued.sh"
   ],
   "returncode": 0,
-  "stdout": "Submitted batch job 270\n",
+  "stdout": "Submitted batch job 48\n",
   "stderr": ""
 }

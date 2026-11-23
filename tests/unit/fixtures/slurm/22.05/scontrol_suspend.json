@@ -2,7 +2,7 @@
   "argv": [
     "scontrol",
     "suspend",
-    "273"
+    "51"
   ],
   "returncode": 0,
   "stdout": "",
