@@ -1,48 +1,67 @@
 # hpc-runner
 
-**Submit HPC jobs by tool name, not by scheduler flag.**
+[![PyPI](https://img.shields.io/pypi/v/hpc-runner)](https://pypi.org/project/hpc-runner/)
+[![Python](https://img.shields.io/pypi/pyversions/hpc-runner)](https://pypi.org/project/hpc-runner/)
+[![CI](https://github.com/sjalloq/hpc-runner/actions/workflows/ci.yml/badge.svg)](https://github.com/sjalloq/hpc-runner/actions/workflows/ci.yml)
+[![Docs](https://github.com/sjalloq/hpc-runner/actions/workflows/docs.yml/badge.svg)](https://sjalloq.github.io/hpc-runner/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-`hpc run xrun -f top.f` turns into the right `qsub`/`qrsh` (SGE) or
-`sbatch`/`srun` (Slurm) call for your site, with the queue, slots, memory, licences and Environment Modules that
-the config file says an Xcelium run needs. Everyone gets the same module
-versions, so a flow that works for one user works for all of them.
-
-Full documentation: <https://sjalloq.github.io/hpc-runner/>
-
-## Features
-
-- **One CLI and one Python API** in front of the scheduler's own commands.
-- **Config by tool or job type**: queue, cpu, mem, time, modules,
-  licences and devices keyed on the command's first word, or on a `-t` type for
-  makefiles and scripts.
-- **Reproducible environments**: every job script runs `module purge` and
-  loads the configured versions.
-- **Dependencies, arrays and pipelines**, with `afterok`/`afternotok`
-  emulated on SGE and Slurm's own dependencies on Slurm.
-- **Validated config**: unknown keys and wrong types are errors with file,
-  line and a "did you mean".
-- **A terminal monitor**, `hpc monitor`, for watching your jobs.
-
-## Scheduler compatibility
-
-| Scheduler | Status | Notes |
-|-----------|--------|-------|
-| Sun Grid Engine / Open Grid Scheduler | Supported | qsub, qrsh, qstat, qacct, qdel. Integration suite runs against gridengine 8.1.9 in CI. |
-| Local | Supported | Runs the job on this machine with the same module environment; no scheduler needed. |
-| Slurm | Supported | sbatch, srun, sacct, squeue, scontrol, scancel. Integration suite passes against Slurm 22.05 and 24.11 in the Docker testbed. |
-| PBS / Torque | Planned | |
-| LSF | Planned | |
-
-A scheduler moves to *Supported* when the integration suite passes against
-it. Name the scheduler once in the config (`scheduler = "sge"` or
-`scheduler = "slurm"`) or with
-`HPC_SCHEDULER=NAME`; hpc-runner never guesses it.
-
-## Installation
+> Run cluster jobs by tool flow; define its resources and environment once.
 
 ```bash
-pip install hpc-runner
-hpc config init          # starter hpc-runner.toml in the current directory
+hpc run xrun -f top.f
+```
+hpc-runner turns this into the matching scheduler call, with the queue, CPUs,
+memory, licences and Environment Modules that your project's config says an
+Xcelium run needs.
+
+## Why
+
+- **No more "Works for me!&trade;".** Job settings and module versions live in a
+  config file under version control. Every job runs `module purge` and loads
+  only the modules that config names, so a flow that works for one user
+  works for all of them.
+- **No scheduler flags to learn.** Ask for `--cpu 8 --mem 16G`; hpc-runner
+  writes the SGE or Slurm arguments for your site.
+- **One interface for several schedulers.** The same command, config and
+  Python API on SGE and Slurm.
+
+## Who it is for
+
+- People running *one-shot* jobs: one tool or flow on one host, across N CPUs, with dependencies.
+- Teams that load their tools with [Environment Modules](https://modules.readthedocs.io/).
+- Projects that want repeatable job environments across every user.
+
+## Who it is not for
+
+- Complex MPI or multi-node jobs.
+- Sites that don't use Environment Modules.
+- Users who want every scheduler feature as a first-class option.
+
+## Highlights
+
+- **Config by tool or job type.** Settings are keyed on the command's first
+  word (`xrun`), or on a job type (`-t lint`) for makefiles and scripts.
+- **Project config, local overrides.** `hpc-runner.toml` at the git root
+  sets up the project; a `hpc-runner.toml` in any sub-directory allows for
+  escape hatch overrides.
+- **Raw scheduler flags when you need them:** `-S '-l gpu=1'`.
+- **More than submission:** `hpc status` (active jobs, `--history`, one
+  job), `hpc cancel`, and `hpc monitor`, a terminal UI for your jobs.
+- **See before you submit:** `--dry-run` prints the job script;
+  `hpc config resolve CMD` shows which config layer set each value.
+- **Checked config:** unknown keys and wrong types are errors with the file,
+  line and a "did you mean".
+- **CLI or Python:** the same jobs from scripts, with dependencies, arrays
+  and pipelines.
+- **Local mode:** `HPC_SCHEDULER=local` runs a job on this machine with the
+  same module environment.
+
+## Install
+
+```bash
+pipx install hpc-runner     # or: uv tool install hpc-runner
+hpc config init             # writes a starter hpc-runner.toml
 ```
 
 Python 3.10 or later.
@@ -50,49 +69,22 @@ Python 3.10 or later.
 ## Quick start
 
 ```bash
-# Interactive on the cluster (the default): output streams here, hpc waits
-hpc run xterm
-
-# Batch job, return immediately; -t picks a job type from the config
-hpc run --batch -t xcelium make sim
-
-# Resources for one run, and block until it finishes
-hpc run --batch --wait --cpu 4 --mem 16G --time 4:00:00 make sim
-
-# Preview the generated script without submitting
-hpc run --dry-run --cpu 8 make -j8
-
-# Raw scheduler flags go in one quoted string (SGE's here; Slurm's on Slurm)
-hpc run -S '-l gpu=1 -P proj' python train.py
+hpc run xterm                                  # interactive (default): hpc waits, output streams here
+hpc run --batch -t lint make lint              # batch, using the "lint" job type
+hpc run --batch --cpu 4 --mem 16G make sim     # resources for this run only
+hpc run --dry-run make sim                     # print the job script, don't submit
+hpc run -S '-l gpu=1' python train.py          # raw scheduler flags
+hpc status --history --since 2h                # what ran recently
 ```
-
-The same three steps from Python: a `JobSpec` says what you want,
-`resolve()` applies the config, a scheduler submits the frozen `Job`.
-
-```python
-# doctest: local
-from hpc_runner import Host, JobSpec, get_scheduler, load_config, resolve
-
-config = load_config()
-scheduler = get_scheduler(config=config)
-job = resolve(JobSpec("python train.py", cpu=4, mem="16G"), config, Host.capture())
-result = scheduler.submit(job)
-print(result.wait(), result.returncode)
-print(result.read_stdout())
-```
-
-Dependencies, array jobs, pipelines and reconnecting to a job by id are in
-the [Python API guide](https://sjalloq.github.io/hpc-runner/programmatic_api.html).
 
 ## Configuration
 
-`hpc-runner.toml` at the git root is the project config; one in the current
-directory can add or override tools and types. Settings layer from `[defaults]` through the tool
-matched by the command (or the tools a `-t` type pulls in) to the command
-line, and `hpc config resolve CMD` shows which layer set each value.
+The project config, `hpc-runner.toml` at the git root, kept under version
+control:
 
 ```toml
 config_version = 1
+scheduler = "sge"                       # or "slurm"; never guessed
 
 [defaults]
 cpu = 1
@@ -105,48 +97,62 @@ parallel_environment = "smp"
 memory_resource = "mem_free"
 
 [tools.xcelium]
-commands = ["xrun", "xmvlog", "xmelab", "simvision"]   # one entry, several executables
+commands = ["xrun", "xmvlog", "xmelab", "simvision"]
 modules = ["xcelium/23.09"]
 licenses = { xcelium_lic = 1 }
+cpu = 4
+mem = "16G"
 
 [tools.slang]
 modules = ["slang/0.9"]
 
 [types.lint]
-tools = ["xcelium", "slang"]   # pulled in, in this order, then the keys below
+tools = ["xcelium", "slang"]            # both tools' modules and licences
 cpu = 2
 ```
 
-The example is an SGE site's; a Slurm site names `scheduler = "slurm"` and
-has a `[schedulers.slurm]` section instead. Every key, how layers combine,
-variable expansion and each scheduler's mapping are in the
-[configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html),
-the [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html) and the
-[Slurm guide](https://sjalloq.github.io/hpc-runner/slurm.html).
+A `hpc-runner.toml` in a sub-directory changes tools and types for jobs run
+from there:
+
+```toml
+config_version = 1
+
+[tools.xcelium]
+mem = "64G"                             # the big testbench in this directory
+```
+
+Settings layer from `[defaults]`, through the tool or type, the local file,
+to the command line. See the
+[configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html).
+
+## Schedulers
+
+| Scheduler | Status |
+|---|---|
+| SGE / Open Grid Scheduler 8.1.9 | ✅ Supported |
+| Slurm 22.05, 24.11 | ✅ Supported |
+| Local (no scheduler) | ✅ Supported |
+| PBS / Torque, LSF | Planned |
 
 ## Documentation
 
+<https://sjalloq.github.io/hpc-runner/>
+
 - [Getting started](https://sjalloq.github.io/hpc-runner/getting_started.html)
-- [Configuration reference](https://sjalloq.github.io/hpc-runner/configuration.html)
+- [Configuration](https://sjalloq.github.io/hpc-runner/configuration.html)
 - [CLI reference](https://sjalloq.github.io/hpc-runner/cli.html)
-- [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html)
-- [Slurm guide](https://sjalloq.github.io/hpc-runner/slurm.html)
 - [Python API](https://sjalloq.github.io/hpc-runner/programmatic_api.html)
+- [SGE guide](https://sjalloq.github.io/hpc-runner/sge.html) ·
+  [Slurm guide](https://sjalloq.github.io/hpc-runner/slurm.html)
 - [Job monitor](https://sjalloq.github.io/hpc-runner/monitor.html)
-- [Development](https://sjalloq.github.io/hpc-runner/development.html)
 
-## Development
+## Contributing
 
-```bash
-source sourceme                   # .venv with the dev extras
-pytest                            # unit suite
-hpc-testbed --scheduler sge pytest --up   # integration suite against SGE in Docker
-hpc-testbed --scheduler slurm pytest --up # the same against Slurm
-```
-
-See the [development page](https://sjalloq.github.io/hpc-runner/development.html)
-for the layout, the testbed, golden scripts, docs and releases.
+Bug reports and ideas are welcome in
+[Issues](https://github.com/sjalloq/hpc-runner/issues). Help testing on PBS
+or LSF sites is especially useful. To build and test, see the
+[development guide](https://sjalloq.github.io/hpc-runner/development.html).
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT. See [LICENSE](LICENSE).
