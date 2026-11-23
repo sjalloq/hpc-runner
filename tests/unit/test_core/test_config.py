@@ -1128,7 +1128,8 @@ class TestLocalFile:
         assert config.tools["make"] == {"cpu": 8}
 
     def test_a_tool_in_both_files_combines_per_key(self, two_files):
-        """modules, licenses and devices add; every other key is the local file's."""
+        """modules, licenses and devices add (a later version replaces an earlier
+        one); every other key is the local file's."""
         two_files(
             self.PROJECT,
             "config_version = 1\n"
@@ -1148,7 +1149,7 @@ class TestLocalFile:
             "devices": {"gpu": 1, "fpga": 1},
             "features": ["avx2"],
             "env_vars": {"C": "3"},
-            "options": {"-gui": {"queue": "interactive", "modules": ["gui/1", "gui/2"]}},
+            "options": {"-gui": {"queue": "interactive", "modules": ["gui/2"]}},
         }
 
     def test_a_type_in_both_files_combines_per_key(self, two_files):

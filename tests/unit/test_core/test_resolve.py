@@ -8,7 +8,7 @@ from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.config import HPCConfig
 from hpc_runner.core.dependency import Dependency
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
-from hpc_runner.core.resolve import combine_layers, resolve
+from hpc_runner.core.resolve import combine_layers, module_name, modules_conflict, resolve
 from hpc_runner.core.spec import JobSpec
 from hpc_runner.core.units import Duration, Memory
 from tests.fakes import make_host, make_job
@@ -388,6 +388,76 @@ class TestKeysThatAdd:
     def test_config_modules_kept_without_spec(self):
         job = make_job(config=_config(defaults={"modules": ["a", "b"]}))
         assert job.modules == ("a", "b")
+
+
+class TestModuleVersions:
+    """A module replaces an earlier one of the same name, as a modulefile
+    ``conflict`` would."""
+
+    @pytest.mark.parametrize(
+        ("module", "name"),
+        [
+            ("xcelium/23.09", ("xcelium",)),
+            ("eda/cadence/xcelium/23.09", ("eda", "cadence", "xcelium")),
+            ("slang", ("slang",)),
+            ("python/v3.11", ("python",)),
+            ("site/tools", ("site", "tools")),
+            ("gcc-arm/10", ("gcc-arm",)),
+        ],
+    )
+    def test_name_drops_a_trailing_version(self, module, name):
+        assert module_name(module) == name
+
+    @pytest.mark.parametrize(
+        ("a", "b", "expected"),
+        [
+            ("xcelium/24.03", "xcelium/23.09", True),
+            ("xcelium/24.03", "eda/xcelium/23.09", True),
+            ("eda/xcelium/24.03", "xcelium/23.09", True),
+            ("slang", "slang/0.9", True),
+            ("gcc/12", "gcc-arm/10", False),
+            ("eda/x/1", "other/x/2", False),
+            ("site/tools", "site/1", False),
+        ],
+    )
+    def test_conflict_matches_whole_names_right_to_left(self, a, b, expected):
+        assert modules_conflict(a, b) is expected
+
+    def test_a_type_replaces_a_tools_version_in_place(self):
+        cfg = _config(
+            tools={"slang": {"modules": ["gcc/12", "slang/0.9", "cov/1"]}},
+            types={"lint": {"tools": ["slang"], "modules": ["slang/1.0"]}},
+        )
+        job = make_job("make lint", type="lint", config=cfg)
+        assert job.modules == ("gcc/12", "slang/1.0", "cov/1")
+        assert job.provenance["modules"] == (
+            ("gcc/12", "tools.slang"),
+            ("slang/1.0", "types.lint"),
+            ("cov/1", "tools.slang"),
+        )
+
+    def test_the_spec_replaces_a_configs_version(self):
+        cfg = _config(defaults={"modules": ["eda/xcelium/23.09"]})
+        job = make_job(config=cfg, modules=["xcelium/24.03"])
+        assert job.modules == ("xcelium/24.03",)
+
+    def test_the_comparison_is_on_expanded_values(self):
+        cfg = _config(
+            defaults={"modules": ["xcelium/23.09"]}, tools={"xrun": {"modules": ["xcelium/$XV"]}}
+        )
+        job = make_job("xrun", config=cfg, host=make_host(env={"XV": "24.03"}))
+        assert job.modules == ("xcelium/24.03",)
+
+    def test_two_versions_in_one_layer_is_an_error(self):
+        cfg = _config(tools={"xrun": {"modules": ["xcelium/23.09", "xcelium/24.03"]}})
+        with pytest.raises(ConfigError, match=r"tools\.xrun.*'xcelium/24\.03'.*'xcelium/23\.09'"):
+            make_job("xrun", config=cfg)
+
+    def test_combine_layers_replaces_a_version(self):
+        merged = combine_layers(
+            {"modules": ["a/1", "xcelium/23.09"]}, {"modules": ["xcelium/24.03"]}
+        )
+        assert merged["modules"] == ["a/1", "xcelium/24.03"]
 
 
 class TestKeysThatOverride:

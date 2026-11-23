@@ -81,11 +81,46 @@ def combine_layers(earlier: Mapping[str, Any], later: Mapping[str, Any]) -> dict
     result = dict(earlier)
     for key, value in later.items():
         if key in ADDING_LISTS and key in result:
-            result[key] = _unique([*result[key], *value])
+            result[key] = _add_modules(result[key], value)
         elif key in ADDING_MAPS and key in result:
             result[key] = {**result[key], **value}
         else:
             result[key] = value
+    return result
+
+
+# A last module part that is a version: a digit, or "v" and a digit, first.
+_VERSION = re.compile(r"v?\d")
+
+
+def module_name(module: str) -> tuple[str, ...]:
+    """The parts of *module* that name it: all but a trailing version."""
+    parts = tuple(module.split("/"))
+    if len(parts) > 1 and _VERSION.match(parts[-1]):
+        return parts[:-1]
+    return parts
+
+
+def modules_conflict(a: str, b: str) -> bool:
+    """Whether *a* and *b* name the same module, as a modulefile ``conflict``
+    would: one name ends with the other, compared by whole parts."""
+    x, y = module_name(a), module_name(b)
+    n = min(len(x), len(y))
+    return x[-n:] == y[-n:]
+
+
+def _add_modules(earlier: Iterable[str], later: Iterable[str]) -> list[str]:
+    """*earlier* with *later* added: a module already listed is kept where it
+    is; one that conflicts with an earlier module takes its place."""
+    result = list(earlier)
+    for module in later:
+        if module in result:
+            continue
+        index = next((i for i, m in enumerate(result) if modules_conflict(module, m)), None)
+        if index is None:
+            result.append(module)
+        else:
+            result[index] = module
     return result
 
 
@@ -161,8 +196,7 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
             if key in DEFAULTS_ONLY_FIELDS and layer_name not in ("defaults", "spec"):
                 raise ConfigError(f"[{layer_name}] {key}: unknown key")
             if key in ADDING_LISTS:
-                seen = [item for item, _ in added[key]]
-                added[key] += [(item, layer_name) for item in _unique(value) if item not in seen]
+                added[key] += [(item, layer_name) for item in _unique(value)]
             elif key in ADDING_MAPS:
                 counts[key].update({name: (count, layer_name) for name, count in value.items()})
             else:
@@ -258,7 +292,7 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         entries = module_entries(field, [(raw, layer) for raw in scalars.get(field) or ()])
         return tuple(value for value, _ in entries)
 
-    modules = module_entries("modules", added["modules"])
+    modules = _fold_modules(module_entries("modules", added["modules"]))
     provenance["modules"] = tuple(modules)
 
     env_unset = override_list("env_unset")
@@ -324,6 +358,29 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         modules_path_append=module_path("modules_path_append"),
         **values,
     )
+
+
+def _fold_modules(entries: _Tracked) -> _Tracked:
+    """Expanded modules in layer order, as :func:`_add_modules` combines them.
+
+    Two conflicting modules from one layer are an error: neither can be
+    said to come later.
+    """
+    result: _Tracked = []
+    for module, layer in entries:
+        if any(module == m for m, _ in result):
+            continue
+        index = next((i for i, (m, _) in enumerate(result) if modules_conflict(module, m)), None)
+        if index is None:
+            result.append((module, layer))
+            continue
+        earlier, earlier_layer = result[index]
+        if earlier_layer == layer:
+            raise ConfigError(
+                f"{layer}: modules {module!r} and {earlier!r} are versions of one module; list one"
+            )
+        result[index] = (module, layer)
+    return result
 
 
 def _parse_unit(

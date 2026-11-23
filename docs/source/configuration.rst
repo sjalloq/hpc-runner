@@ -413,7 +413,8 @@ How layers combine
      - Why
    * - ``modules``, ``licenses``, ``devices``
      - Add up across layers. Modules append; a module already listed is not
-       listed again. A licence or device named again takes the later count.
+       listed again, and a later version of a module takes the earlier
+       one's place. A licence or device named again takes the later count.
      - The job consumes them. A type that pulls in two tools needs both
        tools' modules and licences.
    * - Every other key, including ``features``, ``env_vars``,
@@ -440,8 +441,14 @@ How layers combine
    env_vars = { XRUN_OPTS = "-64bit" }  # the only variable set: TMPDIR is gone
    features = []                        # cleared
 
-- A layer cannot drop a module, licence or device it inherited.
-  ``[defaults]`` holds only what every job wants.
+- A module's name is its path without a trailing version (a last part
+  starting with a digit, or ``v`` and a digit). Two modules conflict when
+  one name ends with the other, by whole parts: ``xcelium/24.03`` replaces
+  ``eda/xcelium/23.09``; ``gcc/12`` and ``gcc-arm/10`` are both loaded.
+  Two versions of one module in one layer are an error.
+- A layer cannot drop a module, licence or device it inherited, only
+  replace a module's version. ``[defaults]`` holds only what every job
+  wants.
 - ``[]`` or ``{}`` on a key that overrides clears it. On ``modules``,
   ``licenses`` or ``devices`` it adds nothing.
 - On the command line, ``--license`` and ``--device`` add to the config's.
