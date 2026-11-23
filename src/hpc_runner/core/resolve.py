@@ -12,7 +12,7 @@ from typing import Any
 from hpc_runner.core.array import ArrayRange
 from hpc_runner.core.config import HPCConfig, _find_git_root
 from hpc_runner.core.exceptions import ConfigError, NotSupportedError
-from hpc_runner.core.expand import expand
+from hpc_runner.core.expand import check_hpc_refs, expand
 from hpc_runner.core.host import Host
 from hpc_runner.core.job import Job
 from hpc_runner.core.schema import (
@@ -110,8 +110,10 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
     clears it), else the package default applies. ``modules_path`` and
     ``modules_path_append`` are read from ``defaults`` and the spec only.
     Every string that reaches the job script or the scheduler is
-    expanded per D5 (:func:`~hpc_runner.core.expand.expand`); the command
-    is not. The returned :class:`Job` records the source of every value in
+    expanded per D5 (:func:`~hpc_runner.core.expand.expand`). The command
+    is not: it is kept as written, a list also as its words, and only the
+    names of its ``${hpc.*}`` references are checked; the scheduler renders
+    those. The returned :class:`Job` records the source of every value in
     ``provenance``.
 
     ``mem`` and ``time`` are parsed into :class:`Memory` and
@@ -121,7 +123,8 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
 
     Raises:
         ConfigError: The spec names an unknown type, the type lists an
-            unknown tool, a value references an undefined variable, a
+            unknown tool, a value references an undefined variable, the
+            command has a ``${hpc.x}`` with an unknown name, a
             module entry expands to nothing, an ``env_passthrough`` name is
             not set on the host, a tool or type layer sets ``modules_path``
             or ``modules_path_append``, the venv has no ``bin/activate``, the
@@ -134,7 +137,14 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
         NotSupportedError: An array job was requested interactively.
         ValueError: ``array`` is not a valid range.
     """
-    command = spec.command if isinstance(spec.command, str) else shlex.join(spec.command)
+    command_words: tuple[str, ...] | None
+    if isinstance(spec.command, str):
+        command, command_words = spec.command, None
+    else:
+        command_words = tuple(spec.command)
+        command = shlex.join(command_words)
+    for text in (command,) if command_words is None else command_words:
+        check_hpc_refs(text, where="spec: command")
     layers = [*config.layers_for(spec), ("spec", _spec_layer(spec))]
 
     # Overriding keys: the value and the one layer that set it.
@@ -166,6 +176,7 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
 
     provenance: dict[str, str | tuple[tuple[Any, str], ...]] = {
         "command": "spec",
+        "command_words": "spec",
         "type": "spec",
     }
 
@@ -292,6 +303,7 @@ def resolve(spec: JobSpec, config: HPCConfig, host: Host) -> Job:
 
     return Job(
         command=command,
+        command_words=command_words,
         type=spec.type,
         name=str(name),
         venv=venv,

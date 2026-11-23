@@ -28,6 +28,28 @@ class TestBasics:
         job = make_job(["bash", "-c", "echo hello world"])
         assert job.command == "bash -c 'echo hello world'"
 
+    def test_list_command_keeps_its_words(self):
+        job = make_job(["make", "-j${hpc.cpus}", "a b"])
+        assert job.command_words == ("make", "-j${hpc.cpus}", "a b")
+        assert job.command == "make '-j${hpc.cpus}' 'a b'"
+
+    def test_string_command_has_no_words(self):
+        job = make_job("make -j${hpc.cpus}")
+        assert job.command_words is None
+        assert job.command == "make -j${hpc.cpus}"
+
+    @pytest.mark.parametrize(
+        "command", ["echo ${hpc.nosuch}", ["echo", "-j${hpc.nosuch}"], ["echo", "${hpc.}"]]
+    )
+    def test_unknown_hpc_name_in_command(self, command):
+        with pytest.raises(ConfigError) as info:
+            make_job(command)
+        name = "hpc." if command == ["echo", "${hpc.}"] else "hpc.nosuch"
+        assert str(info.value) == (
+            f"spec: command: unknown ${{{name}}}; valid names are ${{hpc.cpus}}, "
+            "${hpc.job_id}, ${hpc.task_id}, ${hpc.tmpdir}, ${hpc.job_name}, ${hpc.host}"
+        )
+
     def test_spec_values(self):
         job = make_job(cpu=4, mem="16G", time="2:00:00", queue="gpu", project="proj1")
         assert (job.cpu, job.mem, job.time, job.queue, job.project) == (
@@ -700,6 +722,10 @@ class TestExpandedFields:
     def test_command_not_expanded(self):
         job = make_job("echo $V", host=make_host(env=self.ENV))
         assert job.command == "echo $V"
+
+    def test_undefined_variable_in_command_is_the_shells(self):
+        job = make_job(["echo", "$NOT_SET", "${NOT_SET}", "$$", "${a:-b}"])
+        assert job.command_words == ("echo", "$NOT_SET", "${NOT_SET}", "$$", "${a:-b}")
 
     def test_env_unset_names_not_expanded(self):
         assert make_job(env_unset=["http_proxy"]).env_unset == ("http_proxy",)

@@ -182,6 +182,27 @@ class TestRunCommand:
             assert result.exit_code != 0, opt
             assert "No such option" in result.output, opt
 
+    def test_cpu_range_is_refused_with_where_it_goes(self, runner):
+        result = runner.invoke(cli, ["run", "--dry-run", "--cpu", "8-16", "echo"])
+        assert result.exit_code == 2
+        text = " ".join(result.output.replace("│", " ").split())
+        assert (
+            "--cpu takes one whole number; a slot range is SGE's own and goes in "
+            "--scheduler-args, e.g. -S '-pe <pe> 8-16'"
+        ) in text
+
+    def test_hpc_reference_in_command_is_rendered(self, runner):
+        args = ["run", "--dry-run", "--cpu", "8", "cargo", "build", "-j${hpc.cpus}"]
+        result = runner.invoke(cli, args)
+        assert result.exit_code == 0
+        assert "Command: cargo build '-j${hpc.cpus}'" in result.output
+        assert "cargo build -j8" in result.output
+
+    def test_unknown_hpc_reference_in_command(self, runner):
+        result = runner.invoke(cli, ["run", "--dry-run", "echo", "${hpc.nosuch}"])
+        assert isinstance(result.exception, ConfigError)
+        assert str(result.exception).startswith("spec: command: unknown ${hpc.nosuch};")
+
     def test_unknown_flag_is_a_usage_error(self, runner, temp_dir):
         """A flag hpc run does not define is rejected, never forwarded or run."""
         result = runner.invoke(cli, ["run", "--dry-run", "-z", "batch.q", "echo", "hi"])

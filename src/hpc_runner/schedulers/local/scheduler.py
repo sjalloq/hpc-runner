@@ -287,6 +287,7 @@ class LocalScheduler(BaseScheduler):
             "local/templates/job.sh.j2",
             job=job,
             scheduler=self,
+            command=self.render_command(job, job_id=job_id),
             environment=self.environment_context(job, job_id=job_id, verbose=verbose),
             stdout=self._redirect(job, "stdout", job_id),
             stderr=self._redirect(job, "stderr", job_id),

@@ -62,6 +62,15 @@ def test_interactive(cluster: Cluster, capfd: pytest.CaptureFixture[str]) -> Non
     assert "hi" in capfd.readouterr().out
 
 
+def test_interactive_job_has_its_name(cluster: Cluster, capfd: pytest.CaptureFixture[str]) -> None:
+    """``name`` reaches the scheduler for an interactive job: the name the
+    scheduler gives the job on the node is the one asked for."""
+    spec = JobSpec('echo "name=${hpc.job_name}"', name="internamed", interactive=True)
+    result = _submit(cluster, spec)
+    assert result.exit_code == 0
+    assert "name=internamed" in capfd.readouterr().out.splitlines()
+
+
 def test_interactive_no_slot(cluster: Cluster, capfd: pytest.CaptureFixture[str]) -> None:
     """With every slot busy, an interactive job queues, then completes."""
     fillers = [

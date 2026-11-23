@@ -721,7 +721,8 @@ job script or the scheduler: ``env_vars``, ``env_prepend``, ``env_append``,
 ``modules``, ``modules_path``, ``modules_path_append``, ``venv``,
 ``stdout``, ``stderr``, ``workdir``, ``queue``, ``name``, ``project``,
 ``mem``, ``time`` and ``scheduler_args``. The command itself is not
-expanded: it is your shell.
+expanded: its ``$VAR``, ``${VAR}`` and ``$$`` are left for the job's shell.
+Only ``${hpc.*}`` is read in a command (see below).
 
 **Runtime values.** Values only the scheduler knows when the job starts use
 the ``${hpc.*}`` namespace, which each scheduler renders in its own terms:
@@ -774,6 +775,17 @@ error suggests the ``${hpc.*}`` equivalent:
 
    [tools.make]
    env_vars = { MAKEFLAGS = "-j${hpc.cpus}" }
+
+The command takes ``${hpc.*}`` too, and nothing else in it is expanded.
+Single quotes keep the submitting shell from reading the reference first:
+
+.. code-block:: bash
+
+   hpc run --cpu 8 cargo build -j '${hpc.cpus}'
+
+Each word of the command reaches the job as one argument, with the
+reference inside it replaced by the value: ``'-j${hpc.cpus}'`` arrives as
+``-j8``. An unknown ``${hpc.x}`` in the command is an error.
 
 **Resolver variables.** These are always defined:
 

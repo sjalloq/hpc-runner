@@ -9,8 +9,8 @@ flavours; `--scheduler sge --flavour <name>` selects the stack that is up.
 
 | Flavour | Lineage | Source | Status |
 |---|---|---|---|
-| `soge` | Son of Grid Engine 8.1.9 | Debian trixie `gridengine-*` 8.1.9+dfsg-13.1 | 55 integration tests pass |
-| `ocs` | Open Cluster Scheduler 9.1.7 (Univa lineage) | upstream binary tarballs (`ocs-9.1.7-bin-lx-amd64`, `-common`) on Debian trixie | 55 integration tests pass |
+| `soge` | Son of Grid Engine 8.1.9 | Debian trixie `gridengine-*` 8.1.9+dfsg-13.1 | 59 integration tests pass |
+| `ocs` | Open Cluster Scheduler 9.1.7 (Univa lineage) | upstream binary tarballs (`ocs-9.1.7-bin-lx-amd64`, `-common`) on Debian trixie | 59 integration tests pass |
 
 Candidate for a later flavour: `daimh/sge` (maintained SoGE fork, built from
 source).
@@ -28,7 +28,7 @@ that hpc-runner drives SGE correctly and that SGE does what hpc-runner says,
 and run only with `--scheduler sge`.
 
 Each column is the result of `hpc-testbed --scheduler sge --flavour <name> pytest`
-on 2026-11-22. A test deselected for a flavour with
+on 2026-11-23. A test deselected for a flavour with
 `@pytest.mark.flavour("sge/<name>")` would show as such (none so far);
 nothing skips at run time.
 
@@ -40,6 +40,7 @@ nothing skips at run time.
 | test_submit.py | test_batch_echo | pass | pass |
 | | test_rejected_queue | pass | pass |
 | | test_interactive | pass | pass |
+| | test_interactive_job_has_its_name (`name` on an interactive job) | pass | pass |
 | | test_interactive_no_slot (all eight slots filled, D-T28) | pass | pass |
 | test_status.py | test_queued_running_done | pass | pass |
 | | test_suspended_job_is_waited_through | pass | pass |
@@ -54,6 +55,8 @@ nothing skips at run time.
 | test_environment.py | test_modules_on_node | pass | pass |
 | | test_regardless_of_submitter | pass | pass |
 | | test_hpc_cpus | pass | pass |
+| | test_hpc_cpus_in_a_list_command (`${hpc.cpus}` in a word of the command) | pass | pass |
+| | test_hpc_cpus_in_a_string_command | pass | pass |
 | | test_env_order | pass | pass |
 | | test_venv | pass | pass |
 | | test_inherit_env_false | pass | pass |
@@ -64,6 +67,7 @@ nothing skips at run time.
 | test_cli.py | test_status_active_history_and_details (`hpc status`, `--history`, `<id>`, `--json`, times) | pass | pass (`<>` tags repaired) |
 | | test_cancel_by_filter_by_id_and_a_job_that_is_gone | pass | pass |
 | | test_run_exits_with_the_jobs_exit_code | pass | pass |
+| | test_run_renders_hpc_cpus_in_the_command (`hpc run ... echo '-j${hpc.cpus}'`) | pass | pass |
 | | test_tool_alias_and_config_resolve (`[tools.sort] commands`, `hpc config resolve`) | pass | pass |
 | test_trace.py | test_flag_records_a_session (`hpc --trace`: command line, config, script, scheduler calls, output) | pass | pass |
 | | test_config_enabled_trace (`[trace] enabled`, every scheduler call written) | pass | pass |

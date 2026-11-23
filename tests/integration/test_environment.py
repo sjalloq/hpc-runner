@@ -81,6 +81,18 @@ def test_hpc_cpus(cluster: Cluster) -> None:
     assert _run(cluster, spec) == ["-j2"]
 
 
+def test_hpc_cpus_in_a_list_command(cluster: Cluster) -> None:
+    """${hpc.cpus} inside a word of a list command becomes the slot count on the node."""
+    spec = JobSpec(["echo", "-j${hpc.cpus}"], name="cmdlist", cpu=2)
+    assert _run(cluster, spec) == ["-j2"]
+
+
+def test_hpc_cpus_in_a_string_command(cluster: Cluster) -> None:
+    """${hpc.cpus} in a string command becomes the slot count on the node."""
+    spec = JobSpec('echo "n=${hpc.cpus}"', name="cmdstr", cpu=2)
+    assert _run(cluster, spec) == ["n=2"]
+
+
 def test_env_order(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
     """B4: unset, prepend, append, set apply in that order; quoting-hostile values survive."""
     monkeypatch.setenv("HPC_T_BASE", "base")

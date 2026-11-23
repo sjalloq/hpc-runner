@@ -310,6 +310,7 @@ class SlurmScheduler(BaseScheduler):
         return render_template(
             "slurm/templates/batch.sh.j2",
             job=job,
+            command=self.render_command(job),
             environment=self.environment_context(job, verbose=verbose),
             directives=self._build_directives(job),
         )
@@ -321,6 +322,7 @@ class SlurmScheduler(BaseScheduler):
         return render_template(
             "slurm/templates/interactive.sh.j2",
             job=job,
+            command=self.render_command(job),
             environment=self.environment_context(job, verbose=verbose),
             script_path=script_path,
             keep_script=keep_script,

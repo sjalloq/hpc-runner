@@ -315,6 +315,82 @@ class TestHpcVars:
         assert sge.render_hpc_vars(text, job=job, context="path") == "$JOB_NAME.$JOB_ID.$TASK_ID"
 
 
+def _preview(which: str, job, monkeypatch, tmp_path: Path) -> list[str]:
+    """The lines of *job*'s script on scheduler *which*, batch or interactive."""
+    monkeypatch.setenv("HPC_EXIT_DIR", str(tmp_path / "exit"))
+    name, _, mode = which.partition("_")
+    scheduler = {"sge": SGEScheduler, "slurm": SlurmScheduler, "local": LocalScheduler}[name]
+    job = dataclasses.replace(job, interactive=mode == "interactive")
+    return scheduler(HPCConfig()).preview(job).splitlines()
+
+
+_MODES = ["sge_batch", "sge_interactive", "slurm_batch", "slurm_interactive"]
+_MODES += ["local_batch", "local_interactive"]
+
+
+def _per_mode(sge: str, slurm: str, local: str) -> list[tuple[str, str]]:
+    """Each scheduler's expected line, for its batch and its interactive script."""
+    expected = {"sge": sge, "slurm": slurm, "local": local}
+    return [(which, expected[which.partition("_")[0]]) for which in _MODES]
+
+
+class TestCommand:
+    """``${hpc.*}`` in the command is rendered live; nothing else in it is touched."""
+
+    @pytest.mark.parametrize(
+        ("which", "line"),
+        _per_mode(
+            sge='cargo build -j"$NSLOTS" \'a b \'"$JOB_NAME"',
+            slurm='cargo build -j"$SLURM_CPUS_PER_TASK" \'a b \'"$SLURM_JOB_NAME"',
+            local="cargo build -j8 'a b 'build",
+        ),
+    )
+    def test_list_command(self, which, line, monkeypatch, tmp_path):
+        job = make_job(
+            ["cargo", "build", "-j${hpc.cpus}", "a b ${hpc.job_name}"], cpu=8, name="build"
+        )
+        assert line in _preview(which, job, monkeypatch, tmp_path)
+
+    @pytest.mark.parametrize(
+        ("which", "line"),
+        _per_mode(
+            sge='echo "n=$NSLOTS" | tee $HOME/n.txt',
+            slurm='echo "n=$SLURM_CPUS_PER_TASK" | tee $HOME/n.txt',
+            local='echo "n=8" | tee $HOME/n.txt',
+        ),
+    )
+    def test_string_command(self, which, line, monkeypatch, tmp_path):
+        job = make_job('echo "n=${hpc.cpus}" | tee $HOME/n.txt', cpu=8)
+        assert line in _preview(which, job, monkeypatch, tmp_path)
+
+    @pytest.mark.parametrize("which", _MODES)
+    def test_list_command_without_a_reference_is_quoted_whole(self, which, monkeypatch, tmp_path):
+        job = make_job(["echo", "$HOME", "$$", "'$NSLOTS'", "a b"])
+        line = """echo '$HOME' '$$' ''"'"'$NSLOTS'"'"'' 'a b'"""
+        assert line in _preview(which, job, monkeypatch, tmp_path)
+
+    @pytest.mark.parametrize("which", _MODES)
+    def test_string_command_without_a_reference_is_as_written(self, which, monkeypatch, tmp_path):
+        command = """echo $HOME ${HOME} $$ '$NSLOTS' "$(hostname)" | cat"""
+        job = make_job(command)
+        assert command in _preview(which, job, monkeypatch, tmp_path)
+
+    @requires_bash
+    @pytest.mark.parametrize(
+        ("command", "printed"),
+        [
+            (["echo", "-j${hpc.cpus}", "a  b ${hpc.job_name}", "$$HOME"], "-j3 a  b cmd $$HOME"),
+            ("echo \"n=${hpc.cpus}\" '$NSLOTS'", "n=3 $NSLOTS"),
+        ],
+    )
+    def test_local_values_at_run_time(self, tmp_path, command, printed):
+        out = tmp_path / "out"
+        job = make_job(command, cpu=3, name="cmd", workdir=str(tmp_path), stdout=str(out))
+        local = LocalScheduler(_sched_config(module_init_script=_stub_modules(tmp_path)))
+        assert local.submit(job).wait(poll_interval=0.05) is JobStatus.COMPLETED
+        assert out.read_text() == printed + "\n"
+
+
 class TestInheritEnv:
     """D3: -V by default; strict mode passes named variables explicitly."""
 

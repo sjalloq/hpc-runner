@@ -14,7 +14,7 @@ trap _hpc_on_exit EXIT
 {% include "_environment.sh.j2" %}
 
 # Execute command
-{{ job.command }}
+{{ command }}
 _exit_code=$?
 
 {% if not keep_script %}

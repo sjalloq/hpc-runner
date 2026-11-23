@@ -23,5 +23,5 @@ exec > {{ stdout | sh }} 2> {{ stderr | sh }}
 {% endif %}
 
 # Execute command
-{{ job.command }}
+{{ command }}
 exit $?

@@ -255,8 +255,8 @@ def resolve_cmd(ctx: Context, job_type: str | None, command: tuple[str, ...]) ->
 
     table = Table("field", "value", "source")
     for f in dataclasses.fields(Job):
-        if f.name == "provenance":
-            continue
+        if f.name in ("provenance", "command_words"):
+            continue  # the words are the command again
         source = job.provenance[f.name]
         if isinstance(source, tuple):
             if not source:

@@ -22,5 +22,5 @@ export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 export SLURM_EXPORT_ENV=ALL
 
 # Execute command
-{{ job.command }}
+{{ command }}
 exit $?

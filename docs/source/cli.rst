@@ -119,6 +119,14 @@ runs ``mpirun -N 4 ./sim``). A command that itself starts with a dash needs
 the usual ``--`` first (``hpc run -- -h``). A flag ``hpc run`` does not know
 is a usage error, never forwarded.
 
+Nothing in the command is expanded by ``hpc``, except a ``${hpc.*}``
+reference (:ref:`variable-expansion`), which becomes the job's own value
+when it runs. Single quotes keep your shell from reading it first:
+
+.. code-block:: bash
+
+   hpc run --cpu 8 cargo build -j '${hpc.cpus}'
+
 .. note:: **Why a quoted string?**
 
    hpc-runner cannot tell where raw scheduler flags end and the command begins

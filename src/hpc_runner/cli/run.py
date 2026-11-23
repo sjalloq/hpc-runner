@@ -21,10 +21,27 @@ if TYPE_CHECKING:
 console = Console()
 
 
+def _cpu_count(ctx: click.Context, param: click.Parameter, value: str | None) -> int | None:
+    """``--cpu`` as a whole number, with an error that says where a range goes.
+
+    Raises:
+        click.BadParameter: *value* is not a whole number.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise click.BadParameter(
+            "--cpu takes one whole number; a slot range is SGE's own and goes in "
+            "--scheduler-args, e.g. -S '-pe <pe> 8-16'"
+        ) from None
+
+
 @click.command(context_settings={"allow_interspersed_args": False})
 @click.argument("command", nargs=-1, type=click.UNPROCESSED)
 @click.option("-N", "--name", "job_name", help="Job name")
-@click.option("-c", "--cpu", type=int, help="Number of CPUs")
+@click.option("-c", "--cpu", callback=_cpu_count, metavar="INTEGER", help="Number of CPUs")
 @click.option("-m", "--mem", help="Memory for the whole job (e.g., 16G, 1.5GiB)")
 @click.option("-T", "--time", "time_limit", help="Time limit (e.g., 4:00:00, 4h, 1h30m)")
 @click.option("-q", "--queue", help="Queue/partition name")
@@ -135,6 +152,13 @@ def run(
         hpc run -t xcelium make sim
         hpc run -b -c 4 make -j4 sim
 
+    Nothing in COMMAND is expanded by hpc, except a ${hpc.NAME} reference
+    (see the configuration docs), which becomes the job's own value when it
+    runs. Single quotes keep your shell from reading it first:
+
+    \b
+        hpc run -c 8 cargo build -j '${hpc.cpus}'
+
     Raw scheduler flags go in one quoted string with --scheduler-args:
 
     \b
@@ -172,7 +196,7 @@ def run(
     # Array jobs can only be batch; everything else is interactive unless
     # --batch was given.
     spec = JobSpec(
-        command_parts,  # joined with shlex.join, preserving quoting
+        command_parts,  # each word stays one shell word in the script
         type=job_type,
         name=job_name,
         cpu=cpu,

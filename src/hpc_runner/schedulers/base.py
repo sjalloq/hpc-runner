@@ -259,6 +259,18 @@ class BaseScheduler(ABC):
             parts.append(shlex.quote(text[pos:]))
         return ShellWord("".join(parts))
 
+    def render_command(self, job: Job, *, job_id: str | None = None) -> str:
+        """The command line of *job*'s script.
+
+        A command given as a list is its words, each one shell word
+        (:meth:`shell_word`). A command given as a string is used as
+        written, with each ``${hpc.x}`` replaced by this scheduler's shell
+        text (:meth:`render_hpc_vars`).
+        """
+        if job.command_words is None:
+            return self.render_hpc_vars(job.command, job=job, job_id=job_id)
+        return " ".join(self.shell_word(w, job=job, job_id=job_id) for w in job.command_words)
+
     def environment_context(
         self, job: Job, *, job_id: str | None = None, verbose: bool = False
     ) -> dict[str, Any]:

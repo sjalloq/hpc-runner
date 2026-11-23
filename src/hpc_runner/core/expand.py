@@ -14,6 +14,11 @@ come from ``${hpc.*}``; anything else is shell in your script or Makefile.*
 ``${CONFIG_DIR}`` is the directory of the config file that set the value.
 It is bound when that file is loaded (:func:`bind_config_dir`), because
 which file set a value is lost once files are merged.
+
+The command is not a config value and is not expanded here: its ``$VAR``
+and ``$$`` belong to the job's shell. Only its ``${hpc.<name>}`` references
+are special; :func:`check_hpc_refs` checks their names and the scheduler
+renders them.
 """
 
 from __future__ import annotations
@@ -52,6 +57,8 @@ _RUNTIME_HINTS: dict[str, str] = {
 # literally; it reaches the script quoted, so it stays a literal `$`.
 _TOKEN = re.compile(r"\$(?:(\$)|\{([^}]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# A `${hpc.<anything>}` reference, valid name or not.
+_HPC_BRACED = re.compile(r"\$\{(hpc\.[^}]*)\}")
 
 CONFIG_DIR = "CONFIG_DIR"
 
@@ -80,10 +87,7 @@ def expand(value: str, *, host_env: Mapping[str, str], extra: Mapping[str, str],
             return "$"
         name = bare if bare is not None else braced
         if braced is not None and braced.startswith("hpc."):
-            hpc_name = braced[4:]
-            if hpc_name not in HPC_VARS:
-                valid = ", ".join(f"${{hpc.{n}}}" for n in HPC_VARS)
-                raise ConfigError(f"{where}: unknown ${{{braced}}}; valid names are {valid}")
+            _check_hpc_name(braced, where)
             return match.group(0)
         if not _NAME.fullmatch(name):
             raise ConfigError(
@@ -105,6 +109,26 @@ def expand(value: str, *, host_env: Mapping[str, str], extra: Mapping[str, str],
     # One left-to-right pass: substituted text is never rescanned, so
     # `$$HOME` stays literal and an expanded value containing `$` is inert.
     return _TOKEN.sub(replace, value)
+
+
+def _check_hpc_name(braced: str, where: str) -> None:
+    """Refuse ``${<braced>}`` (``hpc.<name>``) unless *name* is in :data:`HPC_VARS`."""
+    if braced[4:] not in HPC_VARS:
+        valid = ", ".join(f"${{hpc.{n}}}" for n in HPC_VARS)
+        raise ConfigError(f"{where}: unknown ${{{braced}}}; valid names are {valid}")
+
+
+def check_hpc_refs(value: str, *, where: str) -> None:
+    """Check every ``${hpc.<name>}`` in *value*, and nothing else in it.
+
+    For the command, where ``$VAR``, ``${VAR}`` and ``$$`` are the job
+    shell's and only ``${hpc.*}`` is hpc-runner's.
+
+    Raises:
+        ConfigError: A ``${hpc.x}`` names an unknown runtime value.
+    """
+    for match in _HPC_BRACED.finditer(value):
+        _check_hpc_name(match.group(1), where)
 
 
 def _escape(text: str) -> str:

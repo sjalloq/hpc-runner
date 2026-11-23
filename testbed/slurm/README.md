@@ -191,7 +191,7 @@ check that hpc-runner drives Slurm correctly and that Slurm does what
 hpc-runner says, and run only with `--scheduler slurm`.
 
 Each column is the result of `hpc-testbed --scheduler slurm --flavour <name>
-pytest` on 2026-11-23 (74 passed and 1 skipped on `24.11`, 75 passed on
+pytest` on 2026-11-23 (78 passed and 1 skipped on `24.11`, 79 passed on
 `22.05`). A test deselected for a flavour with
 `@pytest.mark.flavour("slurm/<name>")` would show as such (none so far). One
 test skips at run time, by the cluster class's answer: the check of the
@@ -205,6 +205,7 @@ output lines only 22.05 adds.
 | test_submit.py | test_batch_echo | pass | pass |
 | | test_rejected_queue | pass | pass |
 | | test_interactive | pass | pass |
+| | test_interactive_job_has_its_name (`name` on an interactive job) | pass | pass |
 | | test_interactive_no_slot (all four slots filled) | pass | pass |
 | test_status.py | test_queued_running_done | pass | pass |
 | | test_suspended_job_is_waited_through | pass | pass |
@@ -219,6 +220,8 @@ output lines only 22.05 adds.
 | test_environment.py | test_modules_on_node | pass | pass |
 | | test_regardless_of_submitter | pass | pass |
 | | test_hpc_cpus | pass | pass |
+| | test_hpc_cpus_in_a_list_command (`${hpc.cpus}` in a word of the command) | pass | pass |
+| | test_hpc_cpus_in_a_string_command | pass | pass |
 | | test_env_order | pass | pass |
 | | test_venv | pass | pass |
 | | test_inherit_env_false | pass | pass |
@@ -229,6 +232,7 @@ output lines only 22.05 adds.
 | test_cli.py | test_status_active_history_and_details | pass | pass |
 | | test_cancel_by_filter_by_id_and_a_job_that_is_gone | pass | pass |
 | | test_run_exits_with_the_jobs_exit_code | pass | pass |
+| | test_run_renders_hpc_cpus_in_the_command (`hpc run ... echo '-j${hpc.cpus}'`) | pass | pass |
 | | test_tool_alias_and_config_resolve | pass | pass |
 | test_trace.py | test_flag_records_a_session | pass | pass |
 | | test_config_enabled_trace | pass | pass |

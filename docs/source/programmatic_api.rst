@@ -97,7 +97,12 @@ absolute, else the submit directory. ``job.stdout`` is the output pattern
 (default ``${hpc.job_name}.${hpc.job_id}.out``; see :ref:`output-files`).
 
 A list command is shell-quoted: ``JobSpec(["bash", "-c", "echo hi there"])``
-runs ``bash -c 'echo hi there'``. A string command is used as written.
+runs ``bash -c 'echo hi there'``. A ``${hpc.*}`` reference in a word is the
+live value inside that one argument: ``JobSpec(["make", "-j${hpc.cpus}"],
+cpu=8)`` runs ``make -j8``. A string command is used as written, except that
+each ``${hpc.*}`` reference is replaced by the scheduler's shell text for it
+(``$NSLOTS`` on SGE), so where the string quotes it is yours to choose:
+``JobSpec('echo "n=${hpc.cpus}"')``.
 
 ``venv`` has three states: ``None`` (default) captures ``$VIRTUAL_ENV`` from
 the host, a path uses that venv, ``False`` uses none. ``resolve()`` checks
@@ -107,7 +112,9 @@ String values on a spec follow the same expansion rule as config
 (:ref:`variable-expansion`): ``$VAR`` is resolved from ``host.env`` (an
 undefined one raises ``ConfigError``), ``$$`` is a literal ``$`` and
 ``${hpc.cpus}``-style runtime values are rendered by the scheduler. The
-command is not expanded.
+command is not expanded: ``$VAR`` and ``$$`` in it are the job shell's, and
+only its ``${hpc.*}`` references are rendered; one with an unknown name
+raises ``ConfigError``.
 
 Licences, devices and node features are requested by name
 (:ref:`licenses-devices-features`). A count is a whole number, 1 or more

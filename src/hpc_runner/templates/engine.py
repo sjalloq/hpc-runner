@@ -20,7 +20,8 @@ def sh(value: Any) -> str:
     """Jinja filter: *value* as a single shell word (``shlex.quote``).
 
     Every value a template interpolates goes through this, except the job
-    command, which is deliberately raw shell.
+    command, which the scheduler has already rendered as shell
+    (``BaseScheduler.render_command``).
     """
     if isinstance(value, ShellWord):
         return str(value)

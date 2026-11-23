@@ -12,7 +12,7 @@ from typing import Any
 
 from hpc_runner.core.result import JobStatus
 from tests.integration.cluster import Cluster
-from tests.integration.helpers import history_entry, hpc, hpc_json, run_batch
+from tests.integration.helpers import history_entry, hpc, hpc_json, job_output, run_batch
 
 
 def _hold(cluster: Cluster) -> tuple[str, str]:
@@ -81,6 +81,14 @@ def test_run_exits_with_the_jobs_exit_code(cluster: Cluster) -> None:
     assert "status: FAILED" in waited.stdout
     submitted = cluster.run([*run, "--batch", "sh", "-c", "exit 3"], check=False, timeout=120)
     assert submitted.returncode == 0, submitted.stdout + submitted.stderr
+
+
+def test_run_renders_hpc_cpus_in_the_command(cluster: Cluster) -> None:
+    """`hpc run --cpu 2 echo '-j${hpc.cpus}'`: the job prints -j2."""
+    out = cluster.workdir / "cmdcpus.out"
+    run = ("run", "--batch", "--wait", "--cpu", "2", "--directory", str(cluster.workdir))
+    hpc(cluster, *run, "--stdout", out.name, "echo", "-j${hpc.cpus}")
+    assert job_output(cluster, out.read_text()) == "-j2\n"
 
 
 def test_tool_alias_and_config_resolve(cluster: Cluster) -> None:

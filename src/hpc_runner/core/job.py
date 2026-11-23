@@ -59,6 +59,10 @@ class Job:
     package defaults to a :class:`~hpc_runner.JobSpec`. Schedulers render a
     ``Job`` and never mutate it.
 
+    ``command`` and ``command_words`` hold the command as written, its
+    ``${hpc.*}`` references included; a scheduler turns them into the
+    script's command line (``BaseScheduler.render_command``).
+
     ``provenance`` records where each value came from. Layer names are
     ``"defaults"``, ``"tools.<name>"``, ``"tools.<name>.options.<key>"``,
     ``"types.<name>"``, ``"spec"``, ``"package"`` and ``"host"``.
@@ -78,7 +82,11 @@ class Job:
       path, ``"<layer> (disabled)"`` for ``venv = false``, or ``"package"``.
     """
 
+    # The command as one string: what is shown, traced and named after.
     command: str
+    # The words of a command given as a list, None for one given as a
+    # string. The scheduler renders the script's command line from these.
+    command_words: tuple[str, ...] | None
     type: str | None
     name: str
 
