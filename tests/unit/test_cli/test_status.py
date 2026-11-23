@@ -1,5 +1,6 @@
 """Tests for CLI status command."""
 
+import json
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from hpc_runner.cli.main import cli
+from hpc_runner.core.exceptions import JobNotFoundError
 from hpc_runner.core.job_info import JobInfo
 from hpc_runner.core.result import JobStatus
 
@@ -238,6 +240,20 @@ class TestSingleJob:
             result = runner.invoke(cli, ["status", "300"])
         assert result.exit_code == 0
         assert "COMPLETED" in result.output
+
+    def test_a_job_the_scheduler_does_not_know_is_unknown_and_not_asked_again(
+        self, runner, mock_scheduler
+    ):
+        """``get_job_details`` has looked everywhere: the status call, which may
+        wait for accounting, is not made."""
+        mock_scheduler.get_job_details.side_effect = JobNotFoundError("job 300 not found")
+        with _patch_scheduler(mock_scheduler):
+            result = runner.invoke(cli, ["status", "300", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert (data["job_id"], data["status"], data["exit_code"]) == ("300", "UNKNOWN", None)
+        mock_scheduler.get_status.assert_not_called()
+        mock_scheduler.get_exit_code.assert_not_called()
 
     def test_single_job_json(self, runner, mock_scheduler):
         mock_scheduler.get_job_details.return_value = (

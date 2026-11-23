@@ -58,6 +58,7 @@ from hpc_runner.schedulers.slurm.parser import (
     SQUEUE_FORMAT,
     Row,
     SacctJob,
+    parse_exit_code,
     parse_sacct,
     parse_sbatch_output,
     parse_scontrol_job,
@@ -72,6 +73,7 @@ from hpc_runner.schedulers.slurm.parser import (
     scontrol_tasks,
     select_jobs,
     split_job_id,
+    state_to_status,
 )
 from hpc_runner.templates import render_template
 from hpc_runner.trace import recorder
@@ -683,6 +685,9 @@ class SlurmScheduler(BaseScheduler):
         for record in records:
             if scontrol_base(record) == job.base and scontrol_tasks(record) == job.tasks:
                 code = scontrol_exit_code(record)
+                if code is None and scontrol_is_completing(record):
+                    # sacct has the job ended; the record already has its code.
+                    code = parse_exit_code(record.get("ExitCode", "")) or None
                 if code is not None:
                     return code
         return job.exit_code
@@ -775,11 +780,12 @@ class SlurmScheduler(BaseScheduler):
         exit status as the script gave it (see :meth:`get_exit_code`),
         and the reason, dependency and command in the extra details.
         ``sacct`` has no output path, so a job the controller has forgotten
-        has none. A job the controller says is ``COMPLETING`` is waited for
-        as in :meth:`get_exit_code`. When the controller knows the job and ``sacct`` has no
-        row for it yet, ``sacct`` is asked again every second for up to ten
-        seconds; a job with no row after that is UNKNOWN, with what the
-        controller says of it.
+        has none.
+
+        Each command is asked once: this never waits. A job the controller
+        knows and ``sacct`` has no row for yet (one just submitted) has the
+        controller's status. A job that has just ended and is still
+        ``COMPLETING`` to the controller has the exit code of that record.
 
         The base id of an array gives the array as a whole (status and
         exit code reduced over the tasks) and every task's own
@@ -792,14 +798,12 @@ class SlurmScheduler(BaseScheduler):
         Raises:
             JobNotFoundError: Neither command knows *job_id*.
         """
-        records = self._scontrol_settled(job_id)
+        records = self._scontrol(job_id)
         jobs = self._sacct([job_id])
-        if not select_jobs(jobs, job_id):
-            if not records:
-                raise JobNotFoundError(f"job {job_id} not found")
-            jobs = self._sacct_again([job_id], jobs)
         selected = select_jobs(jobs, job_id)
         if not selected:
+            if not records:
+                raise JobNotFoundError(f"job {job_id} not found")
             return self._details_without_accounting(job_id, records[0])
 
         if not selected[0].tasks or split_job_id(job_id)[1] is not None:
@@ -865,14 +869,14 @@ class SlurmScheduler(BaseScheduler):
     def _details_without_accounting(
         self, job_id: str, record: Row
     ) -> tuple[JobInfo, dict[str, object]]:
-        """Details of a job the controller knows and ``sacct`` still has no row for."""
+        """Details of a job the controller knows and ``sacct`` has no row for yet."""
         stdout_path, stderr_path = scontrol_output_paths(record)
         cpus = record.get("NumCPUs", "")
         info = JobInfo(
             job_id=job_id,
             name=record.get("JobName", job_id),
             user=record.get("UserId", "unknown").partition("(")[0],
-            status=JobStatus.UNKNOWN,
+            status=state_to_status(record.get("JobState", "")),
             queue=record.get("Partition") or None,
             cpu=int(cpus) if cpus.isdigit() else None,
             stdout_path=stdout_path,

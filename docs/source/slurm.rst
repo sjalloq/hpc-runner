@@ -473,6 +473,9 @@ life.
   id that does not exist takes ten seconds to answer ``UNKNOWN``.
   ``wait()`` rides a short ``UNKNOWN`` out (see ``unknown_after`` in
   :doc:`programmatic_api`).
+- ``hpc status <id>`` **never waits.** It asks ``scontrol`` and ``sacct``
+  once each. A job too new for ``sacct`` is shown with the status
+  ``scontrol`` gives it, and an id neither knows is ``UNKNOWN`` at once.
 - **A requeued job** is ``PENDING`` again, and ``wait()`` goes on to the
   end of its next run. ``hpc status --history`` lists it once.
 - **A job on a node that dies** is requeued where the site requeues jobs,

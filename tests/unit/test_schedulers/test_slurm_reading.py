@@ -369,16 +369,16 @@ class TestAskingAgain:
         assert seam.call_count == 1
         assert slurm_clock.sleeps == []
 
-    def test_details_of_a_job_whose_row_comes_late(self, scheduler, fx, slurm_clock: FakeClock):
-        job_id = fx.job("running")
-        respond = _in_turn(fx, sacct=["", "sacct_running.txt"], scontrol=["scontrol_running.txt"])
+    def test_details_never_wait_for_a_row(self, scheduler, fx, slurm_clock: FakeClock):
+        """No row yet: the status is the controller's, and nothing is asked twice."""
+        job_id = fx.job("held")
+        respond = _in_turn(fx, sacct=[""], scontrol=["scontrol_held.txt"])
         with patch_seam(respond) as seam:
             info, extra = scheduler.get_job_details(job_id)
-        assert (info.job_id, info.name, info.status) == (job_id, "running", S.RUNNING)
-        assert info.start_time is not None
-        assert extra["state"] == "RUNNING"
-        assert _commands(seam) == ["scontrol", "sacct", "sacct"]
-        assert slurm_clock.sleeps == [1.0]
+        assert (info.job_id, info.name, info.status) == (job_id, "held", S.PENDING)
+        assert extra["state"] == "PENDING"
+        assert _commands(seam) == ["scontrol", "sacct"]
+        assert slurm_clock.sleeps == []
 
     def test_a_job_neither_command_knows_is_not_waited_for(
         self, scheduler, fx, slurm_clock: FakeClock
@@ -407,16 +407,17 @@ class TestAskingAgain:
         assert slurm_clock.sleeps == [0.5]
 
     def test_the_details_of_a_job_that_is_completing(self, scheduler, fx, slurm_clock: FakeClock):
+        """Details never wait: the code is read from the ``COMPLETING`` record."""
         respond = _in_turn(
             fx,
-            sacct=["sacct_completing.txt"],
-            scontrol=["scontrol_completing_just_cancelled.txt", "scontrol_completing.txt"],
+            sacct=["sacct_completing_just_cancelled.txt"],
+            scontrol=["scontrol_completing_just_cancelled.txt"],
         )
         with patch_seam(respond) as seam:
             info, _ = scheduler.get_job_details(fx.job("completing"))
         assert (info.status, info.exit_code) == (S.CANCELLED, 143)
-        assert _commands(seam) == ["scontrol", "scontrol", "sacct"]
-        assert slurm_clock.sleeps == [0.5]
+        assert _commands(seam) == ["scontrol", "sacct"]
+        assert slurm_clock.sleeps == []
 
     def test_completing_and_then_forgotten_is_sacct_to_answer(
         self, scheduler, fx, slurm_clock: FakeClock
@@ -811,8 +812,8 @@ class TestDetails:
             scheduler.get_job_details("999999")
 
     def test_a_job_accounting_does_not_have_yet(self, scheduler, fx, slurm_clock: FakeClock):
-        """The controller knows it; the status is sacct's to give, so UNKNOWN
-        once sacct has been asked again for ten seconds."""
+        """The controller knows it and sacct does not yet: the controller's
+        status, with each command asked once."""
         job_id = fx.job("running")
 
         def respond(argv):
@@ -822,13 +823,13 @@ class TestDetails:
 
         with patch_seam(respond) as seam:
             info, extra = scheduler.get_job_details(job_id)
-        assert _commands(seam) == ["scontrol", *(["sacct"] * 11)]
-        assert slurm_clock.sleeps == [1.0] * 10
+        assert _commands(seam) == ["scontrol", "sacct"]
+        assert slurm_clock.sleeps == []
         assert (info.job_id, info.name, info.user, info.status) == (
             job_id,
             "running",
             "tester",
-            S.UNKNOWN,
+            S.RUNNING,
         )
         assert (info.queue, info.node, info.cpu) == ("all", "exec1", 1)
         assert info.stdout_path == Path(f"/work/capture-jobs/running.{job_id}.out")

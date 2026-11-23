@@ -3,6 +3,8 @@ controller's record for the exit code while it has one."""
 
 from __future__ import annotations
 
+import time
+
 from hpc_runner.core.result import JobStatus
 from hpc_runner.core.spec import JobSpec
 from tests.integration.cluster import Cluster
@@ -41,10 +43,16 @@ def test_cancelled_while_pending_is_cancelled_with_no_exit_code(cluster: Cluster
 
 
 def test_a_job_just_submitted_has_a_status_at_once(cluster: Cluster) -> None:
-    """``get_status`` on the line after the submission: a held job is PENDING,
-    not UNKNOWN, though ``sacct`` has its row a moment after ``squeue`` does."""
+    """On the lines after the submission a held job is PENDING, not UNKNOWN,
+    though ``sacct`` has its row a moment after ``squeue`` does: the details
+    (what ``hpc status <id>`` shows) at once, from the controller's record,
+    and ``get_status`` once ``sacct`` has the row."""
     result = submit(cluster, JobSpec("echo ran", name="justsubmitted", scheduler_args=["--hold"]))
     try:
+        started = time.monotonic()
+        info, _ = cluster.scheduler().get_job_details(job_id(result))
+        assert time.monotonic() - started < 1.0
+        assert (info.name, info.status) == ("justsubmitted", JobStatus.PENDING)
         assert cluster.scheduler().get_status(job_id(result)) is JobStatus.PENDING
     finally:
         assert result.cancel()

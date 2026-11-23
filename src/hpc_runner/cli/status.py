@@ -13,6 +13,7 @@ from hpc_runner.cli._context import Context, pass_context
 from hpc_runner.core.exceptions import JobNotFoundError
 from hpc_runner.core.host import current_user
 from hpc_runner.core.job_info import JobInfo
+from hpc_runner.core.result import JobStatus
 
 if TYPE_CHECKING:
     from hpc_runner.schedulers.base import BaseScheduler
@@ -264,24 +265,21 @@ def _show_single_job(
 ) -> None:
     """Show detailed information for one job."""
     extra: dict[str, object] = {}
-    job_info = None
 
-    # Try the rich get_job_details() first
     try:
         job_info, extra = scheduler.get_job_details(job_id)
-    except (NotImplementedError, JobNotFoundError):
-        pass
-
-    # Fall back to get_status() + get_exit_code()
-    if job_info is None:
-        status_val = scheduler.get_status(job_id)
-        exit_code = scheduler.get_exit_code(job_id)
+    except JobNotFoundError:
+        # The scheduler has looked everywhere it keeps jobs: nothing to ask again.
+        job_info = JobInfo(
+            job_id=job_id, name=job_id, user=_get_current_user(), status=JobStatus.UNKNOWN
+        )
+    except NotImplementedError:
         job_info = JobInfo(
             job_id=job_id,
             name=job_id,
             user=_get_current_user(),
-            status=status_val,
-            exit_code=exit_code,
+            status=scheduler.get_status(job_id),
+            exit_code=scheduler.get_exit_code(job_id),
         )
 
     # A finished array: the scheduler gives every task's own record.
