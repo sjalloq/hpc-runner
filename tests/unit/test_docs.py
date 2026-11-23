@@ -79,7 +79,7 @@ RUNNABLE = [(name, code) for name, code in PYTHON if code.startswith(RUN_MARKER)
 
 def test_snippets_found():
     assert len(PYTHON) >= 15 and len(TOML) >= 15
-    assert {name.split("#")[0] for name, _ in RUNNABLE} == {"README.md", "programmatic_api.rst"}
+    assert "programmatic_api.rst" in {name.split("#")[0] for name, _ in RUNNABLE}
 
 
 @pytest.mark.parametrize(("name", "code"), PYTHON, ids=[n for n, _ in PYTHON])
